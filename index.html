@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>PCBuild-zh · Chat</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui; max-width: 720px; margin: 40px auto; }
+  #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 8px; min-height: 160px; }
+  input, button { font-size: 16px; padding: 8px; }
+</style>
+<h1>和 AI 對話</h1>
+<div id="log"></div>
+<p>
+  <input id="msg" placeholder="輸入訊息…" style="width: 75%;" />
+  <button id="send">送出</button>
+</p>
+<script>
+const API = "/api/chat"; // 與同網域的 FastAPI 溝通（由 Caddy 反代）
+const log = document.getElementById('log');
+const msg = document.getElementById('msg');
+document.getElementById('send').onclick = async () => {
+  const m = msg.value.trim();
+  if (!m) return;
+  log.textContent += `你：${m}\n`;
+  msg.value = "";
+  const r = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: m })
+  });
+  const data = await r.json();
+  log.textContent += `AI：${data.reply}\n\n`;
+};
+</script>

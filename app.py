@@ -4,23 +4,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google import genai
+from fastapi.staticfiles import StaticFiles   # 新增
 import os
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # 開發期先放寬；上線請改成你的網域
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/", include_in_schema=False)
-def home():
-    return FileResponse("index.html")  # 與 app.py 同資料夾的 index.html
+# 原本的 home() 請移除或註解掉
+# @app.get("/", include_in_schema=False)
+# def home():
+#     return FileResponse("index.html")
 
-# 優先用環境變數；你稍後會設定 GEMINI_API_KEY/GOOGLE_API_KEY
+# 用靜態站台方式提供 index.html 與前端資源
+app.mount("/", StaticFiles(directory=".", html=True), name="site")  # 新增
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
 
 class ChatIn(BaseModel):

@@ -7,7 +7,7 @@ from google import genai
 from fastapi.staticfiles import StaticFiles   # 新增
 import os
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

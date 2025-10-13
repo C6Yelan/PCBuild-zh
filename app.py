@@ -20,9 +20,6 @@ app.add_middleware(
 # def home():
 #     return FileResponse("index.html")
 
-# 用靜態站台方式提供 index.html 與前端資源
-app.mount("/", StaticFiles(directory=".", html=True), name="site")  # 新增
-
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
 
@@ -39,3 +36,6 @@ def chat(body: ChatIn):
         contents=f"{SYSTEM_PROMPT}\n\n使用者訊息：{body.message}"
     )
     return {"reply": resp.text}
+
+# 用靜態站台方式提供 index.html 與前端資源
+app.mount("/", StaticFiles(directory=".", html=True), name="site")  # 新增

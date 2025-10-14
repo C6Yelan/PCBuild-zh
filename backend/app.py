@@ -1,4 +1,5 @@
 # backend/app.py
+from typing import List, Literal
 import os
 from ipaddress import ip_address, ip_network
 
@@ -52,19 +53,39 @@ app.add_middleware(_DocsGateMiddleware)
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
 
+# ===== 多輪對話資料結構 =====
+class Turn(BaseModel):
+    role: Literal["user", "ai"]
+    content: str
+
 class ChatIn(BaseModel):
     message: str
+    history: List[Turn] = []
 
 class ChatOut(BaseModel):
     reply: str
 
 @app.post("/api/chat", response_model=ChatOut)
 def chat(body: ChatIn):
+    # 組上下文（只取最近 N 筆，避免超長）
+    N = 8
+    def _fmt(t: Turn):
+        who = "使用者" if t.role == "user" else "AI"
+        return f"{who}：{t.content}"
+    history_txt = "\n".join(_fmt(t) for t in body.history[-N:])
+
+    prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"以下是先前對話紀錄（舊→新，最多{N}則）：\n{history_txt}\n\n"
+        f"現在的使用者訊息：{body.message}\n"
+        f"請在理解脈絡後以繁體中文回答。"
+    )
+
     resp = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=f"{SYSTEM_PROMPT}\n\n使用者訊息：{body.message}"
+        contents=prompt
     )
-    return {"reply": resp.text}
+    return {"reply": (resp.text or "").strip()}
 
 # ===== 靜態網站：僅暴露 web/ 內容 =====
 # app.py 位於 backend/，web/ 與 backend/ 同層

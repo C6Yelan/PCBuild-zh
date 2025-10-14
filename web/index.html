@@ -102,6 +102,10 @@ const sendBtn = document.getElementById('send');
 
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 
+/* === 新增：在前端保存最近 N 筆對話（純文字） === */
+const HISTORY_LIMIT = 8;
+const history = [];  // [{role:"user"|"ai", content:"..."}]
+
 function row(who, innerHTML) {
   const wrap = document.createElement('div');
   wrap.className = 'chat-row';
@@ -119,13 +123,14 @@ function row(who, innerHTML) {
 function appendMarkdown(who, md, inline=false) {
   const html = inline ? marked.parseInline(md) : marked.parse(md);
   const safe = DOMPurify.sanitize(html);
-  log.appendChild(row(who, safe));
+  const wrap = row(who, safe);
+  log.appendChild(wrap);
   log.scrollTop = log.scrollHeight;
 }
 
-/* 自動增高（上限 40vh） */
+/* 自動增高維持你原本版本 */
 function autoResize() {
-  const maxPx = Math.floor(window.innerHeight * 0.40);          // 40vh
+  const maxPx = Math.floor(window.innerHeight * 0.40);
   const minPx = parseFloat(getComputedStyle(msg).minHeight) || 52;
   msg.style.height = 'auto';
   const h = Math.min(msg.scrollHeight, maxPx);
@@ -136,7 +141,16 @@ function autoResize() {
 async function send() {
   const m = msg.value.trim();
   if (!m) return;
+
+  // UI 先顯示
   appendMarkdown('user', m, true);
+
+  // === 準備 payload：把最近 N 筆 history 一起送到後端 ===
+  const payload = {
+    message: m,
+    history: history.slice(-HISTORY_LIMIT)   // 注意：role 必須是 "user" 或 "ai"
+  };
+
   msg.value = '';
   autoResize();
   msg.focus();
@@ -146,11 +160,22 @@ async function send() {
     const r = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: m })
+      body: JSON.stringify(payload)
     });
     const data = await r.json();
-    const raw = (data && data.reply) ? String(data.reply) : '';
-    appendMarkdown('ai', raw, false);
+    const aiText = String(data?.reply ?? '');
+
+    // UI 顯示 AI
+    appendMarkdown('ai', aiText, false);
+
+    // === 成功後再把「本輪」加入 history（純文字，不要塞 HTML）===
+    history.push({ role: 'user', content: m });
+    history.push({ role: 'ai', content: aiText });
+
+    // 可選：只保留上限，避免記憶體暴增
+    if (history.length > HISTORY_LIMIT * 2) {
+      history.splice(0, history.length - HISTORY_LIMIT * 2);
+    }
   } catch (e) {
     appendMarkdown('ai', `發生錯誤：\`${String(e)}\``, false);
   } finally {
@@ -159,7 +184,6 @@ async function send() {
 }
 
 sendBtn.onclick = send;
-
 /* Enter 送出；Shift+Enter 換行 */
 msg.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -167,8 +191,6 @@ msg.addEventListener('keydown', (e) => {
     send();
   }
 });
-
-/* 內容/視窗改變時調整高度 */
 msg.addEventListener('input', autoResize);
 window.addEventListener('resize', autoResize);
 document.addEventListener('DOMContentLoaded', autoResize);

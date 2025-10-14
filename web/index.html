@@ -3,77 +3,142 @@
 <title>PCBuild-zh · Chat</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei"; max-width: 720px; margin: 40px auto; padding: 0 12px; line-height: 1.6; }
-  h1 { margin: 0 0 16px; }
-
-  /* Chat 容器 */
-  #log {
-    border: 1px solid #ddd; padding: 12px; border-radius: 8px;
-    min-height: 160px; max-height: 60vh; overflow: auto;
-    background: Canvas; color: CanvasText;
+  :root {
+    --surface: Canvas;
+    --text: CanvasText;
+    --border: color-mix(in srgb, CanvasText 12%, Canvas);
+    --msg-bg: color-mix(in srgb, CanvasText 6%, Canvas);
+    --code-bg: color-mix(in srgb, CanvasText 8%, Canvas);
+    --thead-bg: color-mix(in srgb, CanvasText 6%, Canvas);
+    --row-alt: color-mix(in srgb, CanvasText 3%, Canvas);
   }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei";
+    max-width: 980px; margin: 0 auto; padding: 20px 16px; line-height: 1.6;
+    background: var(--surface); color: var(--text);
+  }
+  h1 { font-size: 18px; margin: 0 0 12px; }
 
-  .bubble { padding: 10px 12px; border-radius: 10px; margin: 8px 0; }
-  .bubble.user { background: rgba(0, 0, 0, .05); }
-  .bubble.ai   { background: rgba(0, 128, 255, .06); }
+  /* 訊息列表（ChatGPT 風格） */
+  #log {
+    border: 1px solid var(--border); border-radius: 12px;
+    height: 68vh; overflow: auto; background: var(--surface);
+  }
+  .chat-row {
+    display: grid; grid-template-columns: 40px 1fr; gap: 12px;
+    padding: 16px; border-bottom: 1px solid var(--border);
+  }
+  .chat-row:last-child { border-bottom: 0; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 16px;
+    background: color-mix(in srgb, CanvasText 10%, Canvas);
+    user-select: none;
+  }
+  .avatar.user { background: color-mix(in srgb, CanvasText 15%, Canvas); }
+  .avatar.ai   { background: color-mix(in srgb, CanvasText 10%, Canvas); }
+  .message { background: var(--msg-bg); border-radius: 12px; padding: 12px 14px; }
 
-  /* Markdown 呈現（避免用 pre-wrap 卡表格） */
+  /* Markdown/表格/程式碼 */
   .markdown-body { white-space: normal; overflow-wrap: anywhere; }
   .markdown-body p { margin: 0.6em 0; }
-  .markdown-body code { font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; padding: .1em .3em; border-radius: 4px; background: color-mix(in srgb, CanvasText 10%, Canvas); }
-  .markdown-body pre { padding: 12px; border-radius: 8px; overflow: auto; background: color-mix(in srgb, CanvasText 8%, Canvas); }
+  .markdown-body code {
+    font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+    padding: .15em .35em; border-radius: 4px; background: color-mix(in srgb, CanvasText 10%, Canvas);
+  }
+  .markdown-body pre { padding: 12px; border-radius: 8px; overflow: auto; background: var(--code-bg); }
   .markdown-body pre code { background: transparent; padding: 0; }
-
-  /* 表格樣式（GFM） */
   .markdown-body table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.95rem; }
-  .markdown-body th, .markdown-body td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-  .markdown-body thead th { background: color-mix(in srgb, CanvasText 6%, Canvas); }
-  .markdown-body tbody tr:nth-child(odd) { background: color-mix(in srgb, CanvasText 3%, Canvas); }
+  .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+  .markdown-body thead th { background: var(--thead-bg); }
+  .markdown-body tbody tr:nth-child(odd) { background: var(--row-alt); }
 
-  /* 讓輸入列好按 */
-  input, button { font-size: 16px; padding: 8px; }
-  #msg { width: 75%; }
+  /* Composer：按鈕在輸入框外、右側；輸入框自動增高（上限 40vh） */
+  .composer-wrap { margin-top: 12px; position: sticky; bottom: 0; background: var(--surface); }
+  .composer {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end;
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+  }
+  #msg {
+    width: 100%;
+    min-height: 52px;
+    height: auto;                   /* JS 動態高度 */
+    max-height: 40vh;               /* 上限 40vh */
+    overflow-y: hidden;             /* 超過上限改 JS 設為 auto */
+    resize: none;                   /* 禁止人工拖拉 */
+    font-size: 16px; line-height: 1.5;
+    padding: 12px;
+    border: 1px solid var(--border); border-radius: 8px;
+    box-sizing: border-box;
+  }
+  #send {
+    align-self: end;                /* 底對齊 */
+    font-size: 14px; padding: 10px 14px; height: 40px;
+    border-radius: 10px; border: 1px solid var(--border);
+    background: color-mix(in srgb, CanvasText 5%, Canvas);
+    cursor: pointer;
+  }
 </style>
 
 <h1>和 AI 對話</h1>
 <div id="log"></div>
-<p>
-  <input id="msg" placeholder="輸入訊息…" />
-  <button id="send">送出</button>
-</p>
 
-<!-- Markdown 解析 ＋ XSS 安全消毒（CDN） -->
+<div class="composer-wrap">
+  <div class="composer">
+    <textarea id="msg" placeholder="輸入訊息…" aria-label="訊息輸入"></textarea>
+    <button id="send" aria-label="送出訊息">送出</button>
+  </div>
+</div>
+
+<!-- Markdown 解析＋XSS 安全消毒（CDN） -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 
 <script>
-const API = "/api/chat"; // 與同網域的 FastAPI 溝通（由 Caddy 反代）
+const API = "/api/chat";
 const log = document.getElementById('log');
 const msg = document.getElementById('msg');
 const sendBtn = document.getElementById('send');
 
-// Marked 設定：啟用 GFM（支援表格）、避免亂改 ID/mangle
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 
-function appendBubble(who, html) {
-  const div = document.createElement('div');
-  div.className = `bubble ${who} markdown-body`;
-  div.innerHTML = html; // 已先經過 DOMPurify 處理
-  log.appendChild(div);
+function row(who, innerHTML) {
+  const wrap = document.createElement('div');
+  wrap.className = 'chat-row';
+  const avatar = document.createElement('div');
+  avatar.className = `avatar ${who}`;
+  avatar.textContent = (who === 'user') ? '🧑' : '🤖';
+  const message = document.createElement('div');
+  message.className = 'message markdown-body';
+  message.innerHTML = innerHTML;
+  wrap.appendChild(avatar);
+  wrap.appendChild(message);
+  return wrap;
+}
+
+function appendMarkdown(who, md, inline=false) {
+  const html = inline ? marked.parseInline(md) : marked.parse(md);
+  const safe = DOMPurify.sanitize(html);
+  log.appendChild(row(who, safe));
   log.scrollTop = log.scrollHeight;
 }
 
-function appendTextBubble(who, text) {
-  // 使用行內 Markdown 解析，適合使用者短訊
-  const html = DOMPurify.sanitize(marked.parseInline(text));
-  appendBubble(who, html);
+/* 自動增高（上限 40vh） */
+function autoResize() {
+  const maxPx = Math.floor(window.innerHeight * 0.40);          // 40vh
+  const minPx = parseFloat(getComputedStyle(msg).minHeight) || 52;
+  msg.style.height = 'auto';
+  const h = Math.min(msg.scrollHeight, maxPx);
+  msg.style.height = Math.max(h, minPx) + 'px';
+  msg.style.overflowY = (msg.scrollHeight > maxPx) ? 'auto' : 'hidden';
 }
 
 async function send() {
   const m = msg.value.trim();
   if (!m) return;
-  appendTextBubble('user', m);
+  appendMarkdown('user', m, true);
   msg.value = '';
+  autoResize();
   msg.focus();
   sendBtn.disabled = true;
 
@@ -85,21 +150,26 @@ async function send() {
     });
     const data = await r.json();
     const raw = (data && data.reply) ? String(data.reply) : '';
-    // 這裡用完整 Markdown 解析（支援表格、標題、清單、程式碼塊…）
-    const html = DOMPurify.sanitize(marked.parse(raw));
-    appendBubble('ai', html);
+    appendMarkdown('ai', raw, false);
   } catch (e) {
-    appendBubble('ai', DOMPurify.sanitize(`<p>發生錯誤：${String(e)}</p>`));
+    appendMarkdown('ai', `發生錯誤：\`${String(e)}\``, false);
   } finally {
     sendBtn.disabled = false;
   }
 }
 
 sendBtn.onclick = send;
+
+/* Enter 送出；Shift+Enter 換行 */
 msg.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     send();
   }
 });
+
+/* 內容/視窗改變時調整高度 */
+msg.addEventListener('input', autoResize);
+window.addEventListener('resize', autoResize);
+document.addEventListener('DOMContentLoaded', autoResize);
 </script>

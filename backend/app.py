@@ -12,7 +12,7 @@ from sqlalchemy import text
 from pydantic import BaseModel
 from google import genai
 
-from db import SessionLocal
+from backend.db import SessionLocal
 
 # ===== App & CORS =====
 app = FastAPI()  # 保留 docs，但用中介層限制外網

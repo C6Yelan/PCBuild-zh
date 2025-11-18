@@ -2,17 +2,20 @@
 from typing import List, Literal
 import os
 from ipaddress import ip_address, ip_network
+from datetime import datetime
 
-from fastapi import FastAPI, Request, Response, Depends
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
-from pydantic import BaseModel
+from sqlalchemy import text, or_
+from pydantic import BaseModel, EmailStr, constr
 from google import genai
 
 from backend.db import SessionLocal
+from backend.models import User
+from backend.security import hash_password
 
 # ===== App & CORS =====
 app = FastAPI()  # 保留 docs，但用中介層限制外網
@@ -74,6 +77,20 @@ class ChatOut(BaseModel):
     reply: str
 
 
+# ===== 使用者註冊 API =====
+class RegisterIn(BaseModel):
+    email: EmailStr
+    username: constr(min_length=3, max_length=50)
+    password: constr(min_length=8, max_length=128)
+
+
+class RegisterOut(BaseModel):
+    id: int
+    email: EmailStr
+    username: str
+    created_at: datetime
+
+
 @app.post("/api/chat", response_model=ChatOut)
 def chat(body: ChatIn):
     # 組上下文（只取最近 N 筆，避免超長）
@@ -112,6 +129,46 @@ def get_db():
 def debug_db(db: Session = Depends(get_db)):
     result = db.execute(text("SELECT 1")).scalar_one()
     return {"db_ok": result == 1}
+
+@app.post("/api/auth/register", response_model=RegisterOut)
+def register(body: RegisterIn, db: Session = Depends(get_db)):
+    # 檢查 email 或 username 是否已存在
+    existing = (
+        db.query(User)
+        .filter(
+            or_(
+                User.email == body.email,
+                User.username == body.username,
+            )
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email 或使用者名稱已被註冊",
+        )
+
+    # 使用 Argon2id 雜湊密碼
+    hashed = hash_password(body.password)
+
+    user = User(
+        email=body.email,
+        username=body.username,
+        password_hash=hashed,
+        is_active=True,
+        is_admin=False,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return RegisterOut(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        created_at=user.created_at,
+    )
 
 
 # ===== 靜態網站：僅暴露 web/ 內容 =====

@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, Boolean, DateTime, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from db import engine
+from backend.db import engine
 
 
 class Base(DeclarativeBase):

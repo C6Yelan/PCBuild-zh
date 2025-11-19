@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text, or_
+from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, constr
 from google import genai
 
@@ -122,8 +122,8 @@ class RegisterOut(BaseModel):
 
 
 class LoginIn(BaseModel):
-    # 可以輸入 email 或 username 其中一種
-    email_or_username: constr(min_length=3, max_length=255)
+    # 登入只用 email + password
+    email: EmailStr
     password: constr(min_length=8, max_length=128)
 
 
@@ -150,21 +150,20 @@ def debug_db(db: Session = Depends(get_db)):
 # ===== 註冊 API =====
 @app.post("/api/auth/register", response_model=RegisterOut)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    # 檢查 email 或 username 是否已存在
-    existing = (
-        db.query(User)
-        .filter(
-            or_(
-                User.email == body.email,
-                User.username == body.username,
-            )
-        )
-        .first()
-    )
+    # 檢查 email 是否已存在
+    existing = db.query(User).filter(User.email == body.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email 或使用者名稱已被註冊",
+            detail="Email 已被註冊",
+        )
+
+    # 檢查 username 是否已存在
+    existing_username = db.query(User).filter(User.username == body.username).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="使用者名稱已被註冊",
         )
 
     # 使用 Argon2id 雜湊密碼
@@ -189,20 +188,10 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     )
 
 
-# ===== 登入 API =====
+# ===== 登入 API（只接受 email + password） =====
 @app.post("/api/auth/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    # 允許用 email 或 username 登入
-    user = (
-        db.query(User)
-        .filter(
-            or_(
-                User.email == body.email_or_username,
-                User.username == body.email_or_username,
-            )
-        )
-        .first()
-    )
+    user = db.query(User).filter(User.email == body.email).first()
 
     # 不回傳太多細節，避免暴露帳號是否存在
     if not user or not verify_password(body.password, user.password_hash):

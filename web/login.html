@@ -225,12 +225,17 @@
           }
 
           if (!resp.ok) {
-            // 前端只顯示「帳號或密碼錯誤」或「登入失敗」，不曝露後端細節
+            let msg = "登入失敗，請再試一次。";
+
             if (resp.status === 400 || resp.status === 401) {
-              errorEl.textContent = "帳號或密碼錯誤。";
-            } else {
-              errorEl.textContent = "登入失敗，請再試一次。";
+              const detail = data && data.detail;
+              // 僅當後端明確回傳「帳號或密碼錯誤」時，顯示給使用者
+              if (typeof detail === "string" && detail.includes("帳號或密碼錯誤")) {
+                msg = "帳號或密碼錯誤。";
+              }
             }
+
+            errorEl.textContent = msg;
             console.error("Login error:", resp.status, data);
             return;
           }

@@ -3,7 +3,7 @@ from typing import List, Literal
 import os
 from ipaddress import ip_address, ip_network
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,6 +135,14 @@ class LoginOut(BaseModel):
     token_type: Literal["bearer"]
 
 
+class MeOut(BaseModel):
+    id: int
+    email: EmailStr
+    username: str
+    is_admin: bool
+    created_at: datetime
+
+
 # ===== DB Session 依賴 =====
 def get_db():
     db = SessionLocal()
@@ -148,6 +156,76 @@ def get_db():
 def debug_db(db: Session = Depends(get_db)):
     result = db.execute(text("SELECT 1")).scalar_one()
     return {"db_ok": result == 1}
+
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    """
+    從 HttpOnly Cookie (pcbuild_session) 取得目前登入的使用者。
+    若 Cookie 不存在、session 無效或過期，一律回傳 401。
+    """
+    session_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not session_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登入或憑證已失效",
+        )
+
+    try:
+        session_id = UUID(session_token)
+    except ValueError:
+        # Cookie 內容不是合法 UUID，視為無效
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登入或憑證已失效",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    session = (
+        db.query(Session)
+        .filter(
+            Session.id == session_id,
+            Session.revoked == False,
+            Session.expires_at > now,
+        )
+        .first()
+    )
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登入或憑證已失效",
+        )
+
+    user = (
+        db.query(User)
+        .filter(User.id == session.user_id)
+        .first()
+    )
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未登入或憑證已失效",
+        )
+
+    return user
+
+@app.get("/api/auth/me", response_model=MeOut)
+def get_me(current_user: User = Depends(get_current_user)):
+    """
+    回傳目前登入的使用者基本資訊。
+    若未登入或 session 無效，會被 get_current_user 擋掉回 401。
+    """
+    return MeOut(
+        id=current_user.id,
+        email=current_user.email,
+        username=current_user.username,
+        is_admin=current_user.is_admin,
+        created_at=current_user.created_at,
+    )
 
 
 # ===== 註冊 API =====

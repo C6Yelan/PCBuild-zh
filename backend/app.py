@@ -19,7 +19,6 @@ from backend.models import User, Session
 from backend.security import (
     hash_password,
     verify_password,
-    create_access_token,
 )
 
 # ===== App & CORS =====
@@ -129,10 +128,6 @@ class LoginIn(BaseModel):
     email: EmailStr
     password: constr(min_length=8, max_length=128)
 
-
-class LoginOut(BaseModel):
-    access_token: str
-    token_type: Literal["bearer"]
 
 
 class MeOut(BaseModel):
@@ -270,7 +265,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
 
 # ===== 登入 API（只接受 email + password） =====
-@app.post("/api/auth/login", response_model=LoginOut)
+@app.post("/api/auth/login")
 def login(
     body: LoginIn,
     response: Response,
@@ -315,10 +310,8 @@ def login(
         samesite="Lax",
         path="/",
     )
+    return {"ok": True}
 
-    # 4. 暫時仍回傳 JWT 給前端（之後會拿掉 localStorage 再調整）
-    token = create_access_token(user_id=user.id)
-    return LoginOut(access_token=token, token_type="bearer")
 
 @app.post("/api/auth/logout", status_code=204)
 def logout(

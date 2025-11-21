@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <title>註冊 · PCBuild-zh</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; }
+      :root {
+        --surface: Canvas;
+        --text: CanvasText;
+        --border: color-mix(in srgb, CanvasText 12%, Canvas);
+        --btn-bg: color-mix(in srgb, CanvasText 5%, Canvas);
+        --btn-bg-hover: color-mix(in srgb, CanvasText 10%, Canvas);
+        --error: #d93025;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          "Noto Sans TC", "PingFang TC", "Microsoft JhengHei";
+        background: radial-gradient(
+          circle at top,
+          color-mix(in srgb, CanvasText 5%, Canvas),
+          Canvas
+        );
+        color: var(--text);
+      }
+      .container {
+        width: 100%;
+        max-width: 420px;
+        padding: 16px;
+      }
+      .card {
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        padding: 24px 20px 20px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+      }
+      .logo {
+        font-weight: 700;
+        font-size: 22px;
+        margin-bottom: 4px;
+        text-align: center;
+      }
+      .subtitle {
+        text-align: center;
+        font-size: 14px;
+        margin: 0 0 20px;
+        opacity: 0.9;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      label {
+        font-size: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      input[type="email"],
+      input[type="text"],
+      input[type="password"] {
+        padding: 10px 12px;
+        font-size: 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        box-sizing: border-box;
+      }
+      input:focus {
+        outline: 2px solid color-mix(in srgb, CanvasText 25%, Canvas);
+        outline-offset: 1px;
+      }
+      .actions-row {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 4px;
+      }
+      button {
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .btn-primary {
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--btn-bg);
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 500;
+        min-width: 90px;
+      }
+      .btn-primary:hover:enabled {
+        background: var(--btn-bg-hover);
+      }
+      .btn-primary:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .hint {
+        margin: 8px 0 0;
+        font-size: 13px;
+        text-align: center;
+      }
+      .hint a {
+        color: inherit;
+        text-decoration: underline;
+      }
+      .error {
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: var(--error);
+        min-height: 1.2em;
+        text-align: center;
+      }
+      .back-home {
+        margin-top: 12px;
+        text-align: center;
+        font-size: 13px;
+      }
+      .back-home a {
+        color: inherit;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="logo">PCBuild-zh</div>
+        <p class="subtitle">建立帳號以保存配單與後續功能</p>
+
+        <form id="register-form" novalidate>
+          <label>
+            Email
+            <input id="email" type="email" autocomplete="email" required />
+          </label>
+
+          <label>
+            使用者名稱
+            <input
+              id="username"
+              type="text"
+              autocomplete="username"
+              required
+              minlength="3"
+              maxlength="50"
+            />
+          </label>
+
+          <label>
+            密碼
+            <input
+              id="password"
+              type="password"
+              autocomplete="new-password"
+              required
+              minlength="8"
+              maxlength="128"
+            />
+          </label>
+
+          <label>
+            確認密碼
+            <input
+              id="password-confirm"
+              type="password"
+              autocomplete="new-password"
+              required
+              minlength="8"
+              maxlength="128"
+            />
+          </label>
+
+          <div class="actions-row">
+            <button type="submit" id="register-btn" class="btn-primary">
+              註冊
+            </button>
+          </div>
+
+          <p class="hint">
+            已經有帳號了？<a href="/login.html">前往登入</a>
+          </p>
+
+          <p id="error" class="error" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div class="back-home">
+        <a href="/">回到首頁</a>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("register-form");
+      const emailInput = document.getElementById("email");
+      const usernameInput = document.getElementById("username");
+      const passwordInput = document.getElementById("password");
+      const passwordConfirmInput = document.getElementById("password-confirm");
+      const registerBtn = document.getElementById("register-btn");
+      const errorEl = document.getElementById("error");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        errorEl.textContent = "";
+
+        const email = emailInput.value.trim();
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+        const passwordConfirm = passwordConfirmInput.value;
+
+        if (!email || !username || !password || !passwordConfirm) {
+          errorEl.textContent = "請完整填寫所有欄位。";
+          return;
+        }
+
+        if (password !== passwordConfirm) {
+          errorEl.textContent = "兩次輸入的密碼不一致。";
+          return;
+        }
+
+        if (password.length < 8) {
+          errorEl.textContent = "密碼長度至少需 8 個字元。";
+          return;
+        }
+
+        registerBtn.disabled = true;
+        const originalText = registerBtn.textContent;
+        registerBtn.textContent = "註冊中…";
+
+        try {
+          const resp = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              email,
+              username,
+              password,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await resp.json();
+          } catch {
+            data = null;
+          }
+
+          if (!resp.ok) {
+            let msg = "註冊失敗，請稍後再試。";
+
+            if (resp.status === 400) {
+              const detail = data && data.detail;
+              if (typeof detail === "string") {
+                if (detail.includes("Email 已被註冊")) {
+                  msg = "Email 已被註冊。";
+                } else if (detail.includes("使用者名稱已被註冊")) {
+                  msg = "使用者名稱已被註冊。";
+                }
+              }
+            }
+
+            errorEl.textContent = msg;
+            console.error("Register error:", resp.status, data);
+            return;
+          }
+
+          // 註冊成功：導向登入頁
+          alert("註冊成功，請使用剛剛的帳號登入。");
+          window.location.href = "/login.html";
+        } catch (err) {
+          console.error("Register network error:", err);
+          errorEl.textContent = "註冊失敗，請稍後再試。";
+        } finally {
+          registerBtn.disabled = false;
+          registerBtn.textContent = originalText;
+        }
+      });
+    </script>
+  </body>
+</html>

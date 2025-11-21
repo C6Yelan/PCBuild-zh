@@ -240,18 +240,6 @@
             return;
           }
 
-          const token = data && data.access_token;
-          if (!token) {
-            // 這種屬於後端邏輯問題，不給使用者看細節，只在 console 記錄
-            console.error("Login error: missing access_token in response:", data);
-            errorEl.textContent = "登入失敗，請再試一次。";
-            return;
-          }
-
-          // 目前先維持 localStorage，之後再改成 HttpOnly Cookie + 伺服器端 Session
-          localStorage.setItem("pcbuild_token", token);
-          localStorage.setItem("pcbuild_email", email);
-
           // 登入成功 → 回首頁
           window.location.href = "/";
         } catch (err) {

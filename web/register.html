@@ -131,6 +131,28 @@
         color: inherit;
         text-decoration: underline;
       }
+            /* 欄位錯誤樣式 */
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field-label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .field-error-text {
+        font-size: 12px;
+        color: var(--error);
+      }
+      .field.field-error input {
+        border-color: var(--error);
+      }
+      .field.field-error .field-label-main {
+        color: var(--error);
+      }
+
     </style>
   </head>
   <body>
@@ -140,13 +162,19 @@
         <p class="subtitle">建立帳號以保存配單與後續功能</p>
 
         <form id="register-form" novalidate>
-          <label>
-            Email
+          <label class="field" data-field="email">
+            <div class="field-label-row">
+              <span class="field-label-main">Email</span>
+              <span class="field-error-text"></span>
+            </div>
             <input id="email" type="email" autocomplete="email" required />
           </label>
 
-          <label>
-            使用者名稱
+          <label class="field" data-field="username">
+            <div class="field-label-row">
+              <span class="field-label-main">使用者名稱</span>
+              <span class="field-error-text"></span>
+            </div>
             <input
               id="username"
               type="text"
@@ -157,8 +185,11 @@
             />
           </label>
 
-          <label>
-            密碼
+          <label class="field" data-field="password">
+            <div class="field-label-row">
+              <span class="field-label-main">密碼</span>
+              <span class="field-error-text"></span>
+            </div>
             <input
               id="password"
               type="password"
@@ -169,8 +200,11 @@
             />
           </label>
 
-          <label>
-            確認密碼
+          <label class="field" data-field="password-confirm">
+            <div class="field-label-row">
+              <span class="field-label-main">確認密碼</span>
+              <span class="field-error-text"></span>
+            </div>
             <input
               id="password-confirm"
               type="password"
@@ -208,10 +242,34 @@
       const passwordConfirmInput = document.getElementById("password-confirm");
       const registerBtn = document.getElementById("register-btn");
       const errorEl = document.getElementById("error");
+      const emailField = document.querySelector('[data-field="email"]');
+      const usernameField = document.querySelector('[data-field="username"]');
+      const passwordField = document.querySelector('[data-field="password"]');
+      const passwordConfirmField = document.querySelector('[data-field="password-confirm"]');
+
+      function clearFieldErrors() {
+        [emailField, usernameField, passwordField, passwordConfirmField].forEach(
+          (field) => {
+            if (!field) return;
+            field.classList.remove("field-error");
+            const msgEl = field.querySelector(".field-error-text");
+            if (msgEl) msgEl.textContent = "";
+          }
+        );
+      }
+
+      function setFieldError(field, message) {
+        if (!field) return;
+        field.classList.add("field-error");
+        const msgEl = field.querySelector(".field-error-text");
+        if (msgEl) msgEl.textContent = message || "";
+      }
+
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorEl.textContent = "";
+        clearFieldErrors();
 
         const email = emailInput.value.trim();
         const username = usernameInput.value.trim();
@@ -219,16 +277,24 @@
         const passwordConfirm = passwordConfirmInput.value;
 
         if (!email || !username || !password || !passwordConfirm) {
+          if (!email) setFieldError(emailField, "請輸入 Email。");
+          if (!username) setFieldError(usernameField, "請輸入使用者名稱。");
+          if (!password) setFieldError(passwordField, "請輸入密碼。");
+          if (!passwordConfirm) setFieldError(passwordConfirmField, "請再次輸入密碼。");
+
           errorEl.textContent = "請完整填寫所有欄位。";
           return;
         }
 
         if (password !== passwordConfirm) {
+          setFieldError(passwordField, "兩次輸入的密碼不一致。");
+          setFieldError(passwordConfirmField, "兩次輸入的密碼不一致。");
           errorEl.textContent = "兩次輸入的密碼不一致。";
           return;
         }
 
         if (password.length < 8) {
+          setFieldError(passwordField, "密碼長度至少需 8 個字元。");
           errorEl.textContent = "密碼長度至少需 8 個字元。";
           return;
         }
@@ -264,8 +330,13 @@
               if (typeof detail === "string") {
                 if (detail.includes("Email 已被註冊")) {
                   msg = "Email 已被註冊。";
+                  setFieldError(emailField, "此 Email 已被註冊。");
                 } else if (detail.includes("使用者名稱已被註冊")) {
                   msg = "使用者名稱已被註冊。";
+                  setFieldError(
+                    usernameField,
+                    "此使用者名稱已被註冊。"
+                  );
                 }
               }
             }

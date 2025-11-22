@@ -302,13 +302,22 @@
           hasError = true;
         }
 
-        // 長度上限防護（即使被繞過 maxlength，也會在這裡擋）
+        // 長度上限（即使有人繞過 maxlength）
         if (email && email.length > 50) {
           setFieldError(emailField, "Email 最多 50 個字元。");
           hasError = true;
         }
         if (username && username.length > 50) {
           setFieldError(usernameField, "使用者名稱最多 50 個字元。");
+          hasError = true;
+        }
+
+        // Email 基本格式檢查
+        if (
+          email &&
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        ) {
+          setFieldError(emailField, "請輸入正確的 Email 格式。");
           hasError = true;
         }
 
@@ -325,7 +334,7 @@
           hasError = true;
         }
 
-        // 若有任一欄錯誤，就不要送出，並顯示總體提示
+        // 有任一錯誤 → 不送出，顯示總體提示
         if (hasError) {
           if (!errorEl.textContent) {
             errorEl.textContent = "請修正紅色標示的欄位。";
@@ -368,10 +377,7 @@
                   setFieldError(emailField, "此 Email 已被註冊。");
                 } else if (detail.includes("使用者名稱已被註冊")) {
                   msg = "使用者名稱已被註冊。";
-                  setFieldError(
-                    usernameField,
-                    "此使用者名稱已被註冊。"
-                  );
+                  setFieldError(usernameField, "此使用者名稱已被註冊。");
                 } else if (detail.includes("Email 格式不正確")) {
                   msg = "Email 格式不正確。";
                   setFieldError(emailField, "請輸入正確的 Email 格式。");
@@ -384,7 +390,6 @@
             return;
           }
 
-          // 註冊成功：導向登入頁
           alert("註冊成功，請使用剛剛的帳號登入。");
           window.location.href = "/login.html";
         } catch (err) {

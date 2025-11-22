@@ -111,8 +111,8 @@ def chat(body: ChatIn):
 
 # ===== Auth 用的 Pydantic 模型 =====
 class RegisterIn(BaseModel):
-    email: EmailStr
-    username: constr(min_length=3, max_length=50)
+    email: constr(strip_whitespace=True, min_length=3, max_length=50)
+    username: constr(strip_whitespace=True, min_length=3, max_length=50)
     password: constr(min_length=8, max_length=128)
 
 
@@ -124,10 +124,8 @@ class RegisterOut(BaseModel):
 
 
 class LoginIn(BaseModel):
-    # 登入只用 email + password
-    email: EmailStr
+    email: constr(strip_whitespace=True, min_length=3, max_length=50)
     password: constr(min_length=8, max_length=128)
-
 
 
 class MeOut(BaseModel):
@@ -226,6 +224,15 @@ def get_me(current_user: User = Depends(get_current_user)):
 # ===== 註冊 API =====
 @app.post("/api/auth/register", response_model=RegisterOut)
 def register(body: RegisterIn, db: Session = Depends(get_db)):
+    # 先檢查 Email 格式（避免 Pydantic 回 422）
+    try:
+        EmailStr(body.email)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email 格式不正確",
+        )
+    
     # 檢查 email 是否已存在
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
@@ -271,6 +278,14 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ):
+    # 先檢查 Email 格式
+    try:
+        EmailStr(body.email)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email 格式不正確",
+        )
     # 1. 驗證帳號密碼
     user = db.query(User).filter(User.email == body.email).first()
 

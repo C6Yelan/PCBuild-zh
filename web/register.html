@@ -167,7 +167,13 @@
               <span class="field-label-main">Email</span>
               <span class="field-error-text"></span>
             </div>
-            <input id="email" type="email" autocomplete="email" required />
+              <input
+                id="email"
+                type="email"
+                autocomplete="email"
+                required
+                maxlength="50"
+              />
           </label>
 
           <label class="field" data-field="username">
@@ -337,6 +343,9 @@
                     usernameField,
                     "此使用者名稱已被註冊。"
                   );
+                } else if (detail.includes("Email 格式不正確")) {
+                  msg = "Email 格式不正確。";
+                  setFieldError(emailField, "請輸入正確的 Email 格式。");
                 }
               }
             }

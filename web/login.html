@@ -257,7 +257,7 @@
         const hasError = fields.some(
           (field) => field && field.classList.contains("field-error")
         );
-        if (!hasError && errorEl.textContent === "請修正紅色標示的欄位。") {
+        if (!hasError) {
           errorEl.textContent = "";
         }
       }

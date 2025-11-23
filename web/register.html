@@ -253,6 +253,11 @@
       const passwordField = document.querySelector('[data-field="password"]');
       const passwordConfirmField = document.querySelector('[data-field="password-confirm"]');
 
+      emailInput.addEventListener("blur", validateEmailField);
+      usernameInput.addEventListener("blur", validateUsernameField);
+      passwordInput.addEventListener("blur", validatePasswordField);
+      passwordConfirmInput.addEventListener("blur", validatePasswordConfirmField);
+
       function clearFieldErrors() {
         [emailField, usernameField, passwordField, passwordConfirmField].forEach(
           (field) => {
@@ -263,6 +268,74 @@
           }
         );
       }
+
+      function clearSingleFieldError(field) {
+        if (!field) return;
+        field.classList.remove("field-error");
+        const msgEl = field.querySelector(".field-error-text");
+        if (msgEl) msgEl.textContent = "";
+      }
+
+      function validateEmailField() {
+        if (!emailField) return;
+        clearSingleFieldError(emailField);
+        const value = emailInput.value.trim();
+
+        if (!value) {
+          setFieldError(emailField, "請填寫 Email。");
+          return;
+        }
+        if (value.length > 50) {
+          setFieldError(emailField, "Email 最多 50 個字元。");
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          setFieldError(emailField, "請輸入正確的 Email 格式。");
+        }
+      }
+
+      function validateUsernameField() {
+        if (!usernameField) return;
+        clearSingleFieldError(usernameField);
+        const value = usernameInput.value.trim();
+
+        if (!value) {
+          setFieldError(usernameField, "請填寫使用者名稱。");
+          return;
+        }
+        if (value.length > 50) {
+          setFieldError(usernameField, "使用者名稱最多 50 個字元。");
+        }
+      }
+
+      function validatePasswordField() {
+        if (!passwordField) return;
+        clearSingleFieldError(passwordField);
+        const value = passwordInput.value;
+
+        if (!value) {
+          setFieldError(passwordField, "請填寫密碼。");
+          return;
+        }
+        if (value.length < 8) {
+          setFieldError(passwordField, "密碼長度至少需 8 個字元。");
+        }
+      }
+
+      function validatePasswordConfirmField() {
+        if (!passwordConfirmField) return;
+        clearSingleFieldError(passwordConfirmField);
+        const value = passwordConfirmInput.value;
+
+        if (!value) {
+          setFieldError(passwordConfirmField, "請再次輸入密碼。");
+          return;
+        }
+        if (passwordInput.value && value !== passwordInput.value) {
+          setFieldError(passwordConfirmField, "兩次輸入的密碼不一致。");
+        }
+      }
+
 
       function setFieldError(field, message) {
         if (!field) return;
@@ -275,66 +348,25 @@
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorEl.textContent = "";
-        clearFieldErrors();
 
-        const email = emailInput.value.trim();
-        const username = usernameInput.value.trim();
-        const password = passwordInput.value;
-        const passwordConfirm = passwordConfirmInput.value;
+        // 1. 先用「欄位自己的驗證函式」刷新一次所有錯誤
+        //    規則只寫在 validateXxxField 裡，避免重複判斷
+        validateEmailField();
+        validateUsernameField();
+        validatePasswordField();
+        validatePasswordConfirmField();
 
-        let hasError = false;
+        const fields = [
+          emailField,
+          usernameField,
+          passwordField,
+          passwordConfirmField,
+        ];
+        const hasError = fields.some(
+          (field) => field && field.classList.contains("field-error")
+        );
 
-        // 必填檢查
-        if (!email) {
-          setFieldError(emailField, "請填寫 Email。");
-          hasError = true;
-        }
-        if (!username) {
-          setFieldError(usernameField, "請填寫使用者名稱。");
-          hasError = true;
-        }
-        if (!password) {
-          setFieldError(passwordField, "請填寫密碼。");
-          hasError = true;
-        }
-        if (!passwordConfirm) {
-          setFieldError(passwordConfirmField, "請再次輸入密碼。");
-          hasError = true;
-        }
-
-        // 長度上限（即使有人繞過 maxlength）
-        if (email && email.length > 50) {
-          setFieldError(emailField, "Email 最多 50 個字元。");
-          hasError = true;
-        }
-        if (username && username.length > 50) {
-          setFieldError(usernameField, "使用者名稱最多 50 個字元。");
-          hasError = true;
-        }
-
-        // Email 基本格式檢查
-        if (
-          email &&
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-        ) {
-          setFieldError(emailField, "請輸入正確的 Email 格式。");
-          hasError = true;
-        }
-
-        // 密碼長度下限
-        if (password && password.length < 8) {
-          setFieldError(passwordField, "密碼長度至少需 8 個字元。");
-          hasError = true;
-        }
-
-        // 兩次密碼是否一致
-        if (password && passwordConfirm && password !== passwordConfirm) {
-          setFieldError(passwordField, "兩次輸入的密碼不一致。");
-          setFieldError(passwordConfirmField, "兩次輸入的密碼不一致。");
-          hasError = true;
-        }
-
-        // 有任一錯誤 → 不送出，顯示總體提示
+        // 若目前仍有任何欄位錯誤，就阻止送出
         if (hasError) {
           if (!errorEl.textContent) {
             errorEl.textContent = "請修正紅色標示的欄位。";
@@ -342,7 +374,11 @@
           return;
         }
 
-        // 沒有前端錯誤才送到後端
+        // 2. 沒有前端錯誤才送到後端
+        const email = emailInput.value.trim();
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+
         registerBtn.disabled = true;
         const originalText = registerBtn.textContent;
         registerBtn.textContent = "註冊中…";
@@ -369,19 +405,43 @@
           if (!resp.ok) {
             let msg = "註冊失敗，請稍後再試。";
 
-            if (resp.status === 400) {
-              const detail = data && data.detail;
-              if (typeof detail === "string") {
-                if (detail.includes("Email 已被註冊")) {
-                  msg = "Email 已被註冊。";
-                  setFieldError(emailField, "此 Email 已被註冊。");
-                } else if (detail.includes("使用者名稱已被註冊")) {
-                  msg = "使用者名稱已被註冊。";
-                  setFieldError(usernameField, "此使用者名稱已被註冊。");
-                } else if (detail.includes("Email 格式不正確")) {
-                  msg = "Email 格式不正確。";
-                  setFieldError(emailField, "請輸入正確的 Email 格式。");
+            if (
+              resp.status === 400 &&
+              data &&
+              data.detail &&
+              typeof data.detail === "object"
+            ) {
+              const errors = data.detail.errors || {};
+              const globalMessages = [];
+
+              Object.entries(errors).forEach(([field, rawMsg]) => {
+                const fieldMsg = String(rawMsg || "");
+                switch (field) {
+                  case "email":
+                    setFieldError(emailField, fieldMsg);
+                    break;
+                  case "username":
+                    setFieldError(usernameField, fieldMsg);
+                    break;
+                  case "password":
+                    setFieldError(passwordField, fieldMsg);
+                    break;
+                  case "password_confirm":
+                    setFieldError(passwordConfirmField, fieldMsg);
+                    break;
+                  case "_global":
+                    globalMessages.push(fieldMsg);
+                    break;
+                  default:
+                    globalMessages.push(fieldMsg);
+                    break;
                 }
+              });
+
+              if (globalMessages.length > 0) {
+                msg = globalMessages.join(" ");
+              } else {
+                msg = "請修正紅色標示的欄位。";
               }
             }
 
@@ -389,6 +449,8 @@
             console.error("Register error:", resp.status, data);
             return;
           }
+
+
 
           alert("註冊成功，請使用剛剛的帳號登入。");
           window.location.href = "/login.html";

@@ -231,23 +231,22 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email 格式不正確",
+            detail={"errors": {"email": "Email 格式不正確。"}},
         )
     
-    # 檢查 email 是否已存在
-    existing = db.query(User).filter(User.email == body.email).first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email 已被註冊",
-        )
+    # 檢查 Email / 使用者名稱是否已存在（一次收集所有欄位錯誤）
+    errors: dict[str, str] = {}
 
-    # 檢查 username 是否已存在
-    existing_username = db.query(User).filter(User.username == body.username).first()
-    if existing_username:
+    if db.query(User).filter(User.email == body.email).first():
+        errors["email"] = "Email 已被註冊。"
+
+    if db.query(User).filter(User.username == body.username).first():
+        errors["username"] = "使用者名稱已被註冊。"
+
+    if errors:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="使用者名稱已被註冊",
+            detail={"errors": errors},
         )
 
     # 使用 Argon2id 雜湊密碼

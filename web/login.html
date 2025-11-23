@@ -137,6 +137,27 @@
         color: inherit;
         text-decoration: underline;
       }
+            /* 欄位錯誤樣式（與註冊頁一致） */
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field-label-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      .field-error-text {
+        font-size: 12px;
+        color: var(--error);
+      }
+      .field.field-error input {
+        border-color: var(--error);
+      }
+      .field.field-error .field-label-main {
+        color: var(--error);
+      }
     </style>
   </head>
   <body>
@@ -146,8 +167,11 @@
         <p class="subtitle">登入以保存配單與後續功能</p>
 
         <form id="login-form" novalidate>
-          <label>
-            Email
+          <label class="field" data-field="email">
+            <div class="field-label-row">
+              <span class="field-label-main">Email</span>
+              <span class="field-error-text"></span>
+            </div>
             <input
               id="email"
               type="email"
@@ -157,9 +181,19 @@
             />
           </label>
 
-          <label>
-            密碼
-            <input id="password" type="password" autocomplete="current-password" required minlength="8" />
+          <label class="field" data-field="password">
+            <div class="field-label-row">
+              <span class="field-label-main">密碼</span>
+              <span class="field-error-text"></span>
+            </div>
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              minlength="8"
+              maxlength="128"
+            />
           </label>
 
           <div class="actions-row">
@@ -191,23 +225,107 @@
       const loginBtn = document.getElementById("login-btn");
       const errorEl = document.getElementById("error");
       const forgotBtn = document.getElementById("forgot-btn");
+            const emailField = document.querySelector('[data-field="email"]');
+      const passwordField = document.querySelector('[data-field="password"]');
+
+      function clearFieldErrors() {
+        [emailField, passwordField].forEach((field) => {
+          if (!field) return;
+          field.classList.remove("field-error");
+          const msgEl = field.querySelector(".field-error-text");
+          if (msgEl) msgEl.textContent = "";
+        });
+      }
+
+      function clearSingleFieldError(field) {
+        if (!field) return;
+        field.classList.remove("field-error");
+        const msgEl = field.querySelector(".field-error-text");
+        if (msgEl) msgEl.textContent = "";
+        refreshGlobalErrorFromFields();
+      }
+
+      function setFieldError(field, message) {
+        if (!field) return;
+        field.classList.add("field-error");
+        const msgEl = field.querySelector(".field-error-text");
+        if (msgEl) msgEl.textContent = message || "";
+      }
+
+      function refreshGlobalErrorFromFields() {
+        const fields = [emailField, passwordField];
+        const hasError = fields.some(
+          (field) => field && field.classList.contains("field-error")
+        );
+        if (!hasError && errorEl.textContent === "請修正紅色標示的欄位。") {
+          errorEl.textContent = "";
+        }
+      }
+
+      function validateEmailField() {
+        if (!emailField) return;
+        clearSingleFieldError(emailField);
+        const value = emailInput.value.trim();
+
+        if (!value) {
+          setFieldError(emailField, "請輸入 Email。");
+          return;
+        }
+        if (value.length > 50) {
+          setFieldError(emailField, "Email 最多 50 個字元。");
+          return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          setFieldError(emailField, "請輸入正確的 Email 格式。");
+        }
+      }
+
+      function validatePasswordField() {
+        if (!passwordField) return;
+        clearSingleFieldError(passwordField);
+        const value = passwordInput.value;
+
+        if (!value) {
+          setFieldError(passwordField, "請輸入密碼。");
+          return;
+        }
+        if (value.length < 8) {
+          setFieldError(passwordField, "密碼長度至少需 8 個字元。");
+        }
+      }
+
+      // blur 時檢查，不在每次 keypress 檢查
+      emailInput.addEventListener("blur", validateEmailField);
+      passwordInput.addEventListener("blur", validatePasswordField)
 
       // 忘記密碼：目前只做提示，之後再實作真正的流程
       forgotBtn.addEventListener("click", () => {
         alert("忘記密碼功能尚未實作，之後會提供重設密碼流程。");
       });
 
-      form.addEventListener("submit", async (e) => {
+       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorEl.textContent = "";
+        clearFieldErrors();
+
+        // 先用欄位驗證函式算一遍錯誤，不再重複寫 if 判斷
+        validateEmailField();
+        validatePasswordField();
+
+        const fields = [emailField, passwordField];
+        const hasError = fields.some(
+          (field) => field && field.classList.contains("field-error")
+        );
+
+        if (hasError) {
+          if (!errorEl.textContent) {
+            errorEl.textContent = "請修正紅色標示的欄位。";
+          }
+          return;
+        }
 
         const email = emailInput.value.trim();
         const password = passwordInput.value;
-
-        if (!email || !password) {
-          errorEl.textContent = "請輸入 Email 與密碼。";
-          return;
-        }
 
         loginBtn.disabled = true;
         const originalText = loginBtn.textContent;
@@ -217,6 +335,7 @@
           const resp = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
             body: JSON.stringify({
               email,
               password,
@@ -231,14 +350,13 @@
           }
 
           if (!resp.ok) {
-            let msg = "登入失敗，請再試一次。";
+            let msg = "登入失敗，請稍後再試。";
 
+            // 依你的需求：輸入無效帳號或密碼，一律顯示「帳號或密碼錯誤」
             if (resp.status === 400 || resp.status === 401) {
-              const detail = data && data.detail;
-              // 僅當後端明確回傳「帳號或密碼錯誤」時，顯示給使用者
-              if (typeof detail === "string" && detail.includes("帳號或密碼錯誤")) {
-                msg = "帳號或密碼錯誤。";
-              }
+              msg = "帳號或密碼錯誤。";
+              setFieldError(emailField, "帳號或密碼錯誤。");
+              setFieldError(passwordField, "帳號或密碼錯誤。");
             }
 
             errorEl.textContent = msg;
@@ -246,11 +364,11 @@
             return;
           }
 
-          // 登入成功 → 回首頁
+          // 登入成功：session cookie 已設定，導回首頁
           window.location.href = "/";
         } catch (err) {
           console.error("Login network error:", err);
-          errorEl.textContent = "登入失敗，請再試一次。";
+          errorEl.textContent = "登入失敗，請稍後再試。";
         } finally {
           loginBtn.disabled = false;
           loginBtn.textContent = originalText;

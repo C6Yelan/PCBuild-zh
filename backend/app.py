@@ -1,5 +1,4 @@
 # backend/app.py
-from typing import List, Literal
 import os
 from ipaddress import ip_address, ip_network
 from datetime import datetime, timedelta, timezone
@@ -10,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from pydantic import BaseModel, EmailStr, constr, TypeAdapter
-from google import genai
+
+from api.chat import router as chat_router
+from api.debug import router as debug_router
 
 from backend.db import SessionLocal
 from backend.models import User, Session
@@ -61,53 +61,12 @@ class _DocsGateMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(_DocsGateMiddleware)
+app.include_router(chat_router)
+app.include_router(debug_router)
 
-# ===== AI 客戶端 =====
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 SESSION_COOKIE_NAME = "pcbuild_session"
 SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))  # 例如 120 分鐘
-
-
-# ===== 多輪對話資料結構 =====
-class Turn(BaseModel):
-    role: Literal["user", "ai"]
-    content: str
-
-
-class ChatIn(BaseModel):
-    message: str
-    history: List[Turn] = []
-
-
-class ChatOut(BaseModel):
-    reply: str
-
-
-@app.post("/api/chat", response_model=ChatOut)
-def chat(body: ChatIn):
-    # 組上下文（只取最近 N 筆，避免超長）
-    N = 8
-
-    def _fmt(t: Turn):
-        who = "使用者" if t.role == "user" else "AI"
-        return f"{who}：{t.content}"
-
-    history_txt = "\n".join(_fmt(t) for t in body.history[-N:])
-
-    prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"以下是先前對話紀錄（舊→新，最多{N}則）：\n{history_txt}\n\n"
-        f"現在的使用者訊息：{body.message}\n"
-        f"請在理解脈絡後以繁體中文回答。"
-    )
-
-    resp = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    return {"reply": (resp.text or "").strip()}
 
 
 # ===== Auth 用的 Pydantic 模型 =====
@@ -145,11 +104,6 @@ def get_db():
     finally:
         db.close()
 
-
-@app.get("/debug/db")
-def debug_db(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT 1")).scalar_one()
-    return {"db_ok": result == 1}
 
 def get_current_user(
     request: Request,

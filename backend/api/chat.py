@@ -1,12 +1,11 @@
 # backend/api/chat.py
-from typing import List, Literal
 import os
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 from google import genai
 
-# 這個 router 會掛在 /api 底下
+from backend.schemas.chat import ChatIn, ChatOut
+
 router = APIRouter(prefix="/api", tags=["chat"])
 
 # ===== Gemini 用戶端與系統提示 =====
@@ -16,22 +15,6 @@ client = genai.Client(
 )
 
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
-
-
-# ===== 多輪對話資料結構 =====
-
-class Turn(BaseModel):
-    role: Literal["user", "ai"]
-    content: str
-
-
-class ChatIn(BaseModel):
-    message: str
-    history: List[Turn] = []
-
-
-class ChatOut(BaseModel):
-    reply: str
 
 
 # ===== /api/chat 端點 =====
@@ -44,7 +27,7 @@ def chat(body: ChatIn) -> ChatOut:
     # 只保留最近 N 筆歷史，避免 prompt 過長
     N = 8
 
-    def _fmt(t: Turn) -> str:
+    def _fmt(t) -> str:
         who = "使用者" if t.role == "user" else "AI"
         return f"{who}：{t.content}"
 

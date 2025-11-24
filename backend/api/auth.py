@@ -5,10 +5,11 @@ from uuid import uuid4, UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session as OrmSession
-from pydantic import BaseModel, EmailStr, constr, TypeAdapter
+from pydantic import EmailStr, TypeAdapter
 
 from backend.api.deps import get_db
 from backend.models import User, Session as SessionModel
+from backend.schemas.auth import RegisterIn, RegisterOut, LoginIn, MeOut
 from backend.security import hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -16,34 +17,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 SESSION_COOKIE_NAME = "pcbuild_session"
 SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))
-
-
-# ===== Pydantic 模型 =====
-
-class RegisterIn(BaseModel):
-    email: constr(strip_whitespace=True, min_length=3, max_length=50)
-    username: constr(strip_whitespace=True, min_length=3, max_length=50)
-    password: constr(min_length=8, max_length=128)
-
-
-class RegisterOut(BaseModel):
-    id: int
-    email: EmailStr
-    username: str
-    created_at: datetime
-
-
-class LoginIn(BaseModel):
-    email: constr(strip_whitespace=True, min_length=3, max_length=50)
-    password: constr(min_length=8, max_length=128)
-
-
-class MeOut(BaseModel):
-    id: int
-    email: EmailStr
-    username: str
-    is_admin: bool
-    created_at: datetime
 
 
 # ===== 共用錯誤拋出工具 =====
@@ -186,7 +159,7 @@ def login(
     if not user.is_active:
         _raise_400({"account": "帳號已停用，請聯絡管理者。"})
 
-    # 3. 建立新的 session 紀錄（使用 ORM，不寫 raw SQL）
+    # 3. 建立新的 session 紀錄（使用 ORM）
     now = datetime.now(timezone.utc)
     ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
     expires_at = now + ttl

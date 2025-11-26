@@ -5,3 +5,4 @@ SQLAlchemy>=2.0
 psycopg2-binary>=2.9
 argon2-cffi>=23.1          # Argon2id 密碼雜湊
 email-validator>=2.1
+resend

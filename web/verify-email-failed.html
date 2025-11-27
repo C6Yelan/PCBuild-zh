@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <title>驗證連結失效 · PCBuild-zh</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      :root {
+        --surface: Canvas;
+        --text: CanvasText;
+        --border: color-mix(in srgb, CanvasText 12%, Canvas);
+        --muted: color-mix(in srgb, CanvasText 50%, Canvas);
+        --danger: #ef4444;
+        --btn-bg: color-mix(in srgb, CanvasText 5%, Canvas);
+        --btn-bg-hover: color-mix(in srgb, CanvasText 10%, Canvas);
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          "Noto Sans TC", "PingFang TC", "Microsoft JhengHei";
+        background: radial-gradient(
+          circle at top,
+          color-mix(in srgb, CanvasText 5%, Canvas),
+          Canvas
+        );
+        color: var(--text);
+      }
+      .container {
+        width: 100%;
+        max-width: 420px;
+        padding: 16px;
+      }
+      .card {
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        padding: 24px 20px 20px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+      }
+      .logo {
+        font-weight: 700;
+        font-size: 22px;
+        margin-bottom: 4px;
+        text-align: center;
+      }
+      .title {
+        text-align: center;
+        font-size: 18px;
+        margin: 8px 0 12px;
+      }
+      .title span {
+        color: var(--danger);
+        font-weight: 700;
+      }
+      .content {
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 16px;
+      }
+      .hint {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      .btn {
+        font-family: inherit;
+        cursor: pointer;
+        padding: 9px 18px;
+        border-radius: 999px;
+        font-size: 14px;
+        border: 1px solid var(--border);
+        background: var(--btn-bg);
+        color: var(--text);
+        text-decoration: none;
+        text-align: center;
+        min-width: 160px;
+      }
+      .btn:hover {
+        background: var(--btn-bg-hover);
+      }
+      .link {
+        font-size: 13px;
+        color: inherit;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="logo">PCBuild-zh</div>
+        <div class="title">
+          <span>驗證連結已失效</span>
+        </div>
+
+        <div class="content">
+          這個驗證連結已經失效，可能是因為：
+          <ul style="margin: 8px 0 8px 20px; padding: 0;">
+            <li>連結已經被使用過一次。</li>
+            <li>驗證連結已經過期。</li>
+            <li>連結不完整或被修改。</li>
+          </ul>
+        </div>
+
+        <p class="hint">
+          如果您尚未成功啟用帳號，可以回到登入或註冊頁面，重新登入或註冊後，再次寄送新的驗證信。
+        </p>
+
+        <div class="actions">
+          <a href="/login" class="btn">前往登入</a>
+          <a href="/register" class="link">還沒有帳號？前往註冊</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

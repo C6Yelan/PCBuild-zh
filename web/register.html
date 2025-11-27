@@ -270,7 +270,6 @@
         }
       }
 
-
       emailInput.addEventListener("blur", validateEmailField);
       usernameInput.addEventListener("blur", validateUsernameField);
       passwordInput.addEventListener("blur", validatePasswordField);
@@ -357,7 +356,6 @@
         }
       }
 
-
       function setFieldError(field, message) {
         if (!field) return;
         field.classList.add("field-error");
@@ -365,13 +363,11 @@
         if (msgEl) msgEl.textContent = message || "";
       }
 
-
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         errorEl.textContent = "";
 
-        // 1. 先用「欄位自己的驗證函式」刷新一次所有錯誤
-        //    規則只寫在 validateXxxField 裡，避免重複判斷
+        // 1. 先用欄位自己的驗證函式刷新一次所有錯誤
         validateEmailField();
         validateUsernameField();
         validatePasswordField();
@@ -471,10 +467,9 @@
             return;
           }
 
-
-
-          alert("註冊成功，請使用剛剛的帳號登入。");
-          window.location.href = "/login.html";
+          // 3. 註冊成功：後端已建立帳號、寄出驗證信並寫入 HttpOnly Cookie
+          //    前端只需導向「請驗證電子郵件」說明頁，不在網址帶出任何 Email 或 token
+          window.location.href = "/verify-email-pending";
         } catch (err) {
           console.error("Register network error:", err);
           errorEl.textContent = "註冊失敗，請稍後再試。";

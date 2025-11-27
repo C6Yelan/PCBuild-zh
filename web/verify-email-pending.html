@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <title>請驗證電子郵件 · PCBuild-zh</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      :root {
+        --surface: Canvas;
+        --text: CanvasText;
+        --border: color-mix(in srgb, CanvasText 12%, Canvas);
+        --btn-bg: color-mix(in srgb, CanvasText 5%, Canvas);
+        --btn-bg-hover: color-mix(in srgb, CanvasText 10%, Canvas);
+        --muted: color-mix(in srgb, CanvasText 45%, Canvas);
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          "Noto Sans TC", "PingFang TC", "Microsoft JhengHei";
+        background: radial-gradient(
+          circle at top,
+          color-mix(in srgb, CanvasText 5%, Canvas),
+          Canvas
+        );
+        color: var(--text);
+      }
+      .container {
+        width: 100%;
+        max-width: 420px;
+        padding: 16px;
+      }
+      .card {
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        padding: 24px 20px 20px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+      }
+      .logo {
+        font-weight: 700;
+        font-size: 22px;
+        margin-bottom: 4px;
+        text-align: center;
+      }
+      .subtitle {
+        text-align: center;
+        font-size: 14px;
+        margin: 0 0 20px;
+        opacity: 0.9;
+      }
+      .content {
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 20px;
+      }
+      .hint {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .actions-row {
+        display: flex;
+        justify-content: center;
+        margin-top: 8px;
+      }
+      button {
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .btn-primary {
+        padding: 10px 18px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--btn-bg);
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 500;
+        min-width: 160px;
+        text-align: center;
+      }
+      .btn-primary:hover:enabled {
+        background: var(--btn-bg-hover);
+      }
+      .btn-primary:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .back-home {
+        margin-top: 12px;
+        text-align: center;
+        font-size: 13px;
+      }
+      .back-home a {
+        color: inherit;
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="logo">PCBuild-zh</div>
+        <p class="subtitle">請前往電子郵件收件匣完成驗證</p>
+
+        <div id="message" class="content">
+          我們已將驗證信寄送到您註冊時填寫的電子郵件信箱。請在 24 小時內開啟信件，並點擊信中的「完成帳號驗證」按鈕，以啟用您的
+          PCBuild 帳號。
+        </div>
+
+        <p class="hint" id="hint-text">
+          如果在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。
+        </p>
+
+        <div class="actions-row">
+          <button id="resend-button" type="button" class="btn-primary">
+            重新寄送驗證信
+          </button>
+        </div>
+      </div>
+
+      <div class="back-home">
+        已完成驗證？<a href="/">回到首頁</a>
+      </div>
+    </div>
+
+    <script>
+      const RESEND_COOLDOWN_SECONDS = 60;
+
+      const messageEl = document.getElementById("message");
+      const resendButton = document.getElementById("resend-button");
+      const hintText = document.getElementById("hint-text");
+
+      let email = "";
+      let remaining = 0;
+      let timerId = null;
+
+      function updateButton() {
+        if (!email) {
+          // 沒有取得 email（例如尚未登入），按鈕保持停用
+          resendButton.disabled = true;
+          resendButton.textContent = "重新寄送驗證信";
+          return;
+        }
+
+        if (remaining > 0) {
+          resendButton.disabled = true;
+          resendButton.textContent = `重新寄送驗證信（${remaining}）`;
+        } else {
+          resendButton.disabled = false;
+          resendButton.textContent = "重新寄送驗證信";
+        }
+      }
+
+      function startCooldown() {
+        remaining = RESEND_COOLDOWN_SECONDS;
+        updateButton();
+
+        if (timerId !== null) {
+          clearInterval(timerId);
+        }
+
+        timerId = setInterval(() => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            remaining = 0;
+            clearInterval(timerId);
+            timerId = null;
+          }
+          updateButton();
+        }, 1000);
+      }
+
+      // 從後端（已經有 HttpOnly Cookie）取得目前登入的使用者資訊
+      async function loadCurrentUser() {
+        try {
+          const resp = await fetch("/api/auth/me", {
+            method: "GET",
+            credentials: "same-origin",
+          });
+
+          if (!resp.ok) {
+            // 例如 401：沒有有效 session，提示使用者需要重新註冊 / 登入
+            messageEl.textContent =
+              "目前尚未登入，無法重新寄送驗證信。請重新完成註冊流程，或登入後再試。";
+            hintText.textContent =
+              "如果您已完成驗證，請回到首頁重新整理頁面。";
+            email = "";
+            updateButton();
+            return;
+          }
+
+          const data = await resp.json();
+          email = data.email || "";
+
+          if (email) {
+            messageEl.textContent =
+              `我們已將驗證信寄送到 ${email}。` +
+              "請在 24 小時內開啟信件，並點擊信中的「完成帳號驗證」按鈕，以啟用您的 PCBuild 帳號。";
+          } else {
+            messageEl.textContent =
+              "我們已將驗證信寄送到您註冊時填寫的電子郵件信箱。";
+          }
+        } catch (err) {
+          console.error("loadCurrentUser failed:", err);
+          messageEl.textContent =
+            "目前無法取得驗證資訊，請稍後再試。";
+          email = "";
+        } finally {
+          updateButton();
+        }
+      }
+
+      resendButton.addEventListener("click", async () => {
+        if (!email) {
+          return;
+        }
+
+        // 先啟動前端冷卻，避免連點
+        startCooldown();
+
+        try {
+          await fetch("/api/auth/resend-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ email }),
+          });
+          // 依需求：不在前端顯示「寄送成功 / 失敗」，只在背景安靜處理
+        } catch (err) {
+          console.error("resend verification failed:", err);
+        }
+      });
+
+      // 初始化：從後端讀取使用者資訊
+      loadCurrentUser();
+    </script>
+  </body>
+</html>

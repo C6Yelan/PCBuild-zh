@@ -104,14 +104,19 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeOut:
 # ===== 註冊 =====
 
 @router.post("/register", response_model=RegisterOut)
-def register(body: RegisterIn, request: Request, db: OrmSession = Depends(get_db)) -> RegisterOut:
-    # Email 格式檢查（避免 Pydantic 回 422）
+def register(
+    body: RegisterIn,
+    request: Request,
+    response: Response,
+    db: OrmSession = Depends(get_db),
+) -> RegisterOut:
+    # 1. 檢查 Email 格式（避免 Pydantic 回 422）
     try:
         EMAIL_ADAPTER.validate_python(body.email)
     except Exception:
         _raise_400({"email": "Email 格式不正確。"})
 
-    # 檢查 Email / 使用者名稱是否已存在（一次收集所有欄位錯誤）
+    # 2. 檢查 Email / 使用者名稱是否已存在（一次收集所有欄位錯誤）
     errors: dict[str, str] = {}
 
     if db.query(User).filter(User.email == body.email).first():
@@ -123,36 +128,57 @@ def register(body: RegisterIn, request: Request, db: OrmSession = Depends(get_db
     if errors:
         _raise_400(errors)
 
-    # 建立使用者
+    # 3. 建立使用者（預設為未啟用，待 Email 驗證後啟用）
     hashed = hash_password(body.password)
     user = User(
         email=body.email,
         username=body.username,
         password_hash=hashed,
-        is_active=True,
+        is_active=False,  # 註冊完成但尚未通過信箱驗證
         is_admin=False,
     )
-    # 確保新註冊的使用者預設為未啟用（若你希望強制經過 email 驗證）
-    # 若資料庫預設 is_active = TRUE，這裡可以覆蓋為 False
-    user.is_active = False
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    # 寄出註冊驗證信（使用 url_for 產生完整驗證網址）
+    # 4. 建立 session（與 /login 相同的安全設定）
+    now = datetime.now(timezone.utc)
+    ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
+    expires_at = now + ttl
+
+    session = SessionModel(
+        id=uuid4(),
+        user_id=user.id,
+        expires_at=expires_at,
+    )
+    db.add(session)
+    db.commit()
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=str(session.id),
+        max_age=int(ttl.total_seconds()),
+        httponly=True,   # JS 讀不到，降低 XSS 風險
+        secure=True,     # 僅在 HTTPS 下傳遞
+        samesite="Lax",  # 降低 CSRF 風險
+        path="/",
+    )
+
+    # 5. 寄出註冊驗證信（使用 url_for 產生驗證連結）
     send_signup_verification_for_user(
         db=db,
         user=user,
         request=request,
     )
 
-
+    # 6. 回傳基本資訊（前端只拿來判斷成功與否）
     return RegisterOut(
         id=user.id,
         email=user.email,
         username=user.username,
         created_at=user.created_at,
     )
+
 
 
 # ===== Email Verification =====
@@ -174,10 +200,9 @@ def verify_email(
             public_token=token,
         )
     except InvalidOrExpiredTokenError:
-        # 失敗仍維持 400 JSON 回應，避免洩漏細節
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="驗證連結無效或已過期。",
+        return RedirectResponse(
+            url="/verify-email-failed",
+            status_code=status.HTTP_302_FOUND,
         )
 
     # === 建立新的 session（沿用 login 的邏輯） ===
@@ -232,7 +257,7 @@ def resend_verification(
         # 過於頻繁，回傳 429 並提示
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"errors": {"email": "驗證信寄送過於頻繁，請稍後再試。"}},
+            detail={"errors": {"email": "驗證信寄送太頻繁，請在 1 分鐘後再試。"}},
         )
 
     # 3. 一律回傳成功（不暴露帳號是否存在或是否已驗證）
@@ -244,6 +269,7 @@ def resend_verification(
 @router.post("/login")
 def login(
     body: LoginIn,
+    request: Request,          # ← 新增：需要 Request 來組驗證網址
     response: Response,
     db: OrmSession = Depends(get_db),
 ):
@@ -258,8 +284,24 @@ def login(
     if not user or not verify_password(body.password, user.password_hash):
         _raise_400({"credentials": "帳號或密碼錯誤。"})
 
-    # 2-1. 尚未完成 Email 驗證的帳號，一律拒絕登入
+    # 2-1. 帳號存在但尚未完成 Email 驗證：
+    #      先嘗試根據最近一筆 signup token 做 1 分鐘冷卻的重寄信，
+    #      被 rate limit 則靜默忽略，最後一律回同一個錯誤訊息。
     if not user.is_active:
+        try:
+            # 內部會：
+            # - 用 user.id 查出最新一筆 purpose="signup" 的 token
+            # - 若 token 建立時間超過 1 分鐘，就建立新 token 並寄驗證信
+            # - 若不到 1 分鐘，丟出 VerificationEmailRateLimitedError
+            resend_signup_verification_for_email(
+                db=db,
+                email=user.email,
+                request=request,
+            )
+        except VerificationEmailRateLimitedError:
+            # 冷卻中：這裡不再往外丟錯，只是不重寄信
+            pass
+
         _raise_400({"email": "Email 尚未驗證，請先完成信箱驗證。"})
 
     # 3. 建立新的 session 紀錄（使用 ORM）
@@ -286,6 +328,7 @@ def login(
         path="/",
     )
     return {"ok": True}
+
 
 
 # ===== 登出 =====

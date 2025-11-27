@@ -27,7 +27,7 @@ DEFAULT_LIFETIME_HOURS: dict[VerificationPurpose, int] = {
 }
 
 # 重新寄送驗證信的最小間隔（分鐘）
-RESEND_MIN_INTERVAL_MINUTES = 10
+RESEND_MIN_INTERVAL_MINUTES = 1
 
 
 class VerificationEmailRateLimitedError(Exception):
@@ -336,7 +336,7 @@ def resend_signup_verification_for_email(
         now = _utcnow()
         if latest.created_at + timedelta(minutes=min_interval_minutes) > now:
             raise VerificationEmailRateLimitedError(
-                "驗證信寄送過於頻繁，請稍後再試。"
+                "驗證信寄送太頻繁，請在 1 分鐘後再試。"
             )
 
     # 3) 寄出新的驗證信（內部會建立新的 token）

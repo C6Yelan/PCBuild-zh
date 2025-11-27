@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as OrmSession
 from pydantic import EmailStr, TypeAdapter
 
@@ -161,8 +162,9 @@ def verify_email(
     """
     註冊 email 驗證入口。
 
-    - 由 email 連結中的 token 帶入 path
-    - 驗證成功後啟用使用者帳號
+    - 驗證 token，啟用帳號
+    - 驗證成功後自動建立 session
+    - 設定 HttpOnly Cookie，然後 302 導回首頁 (/)
     """
     try:
         user = verify_signup_token_and_activate_user(
@@ -170,18 +172,39 @@ def verify_email(
             public_token=token,
         )
     except InvalidOrExpiredTokenError:
-        # 統一回 400，避免暴露是「已使用」還是「不存在」
+        # 失敗仍維持 400 JSON 回應，避免洩漏細節
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="驗證連結無效或已過期。",
         )
 
-    return {
-        "id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "detail": "Email 驗證成功，帳號已啟用。",
-    }
+    # === 建立新的 session（沿用 login 的邏輯） ===
+    now = datetime.now(timezone.utc)
+    ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
+    expires_at = now + ttl
+
+    session = SessionModel(
+        id=uuid4(),
+        user_id=user.id,
+        expires_at=expires_at,
+    )
+    db.add(session)
+    db.commit()
+
+    # === 建立 RedirectResponse，並在上面設定 Cookie ===
+    resp = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=str(session.id),
+        max_age=int(ttl.total_seconds()),
+        httponly=True,
+        secure=True,
+        samesite="Lax",
+        path="/",
+    )
+
+    return resp
+
 
 
 # ===== 登入 =====

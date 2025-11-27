@@ -79,7 +79,7 @@ def get_current_user(
         )
 
     user = db.query(User).filter(User.id == session.user_id).first()
-    if not user or not user.is_active:
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="未登入或憑證已失效",

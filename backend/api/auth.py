@@ -285,9 +285,32 @@ def login(
     if not user or not verify_password(body.password, user.password_hash):
         _raise_400({"credentials": "帳號或密碼錯誤。"})
 
-    # 2-1. 帳號存在但尚未完成 Email 驗證：
-    #      嘗試重寄驗證信（1 分鐘冷卻），之後一律回同樣的錯誤訊息
-    if not user.is_active:
+        if not user.is_active:
+        # 1. 即使尚未完成 Email 驗證，也先建立一個 session，
+        #    讓 /api/auth/me 可以知道是哪一位使用者（用於顯示 email、重寄驗證信）。
+            now = datetime.now(timezone.utc)
+            ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
+            expires_at = now + ttl
+
+            session = SessionModel(
+                id=uuid4(),
+                user_id=user.id,
+                expires_at=expires_at,
+            )
+            db.add(session)
+            db.commit()
+
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=str(session.id),
+            max_age=int(ttl.total_seconds()),
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+            path="/",
+        )
+
+        # 2. 依「每帳號至少間隔 1 分鐘」的規則嘗試重寄驗證信
         try:
             resend_signup_verification_for_email(
                 db=db,
@@ -295,8 +318,11 @@ def login(
                 request=request,
             )
         except VerificationEmailRateLimitedError:
-            # 冷卻中就不重寄，但錯誤訊息仍然一樣
+            # 冷卻中就不重寄，但錯誤訊息仍然相同
             pass
+
+        # 3. 回傳固定錯誤訊息，前端看到這個錯誤就轉導到 /verify-email-pending.html
+        _raise_400({"email": "Email 尚未驗證，請先完成信箱驗證。"})
 
         _raise_400({"email": "Email 尚未驗證，請先完成信箱驗證。"})
 

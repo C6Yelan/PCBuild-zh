@@ -270,7 +270,7 @@ def resend_verification(
 @router.post("/login")
 def login(
     body: LoginIn,
-    request: Request,          # 要有 Request
+    request: Request,
     response: Response,
     db: OrmSession = Depends(get_db),
 ):
@@ -285,20 +285,20 @@ def login(
     if not user or not verify_password(body.password, user.password_hash):
         _raise_400({"credentials": "帳號或密碼錯誤。"})
 
-        if not user.is_active:
-        # 1. 即使尚未完成 Email 驗證，也先建立一個 session，
-        #    讓 /api/auth/me 可以知道是哪一位使用者（用於顯示 email、重寄驗證信）。
-            now = datetime.now(timezone.utc)
-            ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
-            expires_at = now + ttl
+    # 3. 尚未完成 Email 驗證：建立 session + 嘗試重寄驗證信 + 回 400
+    if not user.is_active:
+        # 3-1 建立「半登入」的 session，讓 /me 可以讀到 email
+        now = datetime.now(timezone.utc)
+        ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
+        expires_at = now + ttl
 
-            session = SessionModel(
-                id=uuid4(),
-                user_id=user.id,
-                expires_at=expires_at,
-            )
-            db.add(session)
-            db.commit()
+        session = SessionModel(
+            id=uuid4(),
+            user_id=user.id,
+            expires_at=expires_at,
+        )
+        db.add(session)
+        db.commit()
 
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
@@ -310,7 +310,7 @@ def login(
             path="/",
         )
 
-        # 2. 依「每帳號至少間隔 1 分鐘」的規則嘗試重寄驗證信
+        # 3-2 依 1 分鐘冷卻規則重寄註冊驗證信
         try:
             resend_signup_verification_for_email(
                 db=db,
@@ -318,15 +318,12 @@ def login(
                 request=request,
             )
         except VerificationEmailRateLimitedError:
-            # 冷卻中就不重寄，但錯誤訊息仍然相同
             pass
 
-        # 3. 回傳固定錯誤訊息，前端看到這個錯誤就轉導到 /verify-email-pending.html
+        # 3-3 一律回 400，前端根據這個錯誤導到驗證頁面
         _raise_400({"email": "Email 尚未驗證，請先完成信箱驗證。"})
 
-        _raise_400({"email": "Email 尚未驗證，請先完成信箱驗證。"})
-
-    # 3. 建立新的 session 紀錄
+    # 4. 已啟用帳號：正常登入流程
     now = datetime.now(timezone.utc)
     ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
     expires_at = now + ttl
@@ -339,7 +336,6 @@ def login(
     db.add(session)
     db.commit()
 
-    # 4. 設定 HttpOnly + Secure + SameSite=Lax Cookie
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=str(session.id),

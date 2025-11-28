@@ -349,32 +349,33 @@
             data = null;
           }
 
-            if (!resp.ok) {
-            const errors = (data && data.detail && data.detail.errors) || {};
-            const emailError = String(errors.email || "");
+              if (!resp.ok) {
+                const errors =
+                  (data && data.detail && data.detail.errors) ? data.detail.errors : {};
+                const emailError = String(errors.email || "");
 
-            // 1. 特殊處理：Email 尚未驗證 → 直接導到驗證說明頁
-            if (emailError.includes("Email 尚未驗證")) {
-              // 後端此時已經幫你判斷是否超過 1 分鐘並視情況重寄驗證信，
-              // 前端只負責帶著現有 session cookie 進入說明頁
-              window.location.href = "/verify-email-pending.html";
-              return;
-            }
+                // 1. 特殊情況：Email 尚未驗證 → 直接導向驗證說明頁
+                if (emailError.includes("Email 尚未驗證")) {
+                  window.location.href = "/verify-email-pending.html";
+                  return;
+                }
 
-            // 2. 其他錯誤維持原本行為（顯示在頁面上）
-            if (errors.email) {
-              setFieldError(emailField, emailError);
-            }
-            if (errors.credentials) {
-              // 帳號或密碼錯誤
-              errorEl.textContent = String(errors.credentials || "");
-            } else if (!errorEl.textContent) {
-              errorEl.textContent = "登入失敗，請稍後再試。";
-            }
+                // 2. 其他錯誤照舊顯示在畫面上
+                if (errors.email) {
+                  setFieldError(emailField, emailError);
+                }
+                if (errors.credentials) {
+                  errorEl.textContent = String(errors.credentials || "");
+                } else if (!errorEl.textContent) {
+                  errorEl.textContent = "登入失敗，請稍後再試。";
+                }
 
-            console.error("Login error:", resp.status, data);
-            return;
-          }
+                console.error("Login error:", resp.status, data);
+                return;
+              }
+
+              // 這裡才是「真正登入成功」的情況（user.is_active = True）
+              window.location.href = "/";
 
 
           // 登入成功：session cookie 已設定，導回首頁

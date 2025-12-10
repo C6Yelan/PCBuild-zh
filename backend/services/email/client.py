@@ -8,7 +8,10 @@ import resend
 from pydantic import BaseModel, EmailStr, ValidationError
 
 from .config import get_resend_settings
-from .templates import build_signup_verification_email
+from .templates import (
+    build_signup_verification_email,
+    build_password_reset_email,
+)
 
 
 class EmailRecipient(BaseModel):
@@ -75,7 +78,7 @@ class ResendEmailClient:
         return str(email_id)
 
 
-# === 單例 client：集中建立、全程重用 ===
+# === 單例(Singleton) client：集中建立、全程重用 ===
 
 @lru_cache
 def get_email_client() -> ResendEmailClient:
@@ -116,7 +119,6 @@ def build_email_message(
 
 
 # === 註冊驗證信：使用集中入口 ===
-
 def send_signup_verification_email(to_email: str, verify_url: str) -> str:
     """
     註冊流程專用的驗證信寄送。
@@ -125,6 +127,24 @@ def send_signup_verification_email(to_email: str, verify_url: str) -> str:
     但仍然呼叫同一個 send_email() 作為集中入口。
     """
     subject, html = build_signup_verification_email(verify_url)
+
+    message = build_email_message(
+        to=[to_email],
+        subject=subject,
+        html=html,
+    )
+
+    return send_email(message)
+
+#== 忘記密碼信：使用集中入口 ===
+def send_password_reset_email(to_email: str, reset_url: str) -> str:
+    """
+    忘記密碼流程專用的重設密碼信寄送。
+
+    - 不處理帳號是否存在 / 是否啟用的判斷，這些在上層 service 做
+    - 這裡只負責套用重設密碼樣板並透過集中入口 send_email() 寄出
+    """
+    subject, html = build_password_reset_email(reset_url)
 
     message = build_email_message(
         to=[to_email],

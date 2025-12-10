@@ -9,7 +9,10 @@ from argon2 import PasswordHasher, exceptions as argon2_exceptions
 from sqlalchemy.orm import Session
 
 from backend.models import User, EmailVerificationToken
-from backend.services.email.client import send_signup_verification_email
+from backend.services.email.client import (
+    send_signup_verification_email,
+    send_password_reset_email,
+)
 
 from fastapi import Request
 
@@ -132,7 +135,7 @@ def _get_latest_token_for_user(
 
 # === 通用發行 / 驗證流程（未綁定「註冊」或「登入」） ===
 
-
+#== 發行驗證碼 ===
 def issue_verification_token(
     db: Session,
     user: User,
@@ -169,7 +172,68 @@ def issue_verification_token(
     public_token = f"{token.id}.{secret}"
     return public_token
 
+#== 忘記密碼專用封裝（使用通用流程） ===
+def issue_password_reset_token_for_user(
+    db: Session,
+    user: User,
+    *,
+    min_interval_minutes: int | None = None,
+) -> str:
+    """
+    忘記密碼流程專用：為指定使用者發行「重設密碼」 token。
 
+    設計重點：
+    - 呼叫端應先確認 user.is_active == True，未啟用帳號不應提供重設密碼功能。
+    - 依 PASSWORD_RESET 的冷卻時間做簡單 rate limit。
+    - 發新 token 前，將該使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
+      避免舊連結在之後仍然可以被使用。
+    - 回傳 public token（給上層組合 reset URL 使用）。
+    """
+    now = _utcnow()
+
+    # 1) 取得冷卻時間（分鐘）
+    if min_interval_minutes is None:
+        min_interval_minutes = RESEND_MIN_INTERVAL_MINUTES[
+            VerificationPurpose.PASSWORD_RESET
+        ]
+
+    # 2) 檢查最近一次 PASSWORD_RESET token 的建立時間
+    latest = _get_latest_token_for_user(
+        db=db,
+        user_id=user.id,
+        purpose=VerificationPurpose.PASSWORD_RESET,
+    )
+
+    if latest is not None:
+        if latest.created_at + timedelta(minutes=min_interval_minutes) > now:
+            # 在冷卻期間內就拒絕發新 token
+            raise VerificationEmailRateLimitedError(
+                "重設密碼請求太頻繁，請稍後再試。"
+            )
+
+    # 3) 將該使用者所有舊的 PASSWORD_RESET token 標記為已使用
+    (
+        db.query(EmailVerificationToken)
+        .filter(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
+        )
+        .update({"is_used": True}, synchronize_session=False)
+    )
+    db.commit()
+
+    # 4) 發行新的 PASSWORD_RESET token
+    #    有效時間會由 DEFAULT_LIFETIME_MINUTES[VerificationPurpose.PASSWORD_RESET]
+    #    決定，不需要在這裡覆寫。
+    public_token = issue_verification_token(
+        db=db,
+        user=user,
+        purpose=VerificationPurpose.PASSWORD_RESET,
+    )
+
+    return public_token
+
+#== 驗證並消費驗證碼 ===
 def _load_valid_token_and_user(
     db: Session,
     public_token: str,
@@ -304,7 +368,7 @@ def verify_signup_token_and_activate_user(
 
     return user
 
-
+#== 寄送註冊驗證信 ===
 def send_signup_verification_for_user(
     db: Session,
     user: User,
@@ -338,7 +402,7 @@ def send_signup_verification_for_user(
 
     return str(verify_url)
 
-
+#== 重新寄送註冊驗證信（有冷卻控管） ===
 def resend_signup_verification_for_email(
     db: Session,
     email: str,
@@ -382,3 +446,78 @@ def resend_signup_verification_for_email(
         user=user,
         request=request,
     )
+
+#== 「忘記密碼」專用封裝（使用通用流程） ===
+def send_password_reset_for_user(
+    db: Session,
+    user: User,
+    *,
+    request: Request,
+) -> str:
+    """
+    忘記密碼流程專用：為指定使用者發行重設密碼 token 並寄出 Email。
+
+    設計重點：
+    - 僅適用於已啟用帳號 (is_active = True)
+      （未驗證帳號不寄信，但上層 API 仍回固定成功訊息，避免暴露帳號狀態）
+    - 依 PASSWORD_RESET 的設定做冷卻控管（分鐘）
+    - 發行新 token 前，將此使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
+      避免舊連結在密碼重設後仍可被使用
+    - 由這層組合 reset URL，並呼叫 send_password_reset_email 寄信
+    """
+    # 1) 未驗證帳號：不發 token、不寄信，靜默返回
+    if not user.is_active:
+        return ""
+
+    now = _utcnow()
+
+    # 2) 取得重設密碼的冷卻時間（分鐘）
+    min_interval_minutes = RESEND_MIN_INTERVAL_MINUTES[
+        VerificationPurpose.PASSWORD_RESET
+    ]
+
+    # 3) 檢查最近一次 PASSWORD_RESET token 建立時間（rate limit）
+    latest = _get_latest_token_for_user(
+        db=db,
+        user_id=user.id,
+        purpose=VerificationPurpose.PASSWORD_RESET,
+    )
+
+    if latest is not None:
+        if latest.created_at + timedelta(minutes=min_interval_minutes) > now:
+            # 在冷卻期間內就拒絕發新 token
+            raise VerificationEmailRateLimitedError(
+                "重設密碼請求太頻繁，請稍後再試。"
+            )
+
+    # 4) 將該使用者所有舊的 PASSWORD_RESET token 標記為已使用
+    (
+        db.query(EmailVerificationToken)
+        .filter(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
+        )
+        .update({"is_used": True}, synchronize_session=False)
+    )
+    db.commit()
+
+    # 5) 發行新的 PASSWORD_RESET token（有效時間已在 DEFAULT_LIFETIME_MINUTES 中設定為 20 分鐘）
+    public_token = issue_verification_token(
+        db=db,
+        user=user,
+        purpose=VerificationPurpose.PASSWORD_RESET,
+    )
+
+    # 6) 產生重設密碼頁面的路由網址
+    #    之後會在 auth router 中實作：
+    #      @router.get("/reset-password/{token}", name="reset_password")
+    reset_url = request.url_for("reset_password", token=public_token)
+
+    # 7) 寄出重設密碼 Email（版型與註冊驗證信相同）
+    send_password_reset_email(
+        to_email=user.email,
+        reset_url=str(reset_url),
+    )
+
+    # 回傳網址方便上層做記錄或除錯（必要時可忽略）
+    return str(reset_url)

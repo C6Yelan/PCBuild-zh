@@ -273,6 +273,7 @@ def _load_valid_token_and_user(
     return token, user
 
 
+#== 通用消費驗證碼流程 ===
 def consume_verification_token(
     db: Session,
     public_token: str,

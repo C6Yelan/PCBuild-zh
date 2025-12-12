@@ -10,7 +10,7 @@ from pydantic import EmailStr, TypeAdapter
 
 from backend.api.deps import get_db
 from backend.models import User, Session as SessionModel, EmailVerificationToken
-from backend.schemas.auth import RegisterIn, RegisterOut, LoginIn, MeOut, ResendVerificationIn, ForgotPasswordIn
+from backend.schemas.auth import RegisterIn, RegisterOut, LoginIn, MeOut, ResendVerificationIn, ForgotPasswordIn, ResetPasswordIn, ResetPasswordOut
 from backend.security import hash_password, verify_password
 from backend.services.auth.email_verification import (
     send_signup_verification_for_user,
@@ -20,6 +20,7 @@ from backend.services.auth.email_verification import (
     VerificationEmailRateLimitedError,
     send_password_reset_for_user,
     VerificationPurpose,
+    consume_verification_token,
 )
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -398,8 +399,63 @@ def forgot_password(
     return {"ok": True}
 
 
-# ===== 登入 =====
+# ===== 忘記密碼：重設密碼 =====
+@router.post("/reset-password")
+def reset_password(
+    body: ResetPasswordIn,
+    response: Response,
+    db: OrmSession = Depends(get_db),
+):
+    # 1) 驗證/消費 token（不在這裡 commit，由本 endpoint 統一 commit）
+    try:
+        user, token = consume_verification_token(
+            db,
+            body.token,
+            purpose=VerificationPurpose.PASSWORD_RESET,
+        )
+    except InvalidOrExpiredTokenError:
+        # 前端會依狀態導到「過期/已使用/格式錯誤」頁；API 端統一用 400 回覆即可
+        _raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
+        raise  # 只是讓型別檢查器安靜
 
+    # 2) 未驗證帳號：不提供重設（但你前端仍顯示已寄出屬於 UX/防枚舉設計）
+    if not user.is_active:
+        _raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
+        raise
+
+    # 3) 更新密碼（Argon2id）
+    user.password_hash = hash_password(body.password)
+
+    # 4) 使「該使用者所有 PASSWORD_RESET token」全部失效（包含其他尚未使用的）
+    db.query(EmailVerificationToken).filter(
+        EmailVerificationToken.user_id == user.id,
+        EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
+    ).update(
+        {"is_used": True},
+        synchronize_session=False,
+    )
+
+    # 5) 讓該使用者所有登入中的 session 失效（最保守的方式：直接刪除）
+    db.query(SessionModel).filter(SessionModel.user_id == user.id).delete(
+        synchronize_session=False
+    )
+
+    db.commit()
+
+    # 6) 清掉目前裝置 cookie，確保一定回到未登入狀態（導回登入頁）
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+    return {"ok": True}
+
+
+# ===== 登入 =====
 @router.post("/login")
 def login(
     body: LoginIn,

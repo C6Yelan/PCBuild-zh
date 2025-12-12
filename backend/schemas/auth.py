@@ -37,3 +37,12 @@ class ResendVerificationIn(BaseModel):
 
 class ForgotPasswordIn(BaseModel):
     email: str
+
+
+class ResetPasswordIn(BaseModel):
+    token: constr(strip_whitespace=True, min_length=5, max_length=512)
+    password: constr(min_length=8, max_length=128)
+
+
+class ResetPasswordOut(BaseModel):
+    ok: bool

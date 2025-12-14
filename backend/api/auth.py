@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
+from argon2 import PasswordHasher, exceptions as argon2_exceptions
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as OrmSession
@@ -27,6 +28,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 SESSION_COOKIE_NAME = "pcbuild_session"
 SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))
+# Argon2 hasher for verifying reset-password tokens
+_reset_token_hasher = PasswordHasher()
 
 
 # ===== 共用錯誤拋出工具 =====
@@ -268,20 +271,22 @@ def reset_password_entry(
     - 有效：   /reset-password.html?token=...
     - 已使用： /reset-password-failed.html?reason=used
     - 已過期： /reset-password-failed.html?reason=expired
-    - 格式錯誤或找不到：/reset-password-failed.html?reason=invalid
+    - 格式錯誤 / 找不到 / secret 不匹配：/reset-password-failed.html?reason=invalid
     """
 
-    # 1. 先檢查 token 格式是否正確（<id>.<secret>）
+    # 1) 解析 token（<id>.<secret>）
     try:
-        id_str, _ = token.split(".", 1)
+        id_str, secret = token.split(".", 1)
         token_id = int(id_str)
+        if not secret:
+            raise ValueError("empty secret")
     except (ValueError, AttributeError):
         return RedirectResponse(
             url="/reset-password-failed.html?reason=invalid",
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 2. 查詢對應的 PASSWORD_RESET token
+    # 2) 先查 token_id + 用途
     row = (
         db.query(EmailVerificationToken)
         .filter(
@@ -290,32 +295,44 @@ def reset_password_entry(
         )
         .first()
     )
-
     if row is None:
-        # 找不到資料：可能是無效 id 或已被清除，視為「無效 / 格式錯誤」
         return RedirectResponse(
             url="/reset-password-failed.html?reason=invalid",
             status_code=status.HTTP_302_FOUND,
         )
 
+    # 3) 核心修正：驗證 secret 是否匹配 token_hash
+    #    若 secret 不匹配，直接視為 invalid（避免被竄改的 token 仍能打開重設頁）
+    try:
+        _reset_token_hasher.verify(row.token_hash, secret)
+    except (
+        argon2_exceptions.VerifyMismatchError,
+        argon2_exceptions.VerificationError,
+        Exception,
+    ):
+        return RedirectResponse(
+            url="/reset-password-failed.html?reason=invalid",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # 4) secret 正確後，才允許顯示 used / expired 等狀態（避免 token_id 被枚舉探測）
     now = datetime.now(timezone.utc)
 
-    # 3. 已使用的 token
+    # 4-1) 已使用
     if row.is_used:
         return RedirectResponse(
             url="/reset-password-failed.html?reason=used",
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 4. 已過期的 token
+    # 4-2) 過期
     if row.expires_at < now:
         return RedirectResponse(
             url="/reset-password-failed.html?reason=expired",
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 5. 其餘情況視為「有效」，導向前端重設密碼頁面
-    #    為了讓前端能在送出新密碼時帶回 token，這裡將 token 放在 query string
+    # 5) 有效：導向前端重設密碼頁面
     return RedirectResponse(
         url=f"/reset-password.html?token={token}",
         status_code=status.HTTP_302_FOUND,

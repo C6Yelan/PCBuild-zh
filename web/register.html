@@ -469,6 +469,15 @@
 
           // 3. 註冊成功：後端已建立帳號、寄出驗證信並寫入 HttpOnly Cookie
           //    前端只需導向「請驗證電子郵件」說明頁，不在網址帶出任何 Email 或 token
+
+          // 設定 60 秒冷卻（讓 verify-email-pending.html 讀到後立刻啟動倒數）
+          try {
+            const until = Date.now() + 60 * 1000;
+            sessionStorage.setItem("pcbuild_verify_cooldown_until", String(until));
+          } catch (e) {
+            // sessionStorage 不可用時忽略，不影響主要流程
+          }
+
           window.location.href = "/verify-email-pending.html";
         } catch (err) {
           console.error("Register network error:", err);

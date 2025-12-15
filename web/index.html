@@ -111,6 +111,19 @@
   .top-bar__button:hover {
     background: color-mix(in srgb, CanvasText 10%, Canvas);
   }
+  .top-bar__user {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  }
+  .top-bar__verify-link {
+    font-size: 13px;
+    color: #d00;
+    text-decoration: underline;
+  }
+  .top-bar__verify-link:hover {
+    text-decoration: none;
+  }
 </style>
 
 <!-- 新增：右上角註冊 / 登入按鈕 -->
@@ -184,14 +197,11 @@ function autoResize() {
 }
 
 async function send() {
-  if (!chatEnabled) {
-    if (chatMode === "unverified") {
-      configureChatForUnverifiedUser();
-    } else {
-      configureChatForGuest();
-    }
-    return;
-  }
+if (!chatEnabled) {
+  if (chatMode === "unverified") configureChatForUnverifiedUser();
+  else configureChatForGuest();
+  return;
+}
 
   const m = chatInput.value.trim();
   if (!m) return;
@@ -214,7 +224,8 @@ async function send() {
     const r = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      credentials: "same-origin",
+      body: JSON.stringify(payload),
     });
     const data = await r.json();
     const aiText = String(data?.reply ?? '');
@@ -238,7 +249,7 @@ async function send() {
 }
 
 let chatEnabled = false;
-let chatMode = "guest"; // guest | unverified | active
+let chatMode = "guest"; // "guest" | "unverified" | "active"
 
 // 未登入使用者的聊天介面設定
 function configureChatForGuest() {
@@ -266,14 +277,13 @@ function configureChatForUnverifiedUser() {
   if (chatInput) {
     chatInput.value = '';
     chatInput.disabled = true;
-    chatInput.placeholder = "帳號尚未完成 Email 驗證，完成驗證後才能使用 AI 聊天功能。";
+    chatInput.placeholder = "帳號尚未完成 Email 驗證，暫時無法使用 AI 聊天功能。";
   }
   if (chatSendBtn) {
     chatSendBtn.disabled = true;
   }
   if (chatHint) {
-    chatHint.textContent =
-      "您的帳號尚未完成 Email 驗證。請點擊右上角「尚未驗證」前往驗證資訊頁面。";
+    chatHint.textContent = "您的帳號尚未完成 Email 驗證。請先完成驗證後再使用 AI 聊天功能。";
   }
 }
 
@@ -329,32 +339,71 @@ async function loadAuthState() {
       credentials: "same-origin",
     });
 
-    if (!resp.ok) {
-      // 未登入或 session 無效 → 保持預設「註冊 / 登入」按鈕
-      return;
-    }
+    if (!resp.ok) return;
 
     const data = await resp.json();
     const username = data.username || data.email || "User";
 
-    // 已登入 → 顯示使用者名稱 + （未驗證 badge）+ 登出按鈕
     topBarActions.textContent = "";
 
+    const userBlock = document.createElement("div");
+    userBlock.className = "top-bar__user";
+
     const welcome = document.createElement("span");
-    welcome.style.marginRight = "8px";
     welcome.style.fontSize = "14px";
     welcome.textContent = `歡迎，${username}`;
-    topBarActions.appendChild(welcome);
+    userBlock.appendChild(welcome);
 
-    // 未驗證：右上角顯示「尚未驗證」，可點進驗證資訊頁
+    // 未驗證：顯示紅色文字連結（在 welcome 下方）
     if (data && data.is_active === false) {
-      const badge = document.createElement("a");
-      badge.className = "top-bar__button";
-      badge.href = "/verify-email-pending.html";
-      badge.textContent = "尚未驗證";
-      badge.title = "前往 Email 驗證與重新寄送驗證信";
-      topBarActions.appendChild(badge);
+      const verifyLink = document.createElement("a");
+      verifyLink.href = "/verify-email-pending.html";
+      verifyLink.className = "top-bar__verify-link";
+      verifyLink.textContent = "尚未驗證";
+      verifyLink.title = "點擊前往驗證";
+
+      verifyLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+
+        // 點擊事件觸發一次重寄（避免純導頁 GET 產生寄信副作用）
+        try {
+          const email = data.email || "";
+          if (email) {
+            const r = await fetch("/api/auth/resend-verification", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "same-origin",
+              body: JSON.stringify({ email }),
+            });
+
+            // 只用來做倒數（不顯示成功/失敗）
+            const retryAfter = parseInt(r.headers.get("Retry-After") || "", 10);
+            let waitSec = 0;
+
+            if (r.ok) {
+              waitSec = 60;
+            } else if (r.status === 429) {
+              waitSec = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60;
+            }
+
+            if (waitSec > 0) {
+              sessionStorage.setItem(
+                "pcbuild_verify_cooldown_until",
+                String(Date.now() + waitSec * 1000)
+              );
+            }
+          }
+        } catch (err) {
+          console.error("top bar resend failed:", err);
+        } finally {
+          window.location.href = "/verify-email-pending.html";
+        }
+      });
+
+      userBlock.appendChild(verifyLink);
     }
+
+    topBarActions.appendChild(userBlock);
 
     const logoutBtn = document.createElement("button");
     logoutBtn.id = "logout-btn";
@@ -363,19 +412,19 @@ async function loadAuthState() {
     logoutBtn.textContent = "登出";
     topBarActions.appendChild(logoutBtn);
 
-    // 直接綁在剛建立的元素上（避免再 getElementById 重複宣告）
     logoutBtn.addEventListener("click", async () => {
       try {
         await fetch("/api/auth/logout", {
           method: "POST",
           credentials: "same-origin",
         });
+      } catch (e) {
+        // ignore
       } finally {
         window.location.href = "/";
       }
     });
   } catch (e) {
-    // /api/auth/me 呼叫失敗時忽略，維持「未登入」狀態
     console.error("loadAuthState error:", e);
   }
 }

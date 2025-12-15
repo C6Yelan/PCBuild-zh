@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 SESSION_COOKIE_NAME = "pcbuild_session"
 SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))
+RESEND_MIN_INTERVAL_SECONDS = 60  # 與前端倒數一致（1 分鐘）
 # Argon2 hasher for verifying reset-password tokens
 _reset_token_hasher = PasswordHasher()
 
@@ -354,11 +355,13 @@ def resend_verification(
             request=request,
         )
     except VerificationEmailRateLimitedError:
-        # 過於頻繁，回傳 429 並提示
+        # 過於頻繁，回 429，並用 Retry-After 告訴前端要等幾秒再試
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"errors": {"email": "驗證信寄送太頻繁，請在 1 分鐘後再試。"}},
+            detail={"errors": {"email": "驗證信寄送太頻繁，請稍後再試。"}},
+            headers={"Retry-After": str(RESEND_MIN_INTERVAL_SECONDS)},
         )
+
 
     # 3. 一律回傳成功（不暴露帳號是否存在或是否已驗證）
     return {"ok": True}
@@ -509,18 +512,10 @@ def login(
             samesite="Lax",
             path="/",
         )
+        # 尚未完成 Email 驗證：建立 session，允許「受限登入」
+        # 注意：不要在 login 時自動寄信，寄信由使用者點擊「尚未驗證/重新寄送」觸發
 
-        # 3-2 依 1 分鐘冷卻規則重寄註冊驗證信
-        try:
-            resend_signup_verification_for_email(
-                db=db,
-                email=user.email,
-                request=request,
-            )
-        except VerificationEmailRateLimitedError:
-            pass
-
-        # 3-3 不丟錯：允許登入，但前端會依 /me 的 is_active=false 進入「受限模式」
+        # 3-ㄉ 不丟錯：允許登入，但前端會依 /me 的 is_active=false 進入「受限模式」
         return {"ok": True, "needs_verification": True}
 
     # 4. 已啟用帳號：正常登入流程

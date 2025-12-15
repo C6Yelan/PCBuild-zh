@@ -132,6 +132,7 @@
 
     <script>
       const RESEND_COOLDOWN_SECONDS = 60;
+      const COOLDOWN_KEY = "pcbuild_verify_cooldown_until";
 
       const messageEl = document.getElementById("message");
       const resendButton = document.getElementById("resend-button");
@@ -166,12 +167,19 @@
         }
       }
 
-      function startCooldown() {
-        remaining = RESEND_COOLDOWN_SECONDS;
+      function startCooldown(seconds) {
+        const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+        remaining = sec;
         updateButton();
 
         if (timerId !== null) {
           clearInterval(timerId);
+          timerId = null;
+        }
+
+        if (remaining <= 0) {
+          try { sessionStorage.removeItem(COOLDOWN_KEY); } catch (e) {}
+          return;
         }
 
         timerId = setInterval(() => {
@@ -180,9 +188,35 @@
             remaining = 0;
             clearInterval(timerId);
             timerId = null;
+            try { sessionStorage.removeItem(COOLDOWN_KEY); } catch (e) {}
           }
           updateButton();
         }, 1000);
+      }
+
+      function persistCooldownSeconds(seconds) {
+        const sec = Math.max(0, Math.floor(Number(seconds) || 0));
+        const until = Date.now() + sec * 1000;
+        try { sessionStorage.setItem(COOLDOWN_KEY, String(until)); } catch (e) {}
+      }
+
+      function loadPersistedCooldown() {
+        try {
+          const raw = sessionStorage.getItem(COOLDOWN_KEY);
+          const until = raw ? parseInt(raw, 10) : 0;
+          if (Number.isFinite(until) && until > Date.now()) {
+            const sec = Math.ceil((until - Date.now()) / 1000);
+            startCooldown(sec);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      function parseRetryAfterSeconds(resp) {
+        const v = resp.headers.get("Retry-After");
+        const n = v ? parseInt(v, 10) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : null;
       }
 
       // 已完成驗證時的統一顯示
@@ -230,17 +264,14 @@
             return;
           }
 
-          if (email) {
-            messageEl.textContent =
-              `我們已將驗證信寄送到 ${email}。` +
-              "請在 24 小時內開啟信件，並點擊信中的「完成帳號驗證」按鈕，以啟用您的 PCBuild 帳號。";
+          messageEl.textContent =
+            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
+          hintText.textContent =
+            "重新寄送不會在此頁顯示成功或失敗，但按鈕會依冷卻時間暫停。";
 
-            // 未啟用且有 email：啟動 60 秒冷卻倒數
-            startCooldown();
-          } else {
-            messageEl.textContent =
-              "我們已將驗證信寄送到您註冊時填寫的電子郵件信箱。";
-          }
+          // 若使用者是從首頁點「尚未驗證」進來，這裡會讀到 sessionStorage 並開始倒數
+          loadPersistedCooldown();
+
         } catch (err) {
           console.error("loadCurrentUser failed:", err);
           messageEl.textContent =
@@ -253,42 +284,55 @@
       }
 
       resendButton.addEventListener("click", async () => {
-        if (!email) return;
+      if (!email) return;
+      if (remaining > 0) return;
 
-        // 先確認最新狀態：使用者可能在別的分頁已經完成驗證
-        try {
-          const statusResp = await fetch("/api/auth/me", {
-            method: "GET",
-            credentials: "same-origin",
-          });
-          if (statusResp.ok) {
-            const statusData = await statusResp.json();
-            if (statusData.is_active) {
-              // 最新狀態已啟用：提示並禁用按鈕，不再重寄
-              showAlreadyVerified();
-              return;
-            }
+      // 先確認最新狀態：使用者可能已在別的分頁完成驗證
+      try {
+        const statusResp = await fetch("/api/auth/me", {
+          method: "GET",
+          credentials: "same-origin",
+        });
+        if (statusResp.ok) {
+          const statusData = await statusResp.json();
+          if (statusData.is_active) {
+            showAlreadyVerified();
+            return;
           }
-        } catch (err) {
-          console.error("check active status failed:", err);
-          // 若檢查失敗，就當作尚未啟用，照原流程嘗試重寄
+        }
+      } catch (err) {
+        console.error("check active status failed:", err);
+        // 檢查失敗就繼續嘗試重寄（不影響）
+      }
+
+      try {
+        const resp = await fetch("/api/auth/resend-verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ email }),
+        });
+
+        if (resp.ok) {
+          persistCooldownSeconds(RESEND_COOLDOWN_SECONDS);
+          startCooldown(RESEND_COOLDOWN_SECONDS);
+          return;
         }
 
-        // 仍然視為尚未啟用：啟動前端冷卻並嘗試重寄
-        startCooldown();
-
-        try {
-          await fetch("/api/auth/resend-verification", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify({ email }),
-          });
-          // 按你的要求：寄送成功/失敗不在畫面顯示，只在 console 裡紀錄錯誤
-        } catch (err) {
-          console.error("resend verification failed:", err);
+        if (resp.status === 429) {
+          // 後端可能回 Retry-After（建議你已在 auth.py 加上）
+          const wait = parseRetryAfterSeconds(resp) ?? RESEND_COOLDOWN_SECONDS;
+          persistCooldownSeconds(wait);
+          startCooldown(wait);
+          return;
         }
-      });
+
+        // 其他錯誤：不啟動倒數（避免「假倒數」）
+        console.error("resend verification failed:", resp.status);
+      } catch (err) {
+        console.error("resend verification failed:", err);
+      }
+    });
 
       // 初始化：從後端讀取使用者資訊
       loadCurrentUser();

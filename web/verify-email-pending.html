@@ -239,16 +239,23 @@
       // 已完成驗證時的統一顯示
       function showAlreadyVerified() {
         userIsActive = true;
-        messageEl.textContent =
-          "您的帳號已完成 Email 驗證。請前往登入頁重新登入，以更新帳號狀態。";
-        hintText.textContent =
-          "您可以關閉此頁面，或點擊下方「前往登入」連結。";
+
+        // 你描述的情境是「已登入狀態下完成驗證後刷新此頁」
+        // 因此此頁應引導回首頁（不要求重新登入）
         setBackLink("home");
+
+        messageEl.textContent =
+          "您的帳號已完成 Email 驗證。您目前已登入，可回到首頁重新整理後開始使用。";
+        hintText.textContent =
+          "您可以關閉此頁面，或點擊下方「回到首頁」連結。";
+
         remaining = 0;
         if (timerId !== null) {
           clearInterval(timerId);
           timerId = null;
         }
+        try { sessionStorage.removeItem(COOLDOWN_KEY); } catch (e) {}
+
         updateButton();
       }
 
@@ -261,12 +268,11 @@
           });
 
           if (!resp.ok) {
-            // 例如 401：沒有有效 session，提示使用者需要重新註冊 / 登入
-            messageEl.textContent =
-              "目前尚未登入，無法重新寄送驗證信。若您已完成驗證，請前往登入頁面登入；若尚未註冊，請重新完成註冊流程。";
-            hintText.textContent =
-              "如果在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。";
             setBackLink("login");
+            messageEl.textContent =
+              "目前尚未登入，無法重新寄送驗證信。請先登入後再試。";
+            hintText.textContent =
+              "如果您已完成 Email 驗證，請前往登入頁面登入。";
             email = "";
             userIsActive = false;
             updateButton();
@@ -283,9 +289,13 @@
             return;
           }
 
+          setBackLink("home");
+
           messageEl.textContent =
             "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
-          setBackLink("home");
+
+          hintText.textContent =
+            "如果在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。";
 
           // 若使用者是從首頁點「尚未驗證」進來，這裡會讀到 sessionStorage 並開始倒數
           loadPersistedCooldown();

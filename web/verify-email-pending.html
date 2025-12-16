@@ -126,7 +126,8 @@
       </div>
 
       <div class="back-home">
-        已完成驗證？<a href="/login.html">前往登入</a>
+        <span id="back-prefix">已完成驗證？</span>
+        <a id="back-link" href="/login.html" title="前往登入頁面">前往登入</a>
       </div>
     </div>
 
@@ -137,6 +138,22 @@
       const messageEl = document.getElementById("message");
       const resendButton = document.getElementById("resend-button");
       const hintText = document.getElementById("hint-text");
+      const backPrefixEl = document.getElementById("back-prefix"); // 已完成驗證？
+      const backLinkEl = document.getElementById("back-link"); // 前往登入
+
+      function setBackLink(mode) {
+        if (!backLinkEl) return;
+
+        if (mode === "home") {
+          backLinkEl.href = "/";
+          backLinkEl.textContent = "回到首頁";
+          backLinkEl.title = "回到首頁";
+        } else {
+          backLinkEl.href = "/login.html";
+          backLinkEl.textContent = "前往登入";
+          backLinkEl.title = "前往登入頁面";
+        }
+      }
 
       let email = "";
       let remaining = 0;
@@ -223,9 +240,10 @@
       function showAlreadyVerified() {
         userIsActive = true;
         messageEl.textContent =
-          "您的帳號已完成 Email 驗證。請前往登入頁面重新登入後開始使用 PCBuild。";
+          "您的帳號已完成 Email 驗證。請前往登入頁重新登入，以更新帳號狀態。";
         hintText.textContent =
-          "請點擊下方「前往登入」連結進行登入，或直接關閉此頁面。";
+          "您可以關閉此頁面，或點擊下方「前往登入」連結。";
+        setBackLink("home");
         remaining = 0;
         if (timerId !== null) {
           clearInterval(timerId);
@@ -245,9 +263,10 @@
           if (!resp.ok) {
             // 例如 401：沒有有效 session，提示使用者需要重新註冊 / 登入
             messageEl.textContent =
-              "目前尚未登入，無法重新寄送驗證信。請先登入後再試。";
+              "目前尚未登入，無法重新寄送驗證信。若您已完成驗證，請前往登入頁面登入；若尚未註冊，請重新完成註冊流程。";
             hintText.textContent =
-              "如果您已完成 Email 驗證，請前往登入頁面重新登入。";
+              "如果在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。";
+            setBackLink("login");
             email = "";
             userIsActive = false;
             updateButton();
@@ -265,7 +284,8 @@
           }
 
           messageEl.textContent =
-            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。完成驗證後，請前往登入頁面重新登入。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
+            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
+          setBackLink("home");
 
           // 若使用者是從首頁點「尚未驗證」進來，這裡會讀到 sessionStorage 並開始倒數
           loadPersistedCooldown();

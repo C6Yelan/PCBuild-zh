@@ -32,6 +32,42 @@ RESEND_MIN_INTERVAL_SECONDS = 60  # 與前端倒數一致（1 分鐘）
 # Argon2 hasher for verifying reset-password tokens
 _reset_token_hasher = PasswordHasher()
 
+# ===== 工具函式 =====
+def _clear_session_cookie(resp: Response) -> None:
+    # 用 set_cookie 清除，帶上與設定時一致的屬性，避免部分瀏覽器刪不掉
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value="",
+        max_age=0,
+        expires=0,
+        httponly=True,
+        secure=True,
+        samesite="Lax",
+        path="/",
+    )
+
+# ===== 從 Request 取得有效 Session（或 None） =====
+def _get_valid_session_from_request(request: Request, db: OrmSession) -> SessionModel | None:
+    raw = request.cookies.get(SESSION_COOKIE_NAME)
+    if not raw:
+        return None
+
+    try:
+        sid = UUID(raw)
+    except Exception:
+        return None
+
+    now = datetime.now(timezone.utc)
+    return (
+        db.query(SessionModel)
+        .filter(
+            SessionModel.id == sid,
+            SessionModel.revoked.is_(False),
+            SessionModel.expires_at > now,
+        )
+        .first()
+    )
+
 
 # ===== 共用錯誤拋出工具 =====
 
@@ -176,6 +212,7 @@ def register(
         id=uuid4(),
         user_id=user.id,
         expires_at=expires_at,
+        kind="signup",
     )
     db.add(session)
     db.commit()
@@ -213,75 +250,80 @@ def verify_email(
     request: Request,
     db: OrmSession = Depends(get_db),
 ):
-    """
-    註冊 email 驗證入口：
-
-    - 驗證 token，啟用帳號
-    - 不自動登入
-    - 導向「驗證成功」頁面，提供前往登入的指引
-    """
+    # 1) 先驗證 token + 啟用帳號
     try:
-        user = verify_signup_token_and_activate_user(
-            db=db,
-            public_token=token,
-        )
+        user = verify_signup_token_and_activate_user(db=db, public_token=token)
     except InvalidOrExpiredTokenError:
+        return RedirectResponse(url="/verify-email-failed.html", status_code=status.HTTP_302_FOUND)
+
+    def _success(mode: str) -> RedirectResponse:
+        # mode 只表達顯示邏輯，不包含任何隱私資訊
         return RedirectResponse(
-            url="/verify-email-failed.html",
+            url=f"/verify-email-success.html?mode={mode}",
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 若「當下這個瀏覽器」已登入且 session 屬於同一位使用者：保留登入狀態並導回首頁
-    raw = request.cookies.get(SESSION_COOKIE_NAME)
-    current_session = None
+    # 2) 取得目前 cookie 對應的有效 session（可能沒有）
+    raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    current_session = _get_valid_session_from_request(request, db)
 
-    if raw:
-        try:
-            sid = UUID(raw)
-        except ValueError:
-            sid = None
+    # 沒有合法 session：顯示成功頁，並引導前往登入
+    if not current_session:
+        resp = _success("login")
+        if raw_cookie:
+            _clear_session_cookie(resp)
+        return resp
 
-        if sid:
-            now = datetime.now(timezone.utc)
-            current_session = (
-                db.query(SessionModel)
-                .filter(
-                    SessionModel.id == sid,
-                    SessionModel.revoked.is_(False),
-                    SessionModel.expires_at > now,
-                )
-                .first()
-            )
+    # 3) 有 session，但 user 不同：登出目前 session，要求重新登入
+    if current_session.user_id != user.id:
+        current_session.revoked = True
+        db.add(current_session)
+        db.commit()
 
-    is_logged_in_as_this_user = bool(current_session and current_session.user_id == user.id)
+        resp = _success("login")
+        _clear_session_cookie(resp)
+        return resp
 
-    if is_logged_in_as_this_user:
-        # 已登入狀態完成驗證：不要撤銷 session、不要清 cookie
-        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    # 4) session user 相同：一定顯示成功頁（依你最新要求）
+    # 4-a) 若是 signup session：清 cookie，要求重新登入
+    if (current_session.kind or "login") == "signup":
+        current_session.revoked = True
+        db.add(current_session)
+        db.commit()
 
-    # 否則（首次註冊常見：從信箱開連結、沒有有效 session）：要求重新登入
-    db.query(SessionModel).filter(SessionModel.user_id == user.id).update(
-        {"revoked": True},
-        synchronize_session=False,
+        resp = _success("login")
+        _clear_session_cookie(resp)
+        return resp
+
+    # 4-b) 若是 login session：保留登入狀態，但做 session rotation（避免狀態升級沿用舊 session）
+    now = datetime.now(timezone.utc)
+    remaining = current_session.expires_at - now
+    max_age = max(1, int(remaining.total_seconds()))
+
+    new_session = SessionModel(
+        id=uuid4(),
+        user_id=user.id,
+        expires_at=current_session.expires_at,  # 保留剩餘有效期
+        kind="login",
     )
+    current_session.revoked = True
+
+    db.add(new_session)
+    db.add(current_session)
     db.commit()
 
-    resp = RedirectResponse(url="/verify-email-success.html", status_code=status.HTTP_302_FOUND)
-
-    # 只有在「cookie 無效」時才清掉，避免誤登出「別的已登入使用者」
-    if raw and not current_session:
-        resp.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value="",
-            max_age=0,
-            expires=0,
-            httponly=True,
-            secure=True,
-            samesite="Lax",
-            path="/",
-        )
-
+    resp = _success("home")
+    resp.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=str(new_session.id),
+        max_age=max_age,
+        httponly=True,
+        secure=True,
+        samesite="Lax",
+        path="/",
+    )
     return resp
+
 
 
 # ===== 忘記密碼：從 Email 連結進入重設頁面 =====
@@ -530,6 +572,7 @@ def login(
             id=uuid4(),
             user_id=user.id,
             expires_at=expires_at,
+            kind="login",
         )
         db.add(session)
         db.commit()
@@ -558,6 +601,7 @@ def login(
         id=uuid4(),
         user_id=user.id,
         expires_at=expires_at,
+        kind="login",
     )
     db.add(session)
     db.commit()

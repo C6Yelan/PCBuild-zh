@@ -129,6 +129,11 @@ class Session(Base):
         server_default=text("NOW()"),
         nullable=False,
     )
+    kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        server_default=text("'login'"),
+    )
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

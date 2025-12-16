@@ -107,20 +107,75 @@
           <span>Email 驗證成功</span>
         </div>
 
-        <div class="content">
+        <div class="content" id="success-content" style="white-space: pre-line;">
           您的信箱已完成驗證，帳號已啟用。<br />
           若您目前已登入，請回到首頁繼續使用；若尚未登入，請前往登入頁面。
         </div>
 
-        <p class="hint">
+        <div class="hint" id="success-hint" style="white-space: pre-line;">
           若您在驗證前已開啟 PCBuild，回到首頁後可重新整理頁面以更新狀態。
         </p>
 
         <div class="actions">
-          <a href="/login.html" class="btn">前往登入</a>
-          <a href="/" class="link">回到首頁</a>
+          <a id="primary-action" class="btn" href="/">回到首頁</a>
+        </div>
+        <div class="bottom-link" id="secondary-wrap">
+          <a id="secondary-action" href="/login.html">前往登入</a>
         </div>
       </div>
     </div>
+    <script>
+      (async () => {
+        const contentEl = document.getElementById("success-content");
+        const hintEl = document.getElementById("success-hint");
+        const primary = document.getElementById("primary-action");
+        const secondaryWrap = document.getElementById("secondary-wrap");
+        const secondary = document.getElementById("secondary-action");
+
+        function apply(mode) {
+          if (mode === "home") {
+            contentEl.textContent = "Email 驗證成功。您目前已登入，可直接回到首頁繼續使用。";
+            hintEl.textContent = "若首頁仍顯示「尚未驗證」，請回到首頁後重新整理一次。";
+            primary.textContent = "回到首頁";
+            primary.href = "/";
+            secondary.textContent = "前往登入";
+            secondary.href = "/login.html";
+            secondaryWrap.style.display = "";
+            return;
+          }
+
+          // mode === "login"
+          contentEl.textContent = "Email 驗證成功。為了更新帳號狀態，請前往登入頁重新登入。";
+          hintEl.textContent = "若您是從註冊流程完成驗證，重新登入後即可開始使用。";
+          primary.textContent = "前往登入";
+          primary.href = "/login.html";
+          secondary.textContent = "回到首頁";
+          secondary.href = "/";
+          secondaryWrap.style.display = "";
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        let mode = (params.get("mode") || "").toLowerCase();
+
+        // 後端會帶 mode；如果有人直接開此頁，才用 /api/auth/me 推斷
+        if (mode !== "home" && mode !== "login") {
+          try {
+            const resp = await fetch("/api/auth/me", {
+              method: "GET",
+              credentials: "same-origin",
+            });
+
+            // resp.ok: 200-299 
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data && data.is_active === true) mode = "home";
+            }
+          } catch (e) {}
+          if (mode !== "home") mode = "login";
+        }
+
+        apply(mode);
+      })();
+    </script>
   </body>
 </html>

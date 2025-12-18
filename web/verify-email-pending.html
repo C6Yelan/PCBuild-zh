@@ -101,6 +101,35 @@
         color: inherit;
         text-decoration: underline;
       }
+      /* Email fallback input (方案 B) */
+      .email-fallback {
+        margin-top: 16px;
+        width: 100%;
+        text-align: left;
+      }
+      .field-label {
+        display: block;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.78);
+        margin-bottom: 6px;
+      }
+      .field-input {
+        width: 100%;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(0, 0, 0, 0.35);
+        color: #fff;
+        outline: none;
+      }
+      .field-input:focus {
+        border-color: rgba(255, 255, 255, 0.35);
+      }
+      .field-hint {
+        margin-top: 6px;
+        font-size: 12px;
+        color: #ff6b6b;
+      }
     </style>
   </head>
   <body>
@@ -117,6 +146,18 @@
         <p class="hint" id="hint-text">
           如果在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。
         </p>
+        <div id="email-fallback" class="email-fallback" style="display:none;">
+        <label class="field-label" for="fallback-email">註冊 Email</label>
+        <input
+          id="fallback-email"
+          class="field-input"
+          type="email"
+          inputmode="email"
+          autocomplete="email"
+          placeholder="請輸入註冊 Email"
+        />
+        <p class="field-hint" id="fallback-email-error" style="display:none;"></p>
+      </div>
 
         <div class="actions-row">
           <button id="resend-button" type="button" class="btn-primary">
@@ -125,266 +166,355 @@
         </div>
       </div>
 
-      <div class="back-home">
-        <span id="back-prefix">已完成驗證？</span>
-        <a id="back-link" href="/login.html" title="前往登入頁面">前往登入</a>
+      <div class="back-home" id="back-link-wrap">
+        <a id="back-link" href="/login.html">已完成驗證？前往登入</a>
       </div>
     </div>
 
     <script>
-      const RESEND_COOLDOWN_SECONDS = 60;
-      const COOLDOWN_KEY = "pcbuild_verify_cooldown_until";
+      // =========================================================
+      // verify-email-pending.html
+      // - 本頁不在載入時自動寄信（避免頁面導向造成重複寄送）
+      // - 冷卻倒數以 sessionStorage 保留，允許 reload 後恢復
+      // - 方案 A：register 成功後把 email + expiresAt 存進 sessionStorage，本頁可顯示遮罩 email
+      // - 方案 B：若讀不到 email，就顯示輸入框讓使用者補輸入 email 才能重寄
+      // =========================================================
 
+      // === sessionStorage keys（請確保與 register.html / index.html 使用相同 key）
+      const EMAIL_KEY = "pcbuild_verify_email";
+      const EMAIL_EXPIRES_AT_KEY = "pcbuild_verify_email_expires_at"; // 毫秒 timestamp
+      const FLOW_KEY = "pcbuild_verify_flow"; // "signup" | "home"
+      const COOLDOWN_KEY = "pcbuild_verify_cooldown_until"; // 毫秒 timestamp
+
+      const DEFAULT_MIN_INTERVAL_SECONDS = 60;
+
+      // DOM
       const messageEl = document.getElementById("message");
-      const resendButton = document.getElementById("resend-button");
-      const hintText = document.getElementById("hint-text");
-      const backPrefixEl = document.getElementById("back-prefix"); // 已完成驗證？
-      const backLinkEl = document.getElementById("back-link"); // 前往登入
+      const hintTextEl = document.getElementById("hint-text");
+      const resendBtn = document.getElementById("resend-button");
+      const backLinkEl = document.getElementById("back-link");
 
-      function setBackLink(mode) {
+      const fallbackWrapEl = document.getElementById("email-fallback");
+      const fallbackEmailEl = document.getElementById("fallback-email");
+      const fallbackErrEl = document.getElementById("fallback-email-error");
+
+      // State
+      let currentEmail = "";
+      let isLoggedIn = false;
+      let isActive = false; // 只有 isLoggedIn=true 時才可信
+      let countdownTimer = null;
+      let remainingSeconds = 0;
+
+      function safeGetSessionItem(key) {
+        try {
+          return sessionStorage.getItem(key);
+        } catch (e) {
+          return null;
+        }
+      }
+      function safeSetSessionItem(key, value) {
+        try {
+          sessionStorage.setItem(key, value);
+        } catch (e) {}
+      }
+      function safeRemoveSessionItem(key) {
+        try {
+          sessionStorage.removeItem(key);
+        } catch (e) {}
+      }
+
+      function setBackLink(flow) {
         if (!backLinkEl) return;
-
-        if (mode === "home") {
+        if (flow === "home") {
           backLinkEl.href = "/";
-          backLinkEl.textContent = "回到首頁";
-          backLinkEl.title = "回到首頁";
+          backLinkEl.textContent = "已完成驗證？回到首頁";
         } else {
           backLinkEl.href = "/login.html";
-          backLinkEl.textContent = "前往登入";
-          backLinkEl.title = "前往登入頁面";
+          backLinkEl.textContent = "已完成驗證？前往登入";
         }
       }
 
-      let email = "";
-      let remaining = 0;
-      let timerId = null;
-      let userIsActive = false;
-      function getVerifyFlow() {
-        try {
-          return sessionStorage.getItem("pcbuild_verify_flow") === "signup"
-            ? "signup"
-            : "home";
-        } catch (e) {
-          return "home";
-        }
+      function maskEmailFixed(email) {
+        const parts = String(email || "").split("@");
+        if (parts.length !== 2) return "";
+        const local = parts[0] || "";
+        const domain = parts[1] || "";
+        if (!local || !domain) return "";
+
+        const STAR_COUNT = 6; // 固定數量，不反映真實長度
+        const prefix = (local + "**").slice(0, 2); // local 不足 2 也會補齊
+        return `${prefix}${"*".repeat(STAR_COUNT)}@${domain}`;
       }
 
-      function updateButton() {
-        if (!email) {
-          // 沒有取得 email（例如尚未登入），按鈕保持停用
-          resendButton.disabled = true;
-          resendButton.textContent = "重新寄送驗證信";
-          return;
-        }
+      function readStoredEmail() {
+        const rawEmail = safeGetSessionItem(EMAIL_KEY) || "";
+        const rawExp = safeGetSessionItem(EMAIL_EXPIRES_AT_KEY) || "";
+        if (!rawEmail) return "";
 
-        if (userIsActive) {
-          // 已完成驗證時按鈕維持停用
-          resendButton.disabled = true;
-          resendButton.textContent = "已完成驗證";
-          return;
-        }
-
-        if (remaining > 0) {
-          resendButton.disabled = true;
-          resendButton.textContent = `重新寄送驗證信（${remaining}）`;
-        } else {
-          resendButton.disabled = false;
-          resendButton.textContent = "重新寄送驗證信";
-        }
-      }
-
-      function startCooldown(seconds) {
-        const sec = Math.max(0, Math.floor(Number(seconds) || 0));
-        remaining = sec;
-        updateButton();
-
-        if (timerId !== null) {
-          clearInterval(timerId);
-          timerId = null;
-        }
-
-        if (remaining <= 0) {
-          try { sessionStorage.removeItem(COOLDOWN_KEY); } catch (e) {}
-          return;
-        }
-
-        timerId = setInterval(() => {
-          remaining -= 1;
-          if (remaining <= 0) {
-            remaining = 0;
-            clearInterval(timerId);
-            timerId = null;
-            try { sessionStorage.removeItem(COOLDOWN_KEY); } catch (e) {}
+        if (rawExp) {
+          const exp = Number(rawExp);
+          if (!Number.isFinite(exp) || Date.now() > exp) {
+            safeRemoveSessionItem(EMAIL_KEY);
+            safeRemoveSessionItem(EMAIL_EXPIRES_AT_KEY);
+            return "";
           }
-          updateButton();
+        }
+        return rawEmail;
+      }
+
+      function renderFallback(show) {
+        if (!fallbackWrapEl) return;
+        fallbackWrapEl.style.display = show ? "" : "none";
+        if (fallbackErrEl) {
+          fallbackErrEl.style.display = "none";
+          fallbackErrEl.textContent = "";
+        }
+      }
+
+      function setFallbackError(msg) {
+        if (!fallbackErrEl) return;
+        if (!msg) {
+          fallbackErrEl.style.display = "none";
+          fallbackErrEl.textContent = "";
+          return;
+        }
+        fallbackErrEl.textContent = msg; // textContent 安全
+        fallbackErrEl.style.display = "";
+      }
+
+      function renderUnverified(flow) {
+        setBackLink(flow);
+
+        if (flow === "home") {
+          messageEl.textContent =
+            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。";
+          hintTextEl.textContent =
+            `完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n` +
+            "重新寄送不會在此頁顯示成功或失敗，但按鈕會依冷卻時間暫停。";
+        } else {
+          const masked = currentEmail ? maskEmailFixed(currentEmail) : "";
+          messageEl.textContent = masked
+            ? `我們已將驗證信寄送到 ${masked}。請至註冊信箱開啟驗證信並完成驗證。`
+            : "請至註冊信箱開啟驗證信並完成驗證。";
+          hintTextEl.textContent =
+            `完成驗證後，請前往登入頁重新登入，以更新帳號狀態。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n` +
+            "重新寄送不會在此頁顯示成功或失敗，但按鈕會依冷卻時間暫停。";
+        }
+      }
+
+      function renderAlreadyVerified(flow) {
+        // 已完成驗證：依 flow + 是否有合法 session 決定導引
+        if (flow === "home" && isLoggedIn) {
+          messageEl.textContent =
+            "您的帳號已完成 Email 驗證。您目前已登入，可直接回到首頁繼續使用。";
+          hintTextEl.textContent =
+            "若首頁仍顯示「尚未驗證」，請回到首頁後重新整理一次。";
+          setBackLink("home");
+        } else {
+          messageEl.textContent =
+            "您的帳號已完成 Email 驗證。為了更新帳號狀態，請前往登入頁重新登入。";
+          hintTextEl.textContent =
+            "您可以關閉此頁面，或點擊下方「前往登入」連結。";
+          setBackLink("signup");
+        }
+
+        resendBtn.disabled = true;
+        resendBtn.textContent = "已完成驗證";
+
+        // 已完成就不需要留存 email（降低留存時間）
+        safeRemoveSessionItem(EMAIL_KEY);
+        safeRemoveSessionItem(EMAIL_EXPIRES_AT_KEY);
+        renderFallback(false);
+      }
+
+      function startCountdown(seconds) {
+        remainingSeconds = Math.max(0, Number(seconds) || 0);
+
+        resendBtn.disabled = remainingSeconds > 0;
+        resendBtn.textContent =
+          remainingSeconds > 0
+            ? `重新寄送驗證信 (${remainingSeconds})`
+            : "重新寄送驗證信";
+
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+        if (remainingSeconds <= 0) return;
+
+        countdownTimer = setInterval(() => {
+          remainingSeconds -= 1;
+          if (remainingSeconds <= 0) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+            resendBtn.disabled = false;
+            resendBtn.textContent = "重新寄送驗證信";
+            safeRemoveSessionItem(COOLDOWN_KEY);
+            return;
+          }
+          resendBtn.textContent = `重新寄送驗證信 (${remainingSeconds})`;
         }, 1000);
       }
 
-      function persistCooldownSeconds(seconds) {
-        const sec = Math.max(0, Math.floor(Number(seconds) || 0));
-        const until = Date.now() + sec * 1000;
-        try { sessionStorage.setItem(COOLDOWN_KEY, String(until)); } catch (e) {}
+      function restoreCooldownFromStorage() {
+        const raw = safeGetSessionItem(COOLDOWN_KEY);
+        if (!raw) return;
+
+        const until = Number(raw);
+        if (!Number.isFinite(until)) {
+          safeRemoveSessionItem(COOLDOWN_KEY);
+          return;
+        }
+
+        const diffMs = until - Date.now();
+        if (diffMs <= 0) {
+          safeRemoveSessionItem(COOLDOWN_KEY);
+          return;
+        }
+
+        startCountdown(Math.ceil(diffMs / 1000));
       }
 
-      function loadPersistedCooldown() {
-        try {
-          const raw = sessionStorage.getItem(COOLDOWN_KEY);
-          const until = raw ? parseInt(raw, 10) : 0;
-          if (Number.isFinite(until) && until > Date.now()) {
-            const sec = Math.ceil((until - Date.now()) / 1000);
-            startCooldown(sec);
-          }
-        } catch (e) {
-          // ignore
-        }
+      function setCooldownNow(seconds) {
+        const until = Date.now() + seconds * 1000;
+        safeSetSessionItem(COOLDOWN_KEY, String(until));
+        startCountdown(seconds);
       }
 
       function parseRetryAfterSeconds(resp) {
-        const v = resp.headers.get("Retry-After");
-        const n = v ? parseInt(v, 10) : NaN;
-        return Number.isFinite(n) && n > 0 ? n : null;
+        const header = resp.headers.get("Retry-After");
+        if (!header) return null;
+        const n = Number(header);
+        if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+        return null;
       }
 
-      // 已完成驗證時的統一顯示（依 flow 決定導引）
-      function showAlreadyVerified() {
-        userIsActive = true;
-
-        const flow = getVerifyFlow(); // signup / home
-
-        messageEl.textContent = "您的帳號已完成 Email 驗證。";
-
-        if (flow === "signup") {
-          // 註冊流程：要求重新登入
-          hintText.textContent =
-            "為了更新帳號狀態，請點擊下方「前往登入」重新登入後開始使用。";
-          setBackLink("login");
-        } else {
-          // 已登入未驗證流程：直接回首頁
-          hintText.textContent =
-            "您目前已登入，可點擊下方「回到首頁」繼續使用。若首頁仍顯示「尚未驗證」，請回到首頁後重新整理一次。";
-          setBackLink("home");
-        }
-
-        remaining = 0;
-        if (timerId !== null) {
-          clearInterval(timerId);
-          timerId = null;
-        }
-
-        updateButton(); // 會把按鈕變成「已完成驗證」並禁用
+      function isValidEmailFormat(email) {
+        const s = String(email || "").trim();
+        if (!s) return false;
+        const at = s.indexOf("@");
+        if (at <= 0) return false;
+        if (at === s.length - 1) return false;
+        return true;
       }
 
-      // 從後端（已有 HttpOnly Cookie）取得目前登入的使用者資訊
-      async function loadCurrentUser() {
+      async function tryFetchMe() {
         try {
           const resp = await fetch("/api/auth/me", {
             method: "GET",
             credentials: "same-origin",
           });
+          if (!resp.ok) return null;
+          return await resp.json();
+        } catch (e) {
+          return null;
+        }
+      }
 
-          if (!resp.ok) {
-            setBackLink("login");
-            messageEl.textContent =
-              "目前尚未登入，無法重新寄送驗證信。請先登入後再試。";
-            hintText.textContent =
-              "如果您已完成 Email 驗證，請前往登入頁面登入。";
-            email = "";
-            userIsActive = false;
-            updateButton();
-            return;
-          }
+      function getFlow() {
+        const raw = safeGetSessionItem(FLOW_KEY);
+        if (raw === "signup" || raw === "home") return raw;
+        return isLoggedIn ? "home" : "signup";
+      }
 
-          const data = await resp.json();
-          email = data.email || "";
-          userIsActive = !!data.is_active;
+      async function init() {
+        restoreCooldownFromStorage();
 
-          if (userIsActive) {
-            // 這個 session 的使用者已經啟用，直接提示即可
-            showAlreadyVerified();
-            return;
-          }
-
-        const flow = getVerifyFlow();
-
-        if (flow === "signup") {
-          messageEl.textContent =
-            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。完成驗證後，請前往登入頁面重新登入，以更新帳號狀態。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
-          setBackLink("login");
+        const me = await tryFetchMe();
+        if (me) {
+          isLoggedIn = true;
+          isActive = !!me.is_active;
+          currentEmail = String(me.email || "");
         } else {
-          messageEl.textContent =
-            "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 60 秒）。";
-          setBackLink("home");
+          isLoggedIn = false;
+          isActive = false;
+          currentEmail = readStoredEmail();
         }
 
-        hintText.textContent =
-          "若在收件匣中找不到信件，請檢查垃圾郵件或促銷信件匣。";
+        const flow = getFlow();
 
-        loadPersistedCooldown();
-
-        } catch (err) {
-          console.error("loadCurrentUser failed:", err);
-          messageEl.textContent =
-            "目前無法取得驗證資訊，請稍後再試。";
-          email = "";
-          userIsActive = false;
-        } finally {
-          updateButton();
+        if (isLoggedIn && isActive) {
+          renderAlreadyVerified(flow);
+          return;
         }
+
+        renderUnverified(flow);
+
+        // 未登入且讀不到 email → 顯示方案 B
+        if (!currentEmail && !isLoggedIn) {
+          renderFallback(true);
+          return;
+        }
+        renderFallback(false);
       }
 
-      resendButton.addEventListener("click", async () => {
-      if (!email) return;
-      if (remaining > 0) return;
+      resendBtn.addEventListener("click", async () => {
+        if (remainingSeconds > 0) return;
 
-      // 先確認最新狀態：使用者可能已在別的分頁完成驗證
-      try {
-        const statusResp = await fetch("/api/auth/me", {
-          method: "GET",
-          credentials: "same-origin",
-        });
-        if (statusResp.ok) {
-          const statusData = await statusResp.json();
-          if (statusData.is_active) {
-            showAlreadyVerified();
-            return;
+        // 若已登入，先確認是否已完成驗證（避免剛驗證完仍停留在 pending）
+        if (isLoggedIn) {
+          const me = await tryFetchMe();
+          if (me) {
+            isActive = !!me.is_active;
+            currentEmail = String(me.email || "");
+            if (isActive) {
+              renderAlreadyVerified(getFlow());
+              return;
+            }
           }
         }
-      } catch (err) {
-        console.error("check active status failed:", err);
-        // 檢查失敗就繼續嘗試重寄（不影響）
-      }
 
-      try {
-        const resp = await fetch("/api/auth/resend-verification", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({ email }),
-        });
+        let emailToUse = currentEmail;
 
-        if (resp.ok) {
-          persistCooldownSeconds(RESEND_COOLDOWN_SECONDS);
-          startCooldown(RESEND_COOLDOWN_SECONDS);
-          return;
+        // 方案 B：需要輸入 email
+        if (!emailToUse && fallbackEmailEl) {
+          const input = String(fallbackEmailEl.value || "").trim();
+          if (!isValidEmailFormat(input)) {
+            setFallbackError("請輸入正確的 Email 格式。");
+            return;
+          }
+          setFallbackError("");
+          emailToUse = input;
+
+          // 存短期 expiresAt，讓 reload 可恢復遮罩顯示（降低留存）
+          safeSetSessionItem(EMAIL_KEY, emailToUse);
+          safeSetSessionItem(
+            EMAIL_EXPIRES_AT_KEY,
+            String(Date.now() + 30 * 60 * 1000) // 30 分鐘
+          );
         }
 
-        if (resp.status === 429) {
-          // 後端可能回 Retry-After（建議你已在 auth.py 加上）
-          const wait = parseRetryAfterSeconds(resp) ?? RESEND_COOLDOWN_SECONDS;
-          persistCooldownSeconds(wait);
-          startCooldown(wait);
-          return;
+        if (!emailToUse) return;
+
+        resendBtn.disabled = true;
+
+        try {
+          const resp = await fetch("/api/auth/resend-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: emailToUse }),
+            credentials: "same-origin",
+          });
+
+          if (resp.ok) {
+            setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
+            return;
+          }
+
+          if (resp.status === 429) {
+            const retry = parseRetryAfterSeconds(resp) || DEFAULT_MIN_INTERVAL_SECONDS;
+            setCooldownNow(retry);
+            return;
+          }
+
+          // 其它狀態：保守起見仍做冷卻，避免被濫用
+          setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
+        } catch (e) {
+          setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
         }
+      });
 
-        // 其他錯誤：不啟動倒數（避免「假倒數」）
-        console.error("resend verification failed:", resp.status);
-      } catch (err) {
-        console.error("resend verification failed:", err);
-      }
-    });
-
-      // 初始化：從後端讀取使用者資訊
-      loadCurrentUser();
+      init();
     </script>
   </body>
 </html>

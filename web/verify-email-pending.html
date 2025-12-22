@@ -121,6 +121,8 @@
         background: rgba(0, 0, 0, 0.35);
         color: #fff;
         outline: none;
+        box-sizing: border-box;
+        max-width: 100%;
       }
       .field-input:focus {
         border-color: rgba(255, 255, 255, 0.35);
@@ -289,16 +291,14 @@
           messageEl.textContent =
             "您的帳號尚未完成 Email 驗證。請至註冊信箱開啟驗證信並完成驗證。";
           hintTextEl.textContent =
-            `完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n` +
-            "重新寄送不會在此頁顯示成功或失敗，但按鈕會依冷卻時間暫停。";
+            `完成驗證後，回到首頁重新整理即可開始使用。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n`;
         } else {
           const masked = currentEmail ? maskEmailFixed(currentEmail) : "";
           messageEl.textContent = masked
             ? `我們已將驗證信寄送到 ${masked}。請至註冊信箱開啟驗證信並完成驗證。`
             : "請至註冊信箱開啟驗證信並完成驗證。";
           hintTextEl.textContent =
-            `完成驗證後，請前往登入頁重新登入，以更新帳號狀態。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n` +
-            "重新寄送不會在此頁顯示成功或失敗，但按鈕會依冷卻時間暫停。";
+            `完成驗證後，請前往登入頁重新登入，以更新帳號狀態。若未收到或信件已過期，可使用下方按鈕重新寄送（每次間隔 ${DEFAULT_MIN_INTERVAL_SECONDS} 秒）。\n`;
         }
       }
 

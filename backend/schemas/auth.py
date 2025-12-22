@@ -1,6 +1,6 @@
 # backend/schemas/auth.py
 from datetime import datetime
-
+from typing import Optional
 from pydantic import BaseModel, EmailStr, constr
 
 
@@ -32,7 +32,7 @@ class MeOut(BaseModel):
 
 
 class ResendVerificationIn(BaseModel):
-    email: str
+    email: Optional[str] = None
 
 
 class ForgotPasswordIn(BaseModel):

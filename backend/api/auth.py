@@ -203,30 +203,6 @@ def register(
     db.commit()
     db.refresh(user)
 
-    # 4. 建立 session（與 /login 相同的安全設定）
-    now = datetime.now(timezone.utc)
-    ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
-    expires_at = now + ttl
-
-    session = SessionModel(
-        id=uuid4(),
-        user_id=user.id,
-        expires_at=expires_at,
-        kind="signup",
-    )
-    db.add(session)
-    db.commit()
-
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=str(session.id),
-        max_age=int(ttl.total_seconds()),
-        httponly=True,   # JS 讀不到，降低 XSS 風險
-        secure=True,     # 僅在 HTTPS 下傳遞
-        samesite="Lax",  # 降低 CSRF 風險
-        path="/",
-    )
-
     # 5. 寄出註冊驗證信（使用 url_for 產生驗證連結）
     send_signup_verification_for_user(
         db=db,
@@ -414,29 +390,34 @@ def resend_verification(
     request: Request,
     db: OrmSession = Depends(get_db),
 ):
-    # 1. 檢查 Email 格式
+    # 0) email 可能是 None（schema 會改成 optional）
+    email = (getattr(body, "email", None) or "").strip()
+
+    # A) 沒帶 email：走 session（給 index 的事件導向用）
+    if not email:
+        try:
+            current_user = get_current_user(request=request, db=db)
+            email = current_user.email
+        except HTTPException:
+            # 沒登入也沒 email：一律回成功（避免暴露狀態）
+            return {"ok": True}
+
+    # B) 有 email（或從 session 推到 email）：才做格式檢查與寄送
     try:
-        EMAIL_ADAPTER.validate_python(body.email)
+        EMAIL_ADAPTER.validate_python(email)
     except Exception:
         _raise_400({"email": "Email 格式不正確。"})
 
-    # 2. 嘗試重新寄送驗證信
     try:
-        resend_signup_verification_for_email(
-            db=db,
-            email=body.email,
-            request=request,
-        )
+        resend_signup_verification_for_email(db=db, email=email, request=request)
     except VerificationEmailRateLimitedError:
-        # 過於頻繁，回 429，並用 Retry-After 告訴前端要等幾秒再試
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"errors": {"email": "驗證信寄送太頻繁，請稍後再試。"}},
             headers={"Retry-After": str(RESEND_MIN_INTERVAL_SECONDS)},
         )
 
-
-    # 3. 一律回傳成功（不暴露帳號是否存在或是否已驗證）
+    # C) 一律回成功（避免暴露帳號是否存在/是否已驗證）
     return {"ok": True}
 
 

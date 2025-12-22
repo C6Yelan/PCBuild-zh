@@ -114,7 +114,7 @@
 
         <div class="hint" id="success-hint" style="white-space: pre-line;">
           若您在驗證前已開啟 PCBuild，回到首頁後可重新整理頁面以更新狀態。
-        </p>
+        </div>
 
         <div class="actions">
           <a id="primary-action" href="/" class="btn">回到首頁</a>
@@ -127,78 +127,81 @@
         const contentEl = document.getElementById("success-content");
         const hintEl = document.getElementById("success-hint");
         const primary = document.getElementById("primary-action");
-        const secondaryWrap = document.getElementById("secondary-wrap");
         const secondary = document.getElementById("secondary-action");
+
+        // 與你其他頁面一致的 flow key（若沒用到也不影響）
+        const FLOW_KEY = "pcbuild_verify_flow"; // "signup" | "home"
 
         function apply(mode) {
           if (mode === "home") {
-            contentEl.textContent = "Email 驗證成功。您目前已登入，可直接回到首頁繼續使用。";
-            hintEl.textContent = "若首頁仍顯示「尚未驗證」，請回到首頁後重新整理一次。";
+            contentEl.textContent =
+              "Email 驗證成功。您目前已登入（同帳號）可直接回到首頁繼續使用。";
+            hintEl.textContent =
+              "若首頁仍顯示「尚未驗證」，請回到首頁後重新整理一次。";
+
             primary.textContent = "回到首頁";
             primary.href = "/";
+
+            // 次要動作保留（不影響主要按鈕需求）
             secondary.textContent = "前往登入";
             secondary.href = "/login.html";
-            secondaryWrap.style.display = "";
+            secondary.style.display = "";
             return;
           }
 
           // mode === "login"
-          contentEl.textContent = "Email 驗證成功。為了更新帳號狀態，請前往登入頁重新登入。";
-          hintEl.textContent = "若您是從註冊流程完成驗證，重新登入後即可開始使用。";
+          contentEl.textContent =
+            "Email 驗證成功。為了更新帳號狀態，請前往登入頁重新登入。";
+          hintEl.textContent =
+            "若您是從註冊流程完成驗證，重新登入後即可開始使用。";
+
           primary.textContent = "前往登入";
           primary.href = "/login.html";
+
           secondary.textContent = "回到首頁";
           secondary.href = "/";
-          secondaryWrap.style.display = "";
+          secondary.style.display = "";
         }
 
-        const params = new URLSearchParams(window.location.search);
-        let mode = (params.get("mode") || "").toLowerCase();
+        function normalizeMode(v) {
+          const m = String(v || "").toLowerCase();
+          return m === "home" || m === "login" ? m : "";
+        }
 
-        // 後端會帶 mode；如果有人直接開此頁，才用 /api/auth/me 推斷
-        if (mode !== "home" && mode !== "login") {
+        // 1) 後端若有帶 mode=home/login，優先採用
+        const params = new URLSearchParams(window.location.search);
+        let mode = normalizeMode(params.get("mode"));
+
+        // 2) 若未帶 mode，嘗試用 sessionStorage flow 判斷（可選）
+        if (!mode) {
+          const flow = String(sessionStorage.getItem(FLOW_KEY) || "").toLowerCase();
+          if (flow === "home") mode = "home";
+          else if (flow === "signup") mode = "login";
+        }
+
+        // 3) 最後用 /api/auth/me 推斷：有登入且已 active -> home，否則 login
+        if (!mode) {
           try {
             const resp = await fetch("/api/auth/me", {
               method: "GET",
               credentials: "same-origin",
             });
 
-            // resp.ok: 200-299 
             if (resp.ok) {
-              const data = await resp.json();
+              const data = await resp.json().catch(() => null);
+
+              // 你目前檔案原先就是用 is_active 推斷 :contentReference[oaicite:1]{index=1}
+              // 這裡維持相同假設：登入且 active => 視為「同帳號驗證完成」情境
               if (data && data.is_active === true) mode = "home";
             }
-          } catch (e) {}
-          if (mode !== "home") mode = "login";
+          } catch (e) {
+            // ignore
+          }
+          if (!mode) mode = "login";
         }
 
         apply(mode);
       })();
-        (function () {
-          const params = new URLSearchParams(window.location.search);
-          const mode = params.get("mode"); // "login" 或 "home"
-
-          const primary = document.getElementById("primary-action");
-          const secondary = document.getElementById("secondary-action");
-
-          if (!primary || !secondary) return;
-
-          if (mode === "login") {
-            // 註冊驗證後：要求重新登入
-            primary.textContent = "前往登入";
-            primary.href = "/login.html";
-
-            secondary.textContent = "回到首頁";
-            secondary.href = "/";
-          } else {
-            // 已登入未驗證後完成驗證：回到首頁繼續使用
-            primary.textContent = "回到首頁";
-            primary.href = "/";
-
-            secondary.textContent = "前往登入";
-            secondary.href = "/login.html";
-          }
-        })();
     </script>
   </body>
 </html>

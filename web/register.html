@@ -467,7 +467,7 @@
             return;
           }
 
-        // 3. 註冊成功：後端已建立帳號、寄出驗證信並寫入 HttpOnly Cookie
+        // 3. 註冊成功：後端已建立帳號並寄出驗證信（此階段不建立登入態 / 不寫入 Cookie）
         //    前端只需導向「請驗證電子郵件」說明頁，不在網址帶出任何 Email 或 token
         //
         // Pending 頁 UX：用 sessionStorage 暫存必要資訊（不放 URL、不放 localStorage）。

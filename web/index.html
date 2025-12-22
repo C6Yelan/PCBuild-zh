@@ -160,6 +160,22 @@ const topBarActions = document.getElementById('top-bar-actions');
 
 marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
 
+// === 新增：集中清理 Email 驗證流程用的 sessionStorage ===
+const VERIFY_STORAGE_KEYS = [
+  "pcbuild_verify_email",
+  "pcbuild_verify_email_expires_at",
+  "pcbuild_verify_flow",
+  "pcbuild_verify_cooldown_until",
+];
+
+function clearVerifySessionStorage() {
+  try {
+    for (const k of VERIFY_STORAGE_KEYS) sessionStorage.removeItem(k);
+  } catch (_) {
+    // ignore
+  }
+}
+
 /* === 新增：在前端保存最近 N 筆對話（純文字） === */
 const HISTORY_LIMIT = 8;
 const history = [];  // [{role:"user"|"ai", content:"..."}]
@@ -322,7 +338,8 @@ async function initHomeAuthGuard() {
       configureChatForUnverifiedUser();
       return;
     }
-
+    // 新增：已驗證狀態，清掉任何殘留的 verify sessionStorage
+    clearVerifySessionStorage();
     configureChatForActiveUser();
   } catch (err) {
     console.error("initHomeAuthGuard failed:", err);
@@ -342,6 +359,8 @@ async function loadAuthState() {
     if (!resp.ok) return;
 
     const data = await resp.json();
+    // 新增：若帳號已驗證，清掉 verify sessionStorage（避免其他頁沒清到）
+    if (data && data.is_active === true) clearVerifySessionStorage();
     const username = data.username || data.email || "User";
 
     topBarActions.textContent = "";
@@ -449,6 +468,7 @@ async function loadAuthState() {
       } catch (e) {
         // ignore
       } finally {
+        clearVerifySessionStorage();
         window.location.href = "/";
       }
     });

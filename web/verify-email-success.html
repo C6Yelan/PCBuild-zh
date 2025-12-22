@@ -185,6 +185,12 @@
         }
 
         apply(mode);
+        try {
+          sessionStorage.removeItem("pcbuild_verify_email");
+          sessionStorage.removeItem("pcbuild_verify_email_expires_at");
+          sessionStorage.removeItem("pcbuild_verify_flow");
+          sessionStorage.removeItem("pcbuild_verify_cooldown_until");
+        } catch (_) {}
       })();
     </script>
   </body>

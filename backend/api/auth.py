@@ -433,7 +433,7 @@ def forgot_password(
 
     - 一律回傳 200 + {"ok": True}（不暴露帳號是否存在 / 是否已啟用）
     - 若 email 格式錯誤，回 400 提示使用者修正
-    - 若帳號存在且已啟用，才實際發 PASSWORD_RESET token 並寄信
+    - 若帳號存在，才實際發 PASSWORD_RESET token 並寄信
     - 若請求過於頻繁，回 429 告知稍後再試
     """
     # 1. 檢查 Email 格式（只檢查字串是否合法，不洩漏帳號存在與否）
@@ -445,27 +445,20 @@ def forgot_password(
     # 2. 查詢使用者（不論結果，對外回應統一）
     user = db.query(User).filter(User.email == body.email).first()
 
-    # 3. 帳號不存在或尚未驗證：不寄信，直接回固定成功
-    if not user or not user.is_active:
+    # 3. 帳號不存在：仍回固定成功（不暴露是否存在）
+    if not user:
         return {"ok": True}
 
-    # 4. 已啟用帳號：嘗試發行重設密碼 token + 寄信
+    # 4. 帳號存在：不論是否已啟用，都發 PASSWORD_RESET token 並寄信
     try:
-        send_password_reset_for_user(
-            db=db,
-            user=user,
-            request=request,
-        )
+        send_password_reset_for_user(db=db, user=user, request=request)
     except VerificationEmailRateLimitedError:
-        # 冷卻期間內：回 429，讓前端顯示「操作過於頻繁」
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"errors": {"email": "重設密碼請求太頻繁，請在 1 分鐘後再試。"}},
         )
 
-    # 5. 一切正常：仍然只回固定成功結構，不提供帳號存不存在線索
     return {"ok": True}
-
 
 # ===== 忘記密碼：重設密碼 =====
 @router.post("/reset-password")
@@ -486,13 +479,12 @@ def reset_password(
         _raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
         raise  # 只是讓型別檢查器安靜
 
-    # 2) 未驗證帳號：不提供重設（但你前端仍顯示已寄出屬於 UX/防枚舉設計）
-    if not user.is_active:
-        _raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
-        raise
-
     # 3) 更新密碼（Argon2id）
     user.password_hash = hash_password(body.password)
+
+    # 3-b) 將「完成重設密碼」視為 email 可用：若尚未啟用，直接啟用
+    if not user.is_active:
+        user.is_active = True
 
     # 4) 使「該使用者所有 PASSWORD_RESET token」全部失效（包含其他尚未使用的）
     db.query(EmailVerificationToken).filter(
@@ -511,15 +503,7 @@ def reset_password(
     db.commit()
 
     # 6) 清掉目前裝置 cookie，確保一定回到未登入狀態（導回登入頁）
-    response.delete_cookie(
-        key=SESSION_COOKIE_NAME,
-        path="/",
-        secure=True,
-        httponly=True,
-        samesite="lax",
-    )
-
-
+    _clear_session_cookie(response)
     return {"ok": True}
 
 

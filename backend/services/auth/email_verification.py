@@ -183,7 +183,6 @@ def issue_password_reset_token_for_user(
     忘記密碼流程專用：為指定使用者發行「重設密碼」 token。
 
     設計重點：
-    - 呼叫端應先確認 user.is_active == True，未啟用帳號不應提供重設密碼功能。
     - 依 PASSWORD_RESET 的冷卻時間做簡單 rate limit。
     - 發新 token 前，將該使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
       避免舊連結在之後仍然可以被使用。
@@ -459,16 +458,12 @@ def send_password_reset_for_user(
     忘記密碼流程專用：為指定使用者發行重設密碼 token 並寄出 Email。
 
     設計重點：
-    - 僅適用於已啟用帳號 (is_active = True)
-      （未驗證帳號不寄信，但上層 API 仍回固定成功訊息，避免暴露帳號狀態）
+    - 適用於帳號存在即可寄送重設密碼信的情境（不論帳號是否啟用皆可寄送）
     - 依 PASSWORD_RESET 的設定做冷卻控管（分鐘）
     - 發行新 token 前，將此使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
       避免舊連結在密碼重設後仍可被使用
     - 由這層組合 reset URL，並呼叫 send_password_reset_email 寄信
     """
-    # 1) 未驗證帳號：不發 token、不寄信，靜默返回
-    if not user.is_active:
-        return ""
 
     now = _utcnow()
 

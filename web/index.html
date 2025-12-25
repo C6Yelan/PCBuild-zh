@@ -427,18 +427,14 @@ async function loadAuthState() {
           if (r.ok || r.status === 429) {
             let waitSec = DEFAULT_WAIT_SEC;
 
-            if (r.status === 429) {
-              // 若後端有回 Retry-After，盡量尊重它（通常是秒數）
-              const ra = r.headers.get("Retry-After");
-              const n = ra ? parseInt(ra, 10) : NaN;
-              if (!Number.isNaN(n) && n > 0) waitSec = Math.min(n, 600);
-            }
+            // 200/429 都盡量尊重後端 Retry-After（秒）
+            const ra = r.headers.get("Retry-After");
+            const n = ra ? parseInt(ra, 10) : NaN;
+            if (!Number.isNaN(n) && n > 0) waitSec = Math.min(n, 600);
 
             try {
               sessionStorage.setItem(COOLDOWN_KEY, String(Date.now() + waitSec * 1000));
-            } catch (_) {
-              // sessionStorage 失敗就忽略（不影響轉導）
-            }
+            } catch (_) {}
           }
         } catch (_) {
           // 網路錯誤不阻擋轉導：不顯示成功/失敗，只讓使用者到 pending 頁再操作

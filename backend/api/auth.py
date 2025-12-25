@@ -389,9 +389,13 @@ def reset_password_entry(
 def resend_verification(
     body: ResendVerificationIn,
     request: Request,
+    response: Response,
     db: OrmSession = Depends(get_db),
 ):
-    # 0) email 可能是 None（schema 會改成 optional）
+    # 所有成功回覆都帶 Retry-After，讓前端不用猜 60 秒
+    response.headers["Retry-After"] = str(RESEND_MIN_INTERVAL_SECONDS)
+
+    # 0) email 可能是 None
     email = (getattr(body, "email", None) or "").strip()
 
     # A) 沒帶 email：走 session（給 index 的事件導向用）
@@ -409,13 +413,36 @@ def resend_verification(
     except Exception:
         _raise_400({"email": "Email 格式不正確。"})
 
+    # 先查 user（用於 429 時精準算剩餘秒數；不存在/已啟用也不暴露）
+    user = db.query(User).filter(User.email == email).first()
+
     try:
         resend_signup_verification_for_email(db=db, email=email, request=request)
     except VerificationEmailRateLimitedError:
+        retry_after = RESEND_MIN_INTERVAL_SECONDS
+
+        # 若查得到 user（且尚未啟用），用最新 token.created_at 精準計算剩餘秒數
+        if user is not None and not user.is_active:
+            latest = (
+                db.query(EmailVerificationToken)
+                .filter(
+                    EmailVerificationToken.user_id == user.id,
+                    EmailVerificationToken.purpose == VerificationPurpose.SIGNUP.value,
+                )
+                .order_by(EmailVerificationToken.created_at.desc())
+                .first()
+            )
+            if latest is not None:
+                now = datetime.now(timezone.utc)
+                wait_until = latest.created_at + timedelta(seconds=RESEND_MIN_INTERVAL_SECONDS)
+                remaining = (wait_until - now).total_seconds()
+                retry_after = max(1, int(math.ceil(remaining)))
+
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"errors": {"email": "驗證信寄送太頻繁，請稍後再試。"}},
-            headers={"Retry-After": str(RESEND_MIN_INTERVAL_SECONDS)},
+            # 重要：不要放到 email 欄位，避免前端把輸入框標紅
+            detail={"errors": {"_global": "驗證信寄送太頻繁，請稍後再試。"}},
+            headers={"Retry-After": str(retry_after)},
         )
 
     # C) 一律回成功（避免暴露帳號是否存在/是否已驗證）

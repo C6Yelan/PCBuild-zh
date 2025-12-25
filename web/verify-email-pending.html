@@ -166,6 +166,7 @@
             重新寄送驗證信
           </button>
         </div>
+        <p class="field-hint" id="cooldown-hint" style="display:none;"></p>
       </div>
 
       <div class="back-home" id="back-link-wrap">
@@ -199,6 +200,8 @@
       const fallbackWrapEl = document.getElementById("email-fallback");
       const fallbackEmailEl = document.getElementById("fallback-email");
       const fallbackErrEl = document.getElementById("fallback-email-error");
+      const cooldownHintEl = document.getElementById("cooldown-hint");
+      const RESEND_BTN_BASE_TEXT = "重新寄送驗證信";
 
       // State
       let currentEmail = "";
@@ -325,60 +328,90 @@
         safeRemoveSessionItem(EMAIL_KEY);
         safeRemoveSessionItem(EMAIL_EXPIRES_AT_KEY);
         renderFallback(false);
+
+        // 已完成驗證：停止倒數並清除冷卻
+        _stopCooldownTimer();
+        _clearCooldownStorage();
+        if (cooldownHintEl) {
+          cooldownHintEl.textContent = "";
+          cooldownHintEl.style.display = "none";
+        }
       }
 
-      function startCountdown(seconds) {
-        remainingSeconds = Math.max(0, Number(seconds) || 0);
+      function _readCooldownUntilMs() {
+        const raw = safeGetSessionItem(COOLDOWN_KEY);
+        if (!raw) return null;
+        const ms = Number(raw);
+        return Number.isFinite(ms) ? ms : null;
+      }
 
-        resendBtn.disabled = remainingSeconds > 0;
-        resendBtn.textContent =
-          remainingSeconds > 0
-            ? `重新寄送驗證信 (${remainingSeconds})`
-            : "重新寄送驗證信";
+      function _writeCooldownUntilMs(untilMs) {
+        safeSetSessionItem(COOLDOWN_KEY, String(untilMs));
+      }
 
+      function _clearCooldownStorage() {
+        safeRemoveSessionItem(COOLDOWN_KEY);
+      }
+
+      function _stopCooldownTimer() {
         if (countdownTimer) {
           clearInterval(countdownTimer);
           countdownTimer = null;
         }
-        if (remainingSeconds <= 0) return;
+      }
 
-        countdownTimer = setInterval(() => {
-          remainingSeconds -= 1;
-          if (remainingSeconds <= 0) {
-            clearInterval(countdownTimer);
-            countdownTimer = null;
-            resendBtn.disabled = false;
-            resendBtn.textContent = "重新寄送驗證信";
-            safeRemoveSessionItem(COOLDOWN_KEY);
+      function _renderCooldownUI(remainingSeconds) {
+        // 按鈕只做 disabled，不顯示秒數
+        resendBtn.disabled = remainingSeconds > 0;
+        resendBtn.textContent = RESEND_BTN_BASE_TEXT;
+
+        if (!cooldownHintEl) return;
+
+        if (remainingSeconds > 0) {
+          cooldownHintEl.style.display = "";
+          cooldownHintEl.textContent = `驗證信寄送太頻繁，請在 ${remainingSeconds} 秒後再試。`;
+        } else {
+          cooldownHintEl.textContent = "";
+          cooldownHintEl.style.display = "none";
+        }
+      }
+
+      function _startCooldown(untilMs) {
+        _stopCooldownTimer();
+
+        const tick = () => {
+          const remaining = Math.max(0, Math.ceil((untilMs - Date.now()) / 1000));
+
+          if (remaining <= 0) {
+            _clearCooldownStorage();
+            _renderCooldownUI(0);
+            _stopCooldownTimer();
             return;
           }
-          resendBtn.textContent = `重新寄送驗證信 (${remainingSeconds})`;
-        }, 1000);
+
+          _renderCooldownUI(remaining);
+        };
+
+        tick();
+        countdownTimer = setInterval(tick, 250);
+      }
+
+      function _applyCooldownSeconds(seconds) {
+        const s = Number(seconds);
+        const sec = Number.isFinite(s) && s > 0 ? Math.ceil(s) : DEFAULT_MIN_INTERVAL_SECONDS;
+        const untilMs = Date.now() + sec * 1000;
+        _writeCooldownUntilMs(untilMs);
+        _startCooldown(untilMs);
       }
 
       function restoreCooldownFromStorage() {
-        const raw = safeGetSessionItem(COOLDOWN_KEY);
-        if (!raw) return;
-
-        const until = Number(raw);
-        if (!Number.isFinite(until)) {
-          safeRemoveSessionItem(COOLDOWN_KEY);
-          return;
+        const untilMs = _readCooldownUntilMs();
+        if (untilMs && untilMs > Date.now()) {
+          _startCooldown(untilMs);
+        } else {
+          _clearCooldownStorage();
+          _renderCooldownUI(0);
         }
-
-        const diffMs = until - Date.now();
-        if (diffMs <= 0) {
-          safeRemoveSessionItem(COOLDOWN_KEY);
-          return;
-        }
-
-        startCountdown(Math.ceil(diffMs / 1000));
-      }
-
-      function setCooldownNow(seconds) {
-        const until = Date.now() + seconds * 1000;
-        safeSetSessionItem(COOLDOWN_KEY, String(until));
-        startCountdown(seconds);
       }
 
       function parseRetryAfterSeconds(resp) {
@@ -449,7 +482,11 @@
       }
 
       resendBtn.addEventListener("click", async () => {
-        if (remainingSeconds > 0) return;
+        const untilMs = _readCooldownUntilMs();
+        if (untilMs && untilMs > Date.now()) {
+          _startCooldown(untilMs);
+          return;
+        }
 
         // 若已登入，先確認是否已完成驗證（避免剛驗證完仍停留在 pending）
         if (isLoggedIn) {
@@ -495,23 +532,17 @@
             body: JSON.stringify({ email: emailToUse }),
             credentials: "same-origin",
           });
-
-          if (resp.ok) {
-            setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
-            return;
-          }
-
-          if (resp.status === 429) {
+          if (resp.ok || resp.status === 429) {
             const retry = parseRetryAfterSeconds(resp) || DEFAULT_MIN_INTERVAL_SECONDS;
-            setCooldownNow(retry);
+            _applyCooldownSeconds(retry);
             return;
           }
 
           // 其它狀態：保守起見仍做冷卻，避免被濫用
-          setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
-        } catch (e) {
-          setCooldownNow(DEFAULT_MIN_INTERVAL_SECONDS);
-        }
+          _applyCooldownSeconds(DEFAULT_MIN_INTERVAL_SECONDS);
+          } catch (e) {
+            _applyCooldownSeconds(DEFAULT_MIN_INTERVAL_SECONDS);
+          }
       });
 
       init();

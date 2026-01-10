@@ -1,17 +1,15 @@
 # backend/api/auth.py
-import os
 import math
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4, UUID
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as OrmSession
-from pydantic import EmailStr, TypeAdapter
 
 from backend.api.deps import get_db
 from backend.models import User, Session as SessionModel, EmailVerificationToken
-from backend.schemas.auth import RegisterIn, RegisterOut, LoginIn, MeOut, ResendVerificationIn, ForgotPasswordIn, ResetPasswordIn, ResetPasswordOut
+from backend.schemas.auth import RegisterIn, RegisterOut, ResendVerificationIn, ForgotPasswordIn, ResetPasswordIn
 from backend.security import hash_password, verify_password
 from backend.services.auth.email_verification import (
     send_signup_verification_for_user,
@@ -24,142 +22,23 @@ from backend.services.auth.email_verification import (
     consume_verification_token,
     load_valid_token_and_user,
 )
+
+# 引入新版本的設定
+from backend.api.auth_config import (
+    EMAIL_ADAPTER,
+    SESSION_COOKIE_NAME,
+    SESSION_EXPIRES_MINUTES,
+    RESEND_MIN_INTERVAL_SECONDS,
+)
+from backend.api.auth_utils import (
+    clear_session_cookie,
+    get_valid_session_from_request,
+    raise_400,
+)
+from backend.api.auth_deps import get_current_user
+from backend.api.routes.auth.session import router as session_router
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-EMAIL_ADAPTER = TypeAdapter(EmailStr)
-SESSION_COOKIE_NAME = "pcbuild_session"
-SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))
-RESEND_MIN_INTERVAL_SECONDS = 60  # 與前端倒數一致（1 分鐘）
-
-# ===== 工具函式 =====
-def _clear_session_cookie(resp: Response) -> None:
-    # 用 set_cookie 清除，帶上與設定時一致的屬性，避免部分瀏覽器刪不掉
-    resp.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value="",
-        max_age=0,
-        expires=0,
-        httponly=True,
-        secure=True,
-        samesite="Lax",
-        path="/",
-    )
-
-# ===== 從 Request 取得有效 Session（或 None） =====
-def _get_valid_session_from_request(request: Request, db: OrmSession) -> SessionModel | None:
-    raw = request.cookies.get(SESSION_COOKIE_NAME)
-    if not raw:
-        return None
-
-    try:
-        sid = UUID(raw)
-    except Exception:
-        return None
-
-    now = datetime.now(timezone.utc)
-    return (
-        db.query(SessionModel)
-        .filter(
-            SessionModel.id == sid,
-            SessionModel.revoked.is_(False),
-            SessionModel.expires_at > now,
-        )
-        .first()
-    )
-
-
-# ===== 共用錯誤拋出工具 =====
-
-def _raise_400(errors: dict[str, str]) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail={"errors": errors},
-    )
-
-
-# ===== 目前登入(未驗證)使用者依賴 =====
-
-def get_current_user(
-    request: Request,
-    db: OrmSession = Depends(get_db),
-) -> User:
-    """
-    從 HttpOnly Cookie (pcbuild_session) 取得目前登入的使用者。
-    若 Cookie 不存在、session 無效或過期，一律回傳 401。
-    """
-    raw_token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not raw_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登入或憑證已失效",
-        )
-
-    try:
-        session_id = UUID(raw_token)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登入或憑證已失效",
-        )
-
-    now = datetime.now(timezone.utc)
-
-    session = (
-        db.query(SessionModel)
-        .filter(
-            SessionModel.id == session_id,
-            SessionModel.revoked.is_(False),
-            SessionModel.expires_at > now,
-        )
-        .first()
-    )
-
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登入或憑證已失效",
-        )
-
-    user = db.query(User).filter(User.id == session.user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="未登入或憑證已失效",
-        )
-
-    return user
-
-
-# ===== 取得已啟用使用者依賴 =====
-def get_active_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    """
-    僅允許「已登入且已完成 Email 驗證」的使用者通過。
-
-    - 未登入：get_current_user 會先拋出 401
-    - 已登入但尚未完成 Email 驗證：拋出 403
-    """
-    if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Email 尚未驗證，請先完成信箱驗證。",
-        )
-    return current_user
-
-
-# ===== 取得目前登入使用者 =====
-
-@router.get("/me", response_model=MeOut)
-def get_me(current_user: User = Depends(get_current_user)) -> MeOut:
-    return MeOut(
-        id=current_user.id,
-        email=current_user.email,
-        username=current_user.username,
-        is_admin=current_user.is_admin,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at,
-    )
+router.include_router(session_router)
 
 
 # ===== 註冊 =====
@@ -168,14 +47,13 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeOut:
 def register(
     body: RegisterIn,
     request: Request,
-    response: Response,
     db: OrmSession = Depends(get_db),
 ) -> RegisterOut:
     # 1. 檢查 Email 格式（避免 Pydantic 回 422）
     try:
         EMAIL_ADAPTER.validate_python(body.email)
     except Exception:
-        _raise_400({"email": "Email 格式不正確。"})
+        raise_400({"email": "Email 格式不正確。"})
 
     # 2. 檢查 Email / 使用者名稱是否已存在（一次收集所有欄位錯誤）
     errors: dict[str, str] = {}
@@ -187,7 +65,7 @@ def register(
         errors["username"] = "使用者名稱已被註冊。"
 
     if errors:
-        _raise_400(errors)
+        raise_400(errors)
 
     # 3. 建立使用者（預設為未啟用，待 Email 驗證後啟用）
     hashed = hash_password(body.password)
@@ -240,13 +118,13 @@ def verify_email(
 
     # 2) 取得目前 cookie 對應的有效 session（可能沒有）
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    current_session = _get_valid_session_from_request(request, db)
+    current_session = get_valid_session_from_request(request, db)
 
     # 沒有合法 session：顯示成功頁，並引導前往登入
     if not current_session:
         resp = _success("login")
         if raw_cookie:
-            _clear_session_cookie(resp)
+            clear_session_cookie(resp)
         return resp
 
     # 3) 有 session，但 user 不同：登出目前 session，要求重新登入
@@ -256,7 +134,7 @@ def verify_email(
         db.commit()
 
         resp = _success("login")
-        _clear_session_cookie(resp)
+        clear_session_cookie(resp)
         return resp
 
     # 4) session user 相同：一定顯示成功頁（依你最新要求）
@@ -267,7 +145,7 @@ def verify_email(
         db.commit()
 
         resp = _success("login")
-        _clear_session_cookie(resp)
+        clear_session_cookie(resp)
         return resp
 
     # 4-b) 若是 login session：保留登入狀態，但做 session rotation（避免狀態升級沿用舊 session）
@@ -360,7 +238,7 @@ def resend_verification(
     try:
         EMAIL_ADAPTER.validate_python(email)
     except Exception:
-        _raise_400({"email": "Email 格式不正確。"})
+        raise_400({"email": "Email 格式不正確。"})
 
     # 先查 user（用於 429 時精準算剩餘秒數；不存在/已啟用也不暴露）
     user = db.query(User).filter(User.email == email).first()
@@ -417,7 +295,7 @@ def forgot_password(
     try:
         EMAIL_ADAPTER.validate_python(body.email)
     except Exception:
-        _raise_400({"email": "Email 格式不正確。"})
+        raise_400({"email": "Email 格式不正確。"})
 
     # 2. 查詢使用者（不論結果，對外回應統一）
     user = db.query(User).filter(User.email == body.email).first()
@@ -472,14 +350,14 @@ def reset_password(
         )
     except InvalidOrExpiredTokenError:
         # 前端會依狀態導到「過期/已使用/格式錯誤」頁；API 端統一用 400 回覆即可
-        _raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
+        raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
         raise  # 只是讓型別檢查器安靜
 
     # 2) 新密碼不可與目前密碼相同
     #verify_password(plain, hash) 會用 Argon2 驗證是否同一密碼
     if verify_password(body.password, user.password_hash):
         db.rollback()  # 避免 token 被標記使用的狀態留在 session 中（不 commit 也保守 rollback）
-        _raise_400({"password": "新密碼不可與原密碼相同，請重新設定。"})
+        raise_400({"password": "新密碼不可與原密碼相同，請重新設定。"})
 
     # 3) 更新密碼（Argon2id）
     user.password_hash = hash_password(body.password)
@@ -500,126 +378,6 @@ def reset_password(
     db.commit()
 
     # 5) 清掉目前裝置 cookie，確保一定回到未登入狀態（導回登入頁）
-    _clear_session_cookie(response)
+    clear_session_cookie(response)
     return {"ok": True}
 
-
-# ===== 登入 =====
-@router.post("/login")
-def login(
-    body: LoginIn,
-    request: Request,
-    response: Response,
-    db: OrmSession = Depends(get_db),
-):
-    # 1. 檢查 Email 格式
-    try:
-        EMAIL_ADAPTER.validate_python(body.email)
-    except Exception:
-        _raise_400({"email": "Email 格式不正確。"})
-
-    # 2. 驗證帳號密碼
-    user = db.query(User).filter(User.email == body.email).first()
-    if not user or not verify_password(body.password, user.password_hash):
-        _raise_400({"credentials": "帳號或密碼錯誤。"})
-
-    # 3. 尚未完成 Email 驗證：建立 session + 嘗試重寄驗證信 + 回 400
-    if not user.is_active:
-        # 3-1 建立「半登入」的 session，讓 /me 可以讀到 email
-        now = datetime.now(timezone.utc)
-        ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
-        expires_at = now + ttl
-
-        session = SessionModel(
-            id=uuid4(),
-            user_id=user.id,
-            expires_at=expires_at,
-            kind="login",
-        )
-        db.add(session)
-        db.commit()
-
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=str(session.id),
-            max_age=int(ttl.total_seconds()),
-            httponly=True,
-            secure=True,
-            samesite="Lax",
-            path="/",
-        )
-        # 尚未完成 Email 驗證：建立 session，允許「受限登入」
-        # 注意：不要在 login 時自動寄信，寄信由使用者點擊「尚未驗證/重新寄送」觸發
-
-        # 3-ㄉ 不丟錯：允許登入，但前端會依 /me 的 is_active=false 進入「受限模式」
-        return {"ok": True, "needs_verification": True}
-
-    # 4. 已啟用帳號：正常登入流程
-    now = datetime.now(timezone.utc)
-    ttl = timedelta(minutes=SESSION_EXPIRES_MINUTES)
-    expires_at = now + ttl
-
-    session = SessionModel(
-        id=uuid4(),
-        user_id=user.id,
-        expires_at=expires_at,
-        kind="login",
-    )
-    db.add(session)
-    db.commit()
-
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=str(session.id),
-        max_age=int(ttl.total_seconds()),
-        httponly=True,
-        secure=True,
-        samesite="Lax",
-        path="/",
-    )
-    return {"ok": True}
-
-
-
-# ===== 登出 =====
-
-@router.post("/logout", status_code=204)
-def logout(
-    request: Request,
-    response: Response,
-    db: OrmSession = Depends(get_db),
-):
-    """
-    將目前 session 標記為 revoked，並清除瀏覽器 Cookie。
-    未登入時呼叫也回 204，不暴露細節。
-    """
-    raw_token = request.cookies.get(SESSION_COOKIE_NAME)
-
-    if raw_token:
-        try:
-            session_id = UUID(raw_token)
-            session = (
-                db.query(SessionModel)
-                .filter(SessionModel.id == session_id, SessionModel.revoked.is_(False))
-                .first()
-            )
-            if session:
-                session.revoked = True
-                db.commit()
-        except ValueError:
-            # Cookie 不是合法 UUID，忽略即可
-            pass
-
-    # 清除瀏覽器端 Cookie
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value="",
-        max_age=0,
-        expires=0,
-        httponly=True,
-        secure=True,
-        samesite="Lax",
-        path="/",
-    )
-    # 204 No Content
-    return

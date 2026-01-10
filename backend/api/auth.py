@@ -488,9 +488,13 @@ def reset_password(
     if not user.is_active:
         user.is_active = True
 
-    # 4) 讓該使用者所有登入中的 session 失效（最保守的方式：直接刪除）
-    db.query(SessionModel).filter(SessionModel.user_id == user.id).delete(
-        synchronize_session=False
+    # 4) 讓該使用者所有登入中的 session 失效（保留紀錄：revoked=True）
+    db.query(SessionModel).filter(
+        SessionModel.user_id == user.id,
+        SessionModel.revoked.is_(False),
+    ).update(
+        {"revoked": True},
+        synchronize_session=False,
     )
 
     db.commit()

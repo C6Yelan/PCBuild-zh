@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from google import genai
 
 from backend.schemas.chat import ChatIn, ChatOut
-from backend.api.auth import get_active_user
+from backend.api.auth_deps import get_active_user
 from backend.models import User
 
 router = APIRouter(prefix="/api", tags=["chat"])

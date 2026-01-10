@@ -4,7 +4,6 @@ import math
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4, UUID
 
-from argon2 import PasswordHasher, exceptions as argon2_exceptions
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as OrmSession
@@ -23,6 +22,7 @@ from backend.services.auth.email_verification import (
     send_password_reset_for_user,
     VerificationPurpose,
     consume_verification_token,
+    load_valid_token_and_user,
 )
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -30,8 +30,6 @@ EMAIL_ADAPTER = TypeAdapter(EmailStr)
 SESSION_COOKIE_NAME = "pcbuild_session"
 SESSION_EXPIRES_MINUTES = int(os.getenv("SESSION_EXPIRES_MINUTES", "120"))
 RESEND_MIN_INTERVAL_SECONDS = 60  # 與前端倒數一致（1 分鐘）
-# Argon2 hasher for verifying reset-password tokens
-_reset_token_hasher = PasswordHasher()
 
 # ===== 工具函式 =====
 def _clear_session_cookie(resp: Response) -> None:
@@ -302,7 +300,6 @@ def verify_email(
     return resp
 
 
-
 # ===== 忘記密碼：從 Email 連結進入重設頁面 =====
 @router.get("/reset-password/{token}", name="reset_password")
 def reset_password_entry(
@@ -312,72 +309,24 @@ def reset_password_entry(
     """
     忘記密碼 Email 連結入口。
 
-    依 token 狀態導向不同的前端頁面：
-    - 有效：   /reset-password.html?token=...
-    - 已使用： /reset-password-failed.html?reason=used
-    - 已過期： /reset-password-failed.html?reason=expired
-    - 格式錯誤 / 找不到 / secret 不匹配：/reset-password-failed.html?reason=invalid
+    - token 有效：導向 /reset-password.html?token=...
+    - token 無效/已失效（含過期、已使用、被取代、格式錯誤等）：一律導向失效頁
+      （前端統一顯示「已失效」）
     """
-
-    # 1) 解析 token（<id>.<secret>）
     try:
-        id_str, secret = token.split(".", 1)
-        token_id = int(id_str)
-        if not secret:
-            raise ValueError("empty secret")
-    except (ValueError, AttributeError):
+        # 只驗證，不消費、不 commit；並套用 PASSWORD_RESET「僅最新 token 有效」規則
+        load_valid_token_and_user(
+            db=db,
+            public_token=token,
+            expected_purpose=VerificationPurpose.PASSWORD_RESET,
+        )
+    except InvalidOrExpiredTokenError:
+        # 對使用者一律顯示「已失效」
         return RedirectResponse(
-            url="/reset-password-failed.html?reason=invalid",
+            url="/reset-password-failed.html",
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 2) 先查 token_id + 用途
-    row = (
-        db.query(EmailVerificationToken)
-        .filter(
-            EmailVerificationToken.id == token_id,
-            EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
-        )
-        .first()
-    )
-    if row is None:
-        return RedirectResponse(
-            url="/reset-password-failed.html?reason=invalid",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # 3) 核心修正：驗證 secret 是否匹配 token_hash
-    #    若 secret 不匹配，直接視為 invalid（避免被竄改的 token 仍能打開重設頁）
-    try:
-        _reset_token_hasher.verify(row.token_hash, secret)
-    except (
-        argon2_exceptions.VerifyMismatchError,
-        argon2_exceptions.VerificationError,
-        Exception,
-    ):
-        return RedirectResponse(
-            url="/reset-password-failed.html?reason=invalid",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # 4) secret 正確後，才允許顯示 used / expired 等狀態（避免 token_id 被枚舉探測）
-    now = datetime.now(timezone.utc)
-
-    # 4-1) 已使用
-    if row.is_used:
-        return RedirectResponse(
-            url="/reset-password-failed.html?reason=used",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # 4-2) 過期
-    if row.expires_at < now:
-        return RedirectResponse(
-            url="/reset-password-failed.html?reason=expired",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # 5) 有效：導向前端重設密碼頁面
     return RedirectResponse(
         url=f"/reset-password.html?token={token}",
         status_code=status.HTTP_302_FOUND,
@@ -539,23 +488,14 @@ def reset_password(
     if not user.is_active:
         user.is_active = True
 
-    # 4) 使「該使用者所有 PASSWORD_RESET token」全部失效（包含其他尚未使用的）
-    db.query(EmailVerificationToken).filter(
-        EmailVerificationToken.user_id == user.id,
-        EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
-    ).update(
-        {"is_used": True},
-        synchronize_session=False,
-    )
-
-    # 5) 讓該使用者所有登入中的 session 失效（最保守的方式：直接刪除）
+    # 4) 讓該使用者所有登入中的 session 失效（最保守的方式：直接刪除）
     db.query(SessionModel).filter(SessionModel.user_id == user.id).delete(
         synchronize_session=False
     )
 
     db.commit()
 
-    # 6) 清掉目前裝置 cookie，確保一定回到未登入狀態（導回登入頁）
+    # 5) 清掉目前裝置 cookie，確保一定回到未登入狀態（導回登入頁）
     _clear_session_cookie(response)
     return {"ok": True}
 

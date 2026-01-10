@@ -18,7 +18,7 @@ from fastapi import Request
 
 
 class VerificationPurpose(str, Enum):
-    """驗證碼用途（目前只用到 SIGNUP，未來可擴充 LOGIN 等）。"""
+    """驗證碼用途（目前使用 SIGNUP / PASSWORD_RESET）。"""
     SIGNUP = "signup"
     PASSWORD_RESET = "password_reset"
     # 未來要做登入驗證可新增：
@@ -52,8 +52,20 @@ class VerificationEmailRateLimitedError(Exception):
 _token_hasher = PasswordHasher()
 
 
+class TokenState(str, Enum):
+    INVALID = "invalid"           # 格式錯、找不到、secret 不匹配
+    EXPIRED = "expired"           # 超過 expires_at
+    USED = "used"                 # token 本身已被消費
+    SUPERSEDED = "superseded"     # 被更新的 token 取代（例如只允許最新）
+    ALREADY_VERIFIED = "already_verified"  # SIGNUP：帳號已啟用，連結自然失效
+
+
 class InvalidOrExpiredTokenError(Exception):
-    """驗證信 token 無效或已過期時拋出的錯誤。"""
+    """token 驗證失敗（前端統一顯示已失效；後端用 state 區分原因）。"""
+
+    def __init__(self, message: str = "驗證連結已失效。", *, state: TokenState = TokenState.INVALID):
+        super().__init__(message)
+        self.state = state
 
 
 # === 共用小工具 ===
@@ -184,8 +196,7 @@ def issue_password_reset_token_for_user(
 
     設計重點：
     - 依 PASSWORD_RESET 的冷卻時間做簡單 rate limit。
-    - 發新 token 前，將該使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
-      避免舊連結在之後仍然可以被使用。
+    - latest-only + SUPERSEDED” 來失效舊 token（由驗證階段判斷）。
     - 回傳 public token（給上層組合 reset URL 使用）。
     """
     now = _utcnow()
@@ -209,17 +220,6 @@ def issue_password_reset_token_for_user(
             raise VerificationEmailRateLimitedError(
                 "重設密碼請求太頻繁，請稍後再試。"
             )
-
-    # 3) 將該使用者所有舊的 PASSWORD_RESET token 標記為已使用
-    (
-        db.query(EmailVerificationToken)
-        .filter(
-            EmailVerificationToken.user_id == user.id,
-            EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
-        )
-        .update({"is_used": True}, synchronize_session=False)
-    )
-    db.commit()
 
     # 4) 發行新的 PASSWORD_RESET token
     #    有效時間會由 DEFAULT_LIFETIME_MINUTES[VerificationPurpose.PASSWORD_RESET]
@@ -256,20 +256,64 @@ def _load_valid_token_and_user(
     )
 
     if token is None:
-        raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。")
+        raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
 
-    now = _utcnow()
-    if token.is_used or token.expires_at < now:
-        raise InvalidOrExpiredTokenError("驗證連結已使用或已過期。")
-
-    if not _verify_token(secret, token.token_hash):
-        raise InvalidOrExpiredTokenError("驗證碼不正確。")
-
+    # 1) 載入 user
     user = db.query(User).filter(User.id == token.user_id).first()
     if user is None:
-        raise InvalidOrExpiredTokenError("找不到對應的使用者。")
+        raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
+
+    # 2) 驗證 secret 是否匹配 token_hash（避免只靠 token_id 就可用）
+    if not _verify_token(secret, token.token_hash):
+        raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
+
+    now = _utcnow()
+
+    # 3) 驗證是否過期
+    if token.expires_at < now:
+        raise InvalidOrExpiredTokenError(state=TokenState.EXPIRED)
+
+    # 4) 依用途驗證其他條件
+    if expected_purpose == VerificationPurpose.PASSWORD_RESET:
+        # 先判斷是否為最新（讓非最新的就算 is_used=True 也回 SUPERSEDED）
+        latest = _get_latest_token_for_user(
+            db=db,
+            user_id=user.id,
+            purpose=VerificationPurpose.PASSWORD_RESET,
+        )
+        if latest is not None and latest.id != token.id:
+            raise InvalidOrExpiredTokenError(state=TokenState.SUPERSEDED)
+
+        # 再判斷是否已使用（此時只會影響「最新那筆已被消費」的情境）
+        if token.is_used:
+            raise InvalidOrExpiredTokenError(state=TokenState.USED)
+
+    else:
+        # SIGNUP（或未來其他用途）：已使用優先
+        if token.is_used:
+            raise InvalidOrExpiredTokenError(state=TokenState.USED)
+
+        if expected_purpose == VerificationPurpose.SIGNUP and user.is_active:
+            raise InvalidOrExpiredTokenError(state=TokenState.ALREADY_VERIFIED)
 
     return token, user
+
+
+def load_valid_token_and_user(
+    db: Session,
+    public_token: str,
+    *,
+    expected_purpose: VerificationPurpose,
+) -> tuple[EmailVerificationToken, User]:
+    """
+    公開的 read-only 驗證介面：只做載入與檢查，不改寫 token，也不 commit。
+    統一由本模組內部 private helper 實作細節，避免其他模組直接依賴底層函式。
+    """
+    return _load_valid_token_and_user(
+        db=db,
+        public_token=public_token,
+        expected_purpose=expected_purpose,
+    )
 
 
 #== 通用消費驗證碼流程 ===
@@ -331,7 +375,7 @@ def verify_signup_token_and_activate_user(
 
     - 使用通用 consume_verification_token(...) 確認 token
     - 啟用 user.is_active
-    - 將該使用者所有「註冊用途」的驗證 token 一次標記為已使用
+    - 消費本次 token、啟用 user；其他舊 token 不批次標 used，改由驗證階段視為已失效（ALREADY_VERIFIED）
     - 由此函式一次 commit，確保變更在同一個 transaction 中完成
     """
 
@@ -346,20 +390,6 @@ def verify_signup_token_and_activate_user(
 
     # 啟用帳號
     user.is_active = True
-
-    # 失效同一個使用者、同一用途(SIGNUP) 的所有 token（包含目前這一筆）
-    token_model = type(token)
-    (
-        db.query(token_model)
-        .filter(
-            token_model.user_id == user.id,
-            token_model.purpose == VerificationPurpose.SIGNUP,
-        )
-        .update(
-            {"is_used": True},
-            synchronize_session=False,
-        )
-    )
 
     # user 狀態變更 + token 失效一起 commit
     db.add(user)
@@ -460,8 +490,7 @@ def send_password_reset_for_user(
     設計重點：
     - 適用於帳號存在即可寄送重設密碼信的情境（不論帳號是否啟用皆可寄送）
     - 依 PASSWORD_RESET 的設定做冷卻控管（分鐘）
-    - 發行新 token 前，將此使用者所有 PASSWORD_RESET 用途的舊 token 一次標記為已使用，
-      避免舊連結在密碼重設後仍可被使用
+    - 僅最新 token 有效；舊 token 由驗證階段判定為 SUPERSEDED
     - 由這層組合 reset URL，並呼叫 send_password_reset_email 寄信
     """
 
@@ -485,17 +514,6 @@ def send_password_reset_for_user(
             raise VerificationEmailRateLimitedError(
                 "重設密碼請求太頻繁，請稍後再試。"
             )
-
-    # 4) 將該使用者所有舊的 PASSWORD_RESET token 標記為已使用
-    (
-        db.query(EmailVerificationToken)
-        .filter(
-            EmailVerificationToken.user_id == user.id,
-            EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
-        )
-        .update({"is_used": True}, synchronize_session=False)
-    )
-    db.commit()
 
     # 5) 發行新的 PASSWORD_RESET token（有效時間已在 DEFAULT_LIFETIME_MINUTES 中設定為 20 分鐘）
     public_token = issue_verification_token(

@@ -110,7 +110,7 @@
         <div class="content">
           這個驗證連結已經失效，可能是因為：
           <ul style="margin: 8px 0 8px 20px; padding: 0;">
-            <li>連結已經被使用過一次。</li>
+            <li>您開啟的不是最新寄出的驗證連結。</li>
             <li>驗證連結已經過期。</li>
             <li>連結不完整或被修改。</li>
           </ul>
@@ -126,5 +126,11 @@
         </div>
       </div>
     </div>
+    <script>
+      try {
+        sessionStorage.removeItem("pcbuild_verify_cooldown_until");
+        sessionStorage.removeItem("pcbuild_verify_cooldown_reason");
+      } catch (_) {}
+    </script>
   </body>
 </html>

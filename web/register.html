@@ -253,6 +253,22 @@
       const passwordField = document.querySelector('[data-field="password"]');
       const passwordConfirmField = document.querySelector('[data-field="password-confirm"]');
 
+      // 已登入者不應停留在註冊頁：直接導回首頁（用 replace 避免返回又回到註冊頁）
+      (async function redirectIfAuthed() {
+        try {
+          const resp = await fetch("/api/auth/me", {
+            method: "GET",
+            credentials: "same-origin",
+          });
+
+          if (resp.ok) {
+            window.location.replace("/");
+          }
+        } catch (_) {
+          // 後端離線 / 網路錯誤：不要強制跳轉，讓使用者仍可看到註冊頁與錯誤訊息
+        }
+      })();
+
       function refreshGlobalErrorFromFields() {
         const fields = [
           emailField,

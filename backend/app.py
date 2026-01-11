@@ -1,21 +1,14 @@
 # backend/app.py
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.router import api_router
-from backend.core.settings import get_settings
 from backend.core.docs_gate import DocsGateMiddleware
 from backend.core.static_site import mount_static_site
+from backend.core.cors import add_cors_middleware
 
 # ===== App & CORS =====
 app = FastAPI()
-settings = get_settings()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_allow_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+add_cors_middleware(app)
 
 app.add_middleware(DocsGateMiddleware)
 

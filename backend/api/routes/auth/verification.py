@@ -25,8 +25,11 @@ from backend.security import hash_password
 from backend.services.auth.email_verification import (
     send_signup_verification_for_user,
     verify_signup_token_and_activate_user,
-    InvalidOrExpiredTokenError,
     resend_signup_verification_for_email,
+)
+
+from backend.services.auth.verification.core import (
+    InvalidOrExpiredTokenError,
     VerificationEmailRateLimitedError,
     VerificationPurpose,
 )

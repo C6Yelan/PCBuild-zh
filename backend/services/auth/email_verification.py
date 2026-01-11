@@ -16,7 +16,6 @@ from fastapi import Request
 
 from backend.services.auth.verification.core import (
     VerificationPurpose,
-    DEFAULT_LIFETIME_MINUTES,
     RESEND_MIN_INTERVAL_MINUTES,
     VerificationEmailRateLimitedError,
     TokenState,
@@ -29,8 +28,6 @@ from backend.services.auth.verification.core import (
     get_latest_token_for_user,
 )
 
-
-# === 通用發行 / 驗證流程（未綁定「註冊」或「登入」） ===
 
 #== 發行驗證碼 ===
 def issue_verification_token(

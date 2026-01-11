@@ -8,18 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.api.router import api_router
-from contextlib import asynccontextmanager
-from backend.core.init_db import init_db_schema
 from backend.core.settings import get_settings
 
 # ===== App & CORS =====
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    init_db_schema()
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,

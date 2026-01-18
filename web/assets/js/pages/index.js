@@ -1,4 +1,4 @@
-// web/assets/js/index.js
+// web/assets/js/pages/index.js
 const API = "/api/chat";
 const log = document.getElementById('log');
 const chatInput = document.getElementById('chat-input');

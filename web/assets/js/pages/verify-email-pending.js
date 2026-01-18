@@ -1,4 +1,4 @@
-// web/assets/js/verify-email-pending.js
+// web/assets/js/pages/verify-email-pending.js
 // =========================================================
 // verify-email-pending.html
 // - 本頁不在載入時自動寄信（避免頁面導向造成重複寄送）

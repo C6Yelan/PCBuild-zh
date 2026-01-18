@@ -15,7 +15,8 @@ label {
   gap: 4px;
 }
 input[type="email"],
-input[type="password"] {
+input[type="password"],
+input[type="text"] {
   padding: 10px 12px;
   font-size: 14px;
   border-radius: 8px;
@@ -49,4 +50,18 @@ input[type="password"] {
   margin: 8px 0 0;
   font-size: 13px;
   text-align: center;
+}
+/* login 專用 wrapper，讓眼睛定位基準改成 input 容器，達到輸入框內右中 */
+.field[data-field="password"] .pw-wrap {
+  position: relative; /* 讓 .pw-toggle 的 absolute 以此為 containing block */
+}
+
+.field[data-field="password"] .pw-wrap > input {
+  width: 100%;        /* 保持和原本 input 作為 flex item 時一樣的滿寬效果 */
+}
+
+/* 覆蓋原本 top: calc(...)，改成以輸入框垂直置中 */
+.field[data-field="password"] .pw-wrap .pw-toggle {
+  top: 50%;
+  transform: translateY(-50%);
 }

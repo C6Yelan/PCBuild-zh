@@ -27,3 +27,70 @@
 .field.field-error .field-label-main {
   color: var(--error);
 }
+
+/* === Password visibility toggle（新增，不修改既有規則） === */
+.field[data-field="password"],
+.field[data-field="password-confirm"] {
+  /* 讓 pw-toggle 可以用 absolute 以本 field 為定位參考，不影響既有排版 */
+  position: relative;
+}
+
+/* 注意：之後切換成 type="text" 時仍需保留右側空間，所以不要寫 input[type="password"] */
+.field[data-field="password"] input,
+.field[data-field="password-confirm"] input {
+  padding-right: 44px; /* 保留 icon 區域，避免文字被遮到 */
+}
+
+.field[data-field="password"] .pw-toggle,
+.field[data-field="password-confirm"] .pw-toggle {
+  position: absolute;
+  right: 10px;
+  top: calc(1.2em + 4px); /* 約等於 label-row 高度 + gap，使 icon 對齊 input 上緣 */
+  width: 28px;
+  height: 28px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.pw-toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.pw-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+/* 讓 hidden 不會被 .pw-icon { display:block; } 覆蓋 */
+.pw-toggle .pw-icon[hidden] {
+  display: none;
+}
+
+/* pw-wrap：讓眼睛定位在「輸入框內右中」，不受 label-row/錯誤訊息高度影響 */
+.field[data-field="password"] .pw-wrap,
+.field[data-field="password-confirm"] .pw-wrap {
+  position: relative; /* 讓 .pw-toggle 改以 pw-wrap 當 containing block */
+}
+
+.field[data-field="password"] .pw-wrap > input,
+.field[data-field="password-confirm"] .pw-wrap > input {
+  width: 100%; /* wrapper 內的 input 預設不會自動滿寬，需明確指定 */
+}
+
+/* 覆蓋原本 .pw-toggle 的 top 設定：改為垂直置中 */
+.field[data-field="password"] .pw-wrap .pw-toggle,
+.field[data-field="password-confirm"] .pw-wrap .pw-toggle {
+  top: 50%;
+  transform: translateY(-50%);
+}

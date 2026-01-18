@@ -1,4 +1,4 @@
-// web/assets/js/verify-email-success.js
+// web/assets/js/pages/verify-email-success.js
 (async () => {
 const contentEl = document.getElementById("success-content");
 const hintEl = document.getElementById("success-hint");

@@ -1,4 +1,4 @@
-// web/assets/js/forgot-password.js
+// web/assets/js/pages/forgot-password.js
 const form = document.getElementById("forgot-form");
 const emailInput = document.getElementById("email");
 const forgotBtn = document.getElementById("forgot-btn");

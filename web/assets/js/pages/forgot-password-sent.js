@@ -1,4 +1,4 @@
-// web/assets/js/forgot-password-sent.js
+// web/assets/js/pages/forgot-password-sent.js
 function maskEmail(email) {
     const parts = String(email || "").split("@");
     if (parts.length !== 2) return "";

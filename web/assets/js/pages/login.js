@@ -1,4 +1,4 @@
-// web/assets/js/login.js
+// web/assets/js/pages/login.js
 const form = document.getElementById("login-form");
 const emailInput = document.getElementById("email");
 const passwordInput = document.getElementById("password");
@@ -168,3 +168,65 @@ try {
     loginBtn.textContent = originalText;
 }
 });
+
+// === Password visibility toggle（新增：不影響既有登入流程） ===
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pw-toggle");
+  if (!btn) return;
+
+  // 避免任何瀏覽器/情境下觸發 form submit 或其他預設行為
+  e.preventDefault();
+
+  const targetId =
+    btn.getAttribute("data-pw-target") || btn.getAttribute("aria-controls");
+  if (!targetId) return;
+
+  const input = document.getElementById(targetId);
+  if (!input) return;
+
+  const isPressed = btn.getAttribute("aria-pressed") === "true";
+  const nextPressed = !isPressed;
+
+  // pressed=true 代表「顯示密碼」
+  try {
+    input.type = nextPressed ? "text" : "password";
+  } catch (_) {
+    return;
+  }
+
+  btn.setAttribute("aria-pressed", nextPressed ? "true" : "false");
+
+  const eye = btn.querySelector(".pw-icon-eye");
+  const eyeOff = btn.querySelector(".pw-icon-eye-off");
+
+  const setHiddenAttr = (el, hide) => {
+    if (!el) return;
+    if (hide) el.setAttribute("hidden", "");
+    else el.removeAttribute("hidden");
+  };
+
+  setHiddenAttr(eye, !nextPressed);     // 顯示密碼 -> 顯示 eye
+  setHiddenAttr(eyeOff, nextPressed);   // 顯示密碼 -> 隱藏 eye-off
+
+  // 保持輸入體驗
+  input.focus({ preventScroll: true });
+});
+
+// === Init: sync icon with current aria-pressed state (state-based icon) ===
+(function initPwToggleIcons() {
+  document.querySelectorAll(".pw-toggle").forEach((btn) => {
+    const isShowing = btn.getAttribute("aria-pressed") === "true";
+    const eye = btn.querySelector(".pw-icon-eye");
+    const eyeOff = btn.querySelector(".pw-icon-eye-off");
+    if (!eye || !eyeOff) return;
+
+    // 狀態式 icon：show -> eye；hide -> eye-off
+    if (!isShowing) {
+    eye.setAttribute("hidden", "");
+    eyeOff.removeAttribute("hidden");
+    } else {
+    eye.removeAttribute("hidden");
+    eyeOff.setAttribute("hidden", "");
+    }
+  });
+})();

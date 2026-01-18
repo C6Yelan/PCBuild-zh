@@ -36,6 +36,7 @@
               <span class="field-label-main">密碼</span>
               <span class="field-error-text"></span>
             </div>
+            <div class="pw-wrap">
             <input
               id="password"
               type="password"
@@ -44,7 +45,31 @@
               minlength="8"
               maxlength="128"
             />
-          </label>
+            <!-- 新增：顯示/隱藏密碼按鈕（先加 DOM，定位與互動下一步處理） -->
+            <button
+              type="button"
+              class="pw-toggle"
+              aria-label="切換密碼顯示"
+              aria-pressed="false"
+              aria-controls="password"
+              data-pw-target="password"
+              title="顯示/隱藏密碼"
+            >
+              <!-- Eye（顯示） -->
+              <svg class="pw-icon pw-icon-eye" aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" fill="none" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>
+              </svg>
+
+              <!-- Eye-off（隱藏；先用 hidden 避免兩個 icon 同時出現） -->
+              <svg class="pw-icon pw-icon-eye-off" aria-hidden="true" viewBox="0 0 24 24" focusable="false" hidden>
+                <path d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="M2 12s3.5-7 10-7c2 0 3.8.6 5.4 1.6" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="M22 12s-3.5 7-10 7c-2 0-3.8-.6-5.4-1.6" fill="none" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </button>
+          </div>
+        </label>
 
           <div class="actions-row">
             <a id="forgot-btn" class="btn-link" href="/forgot-password.html">忘記密碼？</a>

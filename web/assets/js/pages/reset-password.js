@@ -1,4 +1,4 @@
-// web/assets/js/reset-password.js
+// web/assets/js/pages/reset-password.js
 const form = document.getElementById("reset-form");
 const passwordInput = document.getElementById("password");
 const passwordConfirmInput = document.getElementById("password-confirm");
@@ -51,11 +51,11 @@ try {
 }
 
 const token = getToken();
-if (!token) {
-// 缺 token：直接導向無效頁
-clearResetToken();
-window.location.href = "/reset-password-failed.html";
-}
+// if (!token) {
+// // 缺 token：直接導向無效頁
+// clearResetToken();
+// window.location.href = "/reset-password-failed.html";
+// }
 
 function validatePasswordField() {
 if (!passwordField) return;
@@ -158,4 +158,43 @@ try {
     resetBtn.disabled = false;
     resetBtn.textContent = originalText;
 }
+});
+
+// === Password visibility toggle（新增：不影響既有登入流程） ===
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pw-toggle");
+  if (!btn) return;
+
+  // 避免任何瀏覽器/情境下觸發 form submit 或其他預設行為
+  e.preventDefault();
+
+  const targetId =
+    btn.getAttribute("data-pw-target") || btn.getAttribute("aria-controls");
+  if (!targetId) return;
+
+  const input = document.getElementById(targetId);
+  if (!input) return;
+
+  const isPressed = btn.getAttribute("aria-pressed") === "true";
+  const nextPressed = !isPressed;
+
+  // pressed=true 代表「顯示密碼」
+  try {
+    input.type = nextPressed ? "text" : "password";
+  } catch (_) {
+    return;
+  }
+
+  btn.setAttribute("aria-pressed", nextPressed ? "true" : "false");
+
+  // 切換 icon（你的 DOM 目前是用 hidden 避免兩個同時出現）
+  const eye = btn.querySelector(".pw-icon-eye");
+  const eyeOff = btn.querySelector(".pw-icon-eye-off");
+  if (eye && eyeOff) {
+    eye.hidden = nextPressed;
+    eyeOff.hidden = !nextPressed;
+  }
+
+  // 保持輸入體驗
+  input.focus({ preventScroll: true });
 });

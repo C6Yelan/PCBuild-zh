@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
+    # Request log mode: "errors" | "all"
+    request_log_mode: str = Field(default="errors", alias="REQUEST_LOG_MODE")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

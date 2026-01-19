@@ -67,6 +67,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
     - slow requests (>= 800ms) at WARNING
     - 4xx/5xx at WARNING
     """
+    mode = getattr(request.app.state, "request_log_mode", "errors")
     logger = logging.getLogger("pcbuild.request")
 
     req_id = uuid.uuid4().hex[:12]
@@ -78,7 +79,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         dur_ms = (time.perf_counter() - start) * 1000
         # Do NOT log request.url (may include query tokens). Use path only.
         logger.exception(
-            "request_failed method=%s path=%s duration_ms=%.1f request_id=%s client=%s",
+             "category=error event=request_failed method=%s path=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
             request.url.path,
             dur_ms,
@@ -92,7 +93,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
 
     if status >= 400:
         logger.warning(
-            "request_error method=%s path=%s status=%s duration_ms=%.1f request_id=%s client=%s",
+             "category=error event=request_error method=%s path=%s status=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
             request.url.path,
             status,
@@ -102,7 +103,16 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         )
     elif dur_ms >= 800:
         logger.warning(
-            "request_slow method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
+            "category=access event=request_slow method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
+            request.method,
+            request.url.path,
+            status,
+            dur_ms,
+            req_id,
+        )
+    elif mode == "all":
+        logger.info(
+            "category=access event=request_ok method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
             request.method,
             request.url.path,
             status,

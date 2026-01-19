@@ -14,6 +14,7 @@ def create_app() -> FastAPI:
     configure_logging(log_level=settings.log_level)
 
     app = FastAPI()
+    app.state.request_log_mode = settings.request_log_mode
     app.middleware("http")(request_log_middleware)
 
     add_app_middlewares(app, settings)

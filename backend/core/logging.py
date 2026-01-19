@@ -50,7 +50,7 @@ def configure_logging(*, log_level: str) -> None:
             "loggers": {
                 "uvicorn": {"level": level, "handlers": ["stdout"], "propagate": False},
                 "uvicorn.error": {"level": level, "handlers": ["stdout"], "propagate": False},
-                "uvicorn.access": {"level": level, "handlers": ["stdout"], "propagate": False},
+                "uvicorn.access": {"level": "WARNING", "handlers": ["stdout"], "propagate": False},
             },
         }
     )

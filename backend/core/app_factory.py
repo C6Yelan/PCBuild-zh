@@ -7,6 +7,7 @@ from backend.core.bootstrap.routes import include_api_routes
 from backend.core.settings import get_settings
 from backend.core.bootstrap.static_site import mount_static_site
 from backend.core.logging import configure_logging, request_log_middleware
+from backend.core.oplog import log_operation
 
 
 def create_app() -> FastAPI:
@@ -15,7 +16,6 @@ def create_app() -> FastAPI:
 
     app = FastAPI()
     app.state.request_log_mode = settings.request_log_mode
-    app.middleware("http")(request_log_middleware)
 
     add_app_middlewares(app, settings)
 
@@ -27,8 +27,12 @@ def create_app() -> FastAPI:
             "127.0.0.1",
         ],
     )
+    @app.on_event("startup") # 未來會變更成更新的啟動程序方式
+    async def _oplog_startup() -> None:
+        log_operation("app_start", component="fastapi")
 
     include_api_routes(app)
     mount_static_site(app)
+    app.middleware("http")(request_log_middleware)
     return app
 

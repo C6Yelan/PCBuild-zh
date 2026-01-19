@@ -237,7 +237,6 @@ try {
     }
 
     errorEl.textContent = msg;
-    console.error("Register error:", resp.status, data);
     return;
     }
 
@@ -269,7 +268,6 @@ try {
 
 window.location.href = "/verify-email-pending.html";
 } catch (err) {
-    console.error("Register network error:", err);
     errorEl.textContent = "註冊失敗，請稍後再試。";
 } finally {
     registerBtn.disabled = false;

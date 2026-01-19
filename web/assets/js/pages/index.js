@@ -360,7 +360,6 @@ async function initHomeAuthGuard() {
     clearVerifySessionStorage();
     configureChatForActiveUser();
   } catch (err) {
-    console.error("initHomeAuthGuard failed:", err);
     configureChatForGuest();
     renderTopBarGuest();
     hadValidSession = false;
@@ -493,7 +492,6 @@ async function loadAuthState(preloadedData = null) {
       }
     });
   } catch (e) {
-    console.error("loadAuthState error:", e);
   }
 }
 

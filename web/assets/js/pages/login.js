@@ -153,15 +153,12 @@ try {
         } else if (!errorEl.textContent) {
             errorEl.textContent = "登入失敗，請稍後再試。";
         }
-
-        console.error("Login error:", resp.status, data);
         return;
         }
 
     // 登入成功：session cookie 已設定，導回首頁
     window.location.href = "/";
 } catch (err) {
-    console.error("Login network error:", err);
     errorEl.textContent = "登入失敗，請稍後再試。";
 } finally {
     loginBtn.disabled = false;

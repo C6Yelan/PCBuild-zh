@@ -6,11 +6,15 @@ from backend.core.middleware import add_app_middlewares
 from backend.core.bootstrap.routes import include_api_routes
 from backend.core.settings import get_settings
 from backend.core.bootstrap.static_site import mount_static_site
+from backend.core.logging import configure_logging, request_log_middleware
 
 
 def create_app() -> FastAPI:
-    app = FastAPI()
     settings = get_settings()
+    configure_logging(log_level=settings.log_level)
+
+    app = FastAPI()
+    app.middleware("http")(request_log_middleware)
 
     add_app_middlewares(app, settings)
 

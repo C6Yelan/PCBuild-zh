@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Debug routes
     debug_routes_enabled: bool = Field(default=False, alias="DEBUG_ROUTES_ENABLED")
 
+    # Logging
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     # FastAPI 官方建議用 lru_cache 避免每次 request 反覆載入設定

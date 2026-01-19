@@ -51,11 +51,11 @@ try {
 }
 
 const token = getToken();
-// if (!token) {
-// // 缺 token：直接導向無效頁
-// clearResetToken();
-// window.location.href = "/reset-password-failed.html";
-// }
+if (!token) {
+// 缺 token：直接導向無效頁
+clearResetToken();
+window.location.href = "/reset-password-failed.html";
+}
 
 function validatePasswordField() {
 if (!passwordField) return;

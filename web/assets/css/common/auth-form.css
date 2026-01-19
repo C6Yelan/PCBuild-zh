@@ -14,6 +14,13 @@ input:focus {
   outline-offset: 1px;
 }
 
+/* placeholder 對比與跨瀏覽器一致性 */
+input::placeholder {
+  color: color-mix(in srgb, var(--text) 65%, var(--surface));
+  opacity: 1;
+}
+
+
 button {
   font-family: inherit;
   cursor: pointer;

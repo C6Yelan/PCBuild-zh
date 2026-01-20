@@ -60,7 +60,7 @@ def _fmt_value(v: Any) -> str:
     """
     盡量符合 logfmt 可解析的 value：
     - key=value 以空白分隔（含空白/等號/引號的 value 用雙引號包起來）
-    - 內部 " 與 \ 做基本跳脫
+    - 內部 " 與 反斜線 做基本跳脫
     """
     if v is None:
         return "null"

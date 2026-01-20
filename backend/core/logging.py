@@ -32,7 +32,7 @@ def configure_logging(*, log_level: str) -> None:
             "disable_existing_loggers": False,
             "formatters": {
                 "default": {
-                    "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+                    "format": "ts=\"%(asctime)s\" level=%(levelname)s logger=%(name)s %(message)s",
                 },
             },
             "handlers": {

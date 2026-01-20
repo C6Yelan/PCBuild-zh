@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from backend.core.seclog import log_security
+
 
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """
@@ -22,5 +24,12 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSO
         k_lower = k.lower()
         if k_lower == "retry-after" or k_lower.startswith("x-ratelimit-"):
             resp.headers[k] = v
+
+    log_security(
+    "rate_limited",
+    method=request.method,
+    path=request.url.path,
+    client=getattr(request.client, "host", "-"),
+    )
 
     return resp

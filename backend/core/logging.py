@@ -53,6 +53,7 @@ def configure_logging(*, log_level: str) -> None:
                 "uvicorn.access": {"level": "WARNING", "handlers": ["stdout"], "propagate": False},
                 "pcbuild.operation": {"level": "INFO", "handlers": ["stdout"], "propagate": False},
                 "pcbuild.request": {"level": level, "handlers": ["stdout"], "propagate": False},
+                "pcbuild.security": {"level": "INFO", "handlers": ["stdout"], "propagate": False},
             },
         }
     )

@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from backend.core.settings import get_settings
+from backend.core.seclog import log_security
 from backend.api.auth.config import SESSION_COOKIE_NAME
 
 
@@ -63,6 +64,13 @@ def add_csrf_protection_middleware(app: FastAPI) -> None:
 
         # 未設定信任清單或來源不在清單：拒絕（fail-closed）
         if not trusted or not req_origin or req_origin not in trusted:
+            log_security(
+                "csrf_block",
+                method=request.method,
+                path=request.url.path,
+                client=getattr(request.client, "host", "-"),
+                origin=req_origin or "-",
+            )
             return JSONResponse(
                 status_code=403,
                 content={"errors": {"_global": "CSRF protection: invalid origin"}},

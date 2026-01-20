@@ -28,6 +28,7 @@ def reset_password(
     response: Response,
     db: OrmSession = Depends(get_db),
 ):
+    ctx = security_ctx(request)
     try:
         user, _token = consume_verification_token(
             db,
@@ -38,25 +39,16 @@ def reset_password(
         log_security(
             "password_reset_token_invalid",
             endpoint="reset_password",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         raise_400({"token": "重設密碼連結無效或已過期，請重新申請。"})
-        raise
 
     if verify_password(body.password, user.password_hash):
         log_security(
             "password_reset_policy_violation",
             reason="same_as_old_password",
             user_id=user.id,
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         db.rollback()
         raise_400({"password": "新密碼不可與原密碼相同，請重新設定。"})
@@ -82,7 +74,7 @@ def reset_password(
         user_id=user.id,
         revoked_sessions=revoked_sessions,
         account_activated=("1" if was_inactive else "0"),
-        **security_ctx(request),
+        **ctx,
     )
 
     clear_session_cookie(response)

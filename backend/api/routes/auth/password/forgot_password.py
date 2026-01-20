@@ -16,6 +16,7 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
+from backend.core.seclog import log_security
 
 router = APIRouter()
 
@@ -40,10 +41,30 @@ def forgot_password(
     try:
         EMAIL_ADAPTER.validate_python(body.email)
     except Exception:
+        log_security(
+            "authn_input_invalid",
+            reason="email_format",
+            endpoint="forgot_password",
+            client=(request.headers.get("cf-connecting-ip")
+                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                    or getattr(request.client, "host", "-")),
+            method=request.method,
+            path=request.url.path,
+        )
         raise_400({"email": "Email 格式不正確。"})
 
     user = db.query(User).filter(User.email == body.email).first()
     if not user:
+        email_domain = body.email.split("@", 1)[-1].lower() if "@" in body.email else "-"
+        log_security(
+            "password_reset_request_unknown",
+            email_domain=email_domain,
+            client=(request.headers.get("cf-connecting-ip")
+                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                    or getattr(request.client, "host", "-")),
+            method=request.method,
+            path=request.url.path,
+        )
         return {"ok": True}
 
     try:
@@ -65,6 +86,17 @@ def forgot_password(
             wait_until = latest.created_at + timedelta(seconds=RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS)
             remaining = (wait_until - now).total_seconds()
             retry_after = max(1, int(math.ceil(remaining)))
+        
+        log_security(
+            "password_reset_rate_limited",
+            user_id=user.id,
+            retry_after=retry_after,
+            client=(request.headers.get("cf-connecting-ip")
+                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                    or getattr(request.client, "host", "-")),
+            method=request.method,
+            path=request.url.path,
+        )
 
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -72,4 +104,13 @@ def forgot_password(
             headers={"Retry-After": str(retry_after)},
         )
 
+    log_security(
+        "password_reset_email_sent",
+        user_id=user.id,
+        client=(request.headers.get("cf-connecting-ip")
+                or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                or getattr(request.client, "host", "-")),
+        method=request.method,
+        path=request.url.path,
+    )
     return {"ok": True}

@@ -10,6 +10,7 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
+from backend.core.seclog import log_security
 
 router = APIRouter()
 
@@ -38,11 +39,28 @@ def reset_password_entry(
             expected_purpose=VerificationPurpose.PASSWORD_RESET,
         )
     except InvalidOrExpiredTokenError:
+        log_security(
+            "password_reset_token_invalid",
+            endpoint="reset_password_entry",
+            client=(request.headers.get("cf-connecting-ip")
+                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                    or getattr(request.client, "host", "-")),
+            method="GET",
+        )
         return RedirectResponse(
             url="/reset-password-failed.html",
             status_code=status.HTTP_302_FOUND,
         )
-
+    
+    log_security(
+    "password_reset_token_valid",
+    endpoint="reset_password_entry",
+    client=(request.headers.get("cf-connecting-ip")
+            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+            or getattr(request.client, "host", "-")),
+    method="GET",
+    )
+    
     return RedirectResponse(
         url=f"/reset-password.html?token={token}",
         status_code=status.HTTP_302_FOUND,

@@ -8,6 +8,7 @@ from backend.api.dependencies.db import get_db
 from backend.api.auth.config import SESSION_COOKIE_NAME
 from backend.api.auth.utils import clear_session_cookie
 from backend.models import Session as SessionModel
+from backend.core.seclog import log_security
 
 router = APIRouter()
 
@@ -35,8 +36,26 @@ def logout(
             if session:
                 session.revoked = True
                 db.commit()
+                log_security(
+                    "session_revoked",
+                    reason="logout",
+                    user_id=session.user_id,
+                    session_kind=(session.kind or "login"),
+                    client=(request.headers.get("cf-connecting-ip")
+                            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                            or getattr(request.client, "host", "-")),
+                    method=request.method,
+                    path=request.url.path,
+                )
         except ValueError:
-            # Cookie 不是合法 UUID，忽略即可
+            log_security(
+                "session_cookie_invalid",
+                client=(request.headers.get("cf-connecting-ip")
+                        or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+                        or getattr(request.client, "host", "-")),
+                method=request.method,
+                path=request.url.path,
+            )
             pass
 
     clear_session_cookie(response)

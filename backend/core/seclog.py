@@ -26,3 +26,29 @@ def log_security(event: str, **fields: Any) -> None:
     kv = " ".join(f"{k}={safe_fields[k]}" for k in sorted(safe_fields.keys()))
     msg = f"category=security event={event}" + (f" {kv}" if kv else "")
     _logger.warning(msg)
+
+def client_ip(request: Any) -> str:
+    headers = getattr(request, "headers", {}) or {}
+    cf_ip = headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip
+
+    xff = headers.get("x-forwarded-for") or ""
+    if xff:
+        return xff.split(",", 1)[0].strip() or "-"
+
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return host or "-"
+
+
+def security_ctx(request: Any, *, include_path: bool = True) -> dict[str, str]:
+    ctx = {
+        "client": client_ip(request),
+        "method": getattr(request, "method", "-"),
+    }
+    if include_path:
+        url = getattr(request, "url", None)
+        path = getattr(url, "path", None) if url else None
+        ctx["path"] = path or "-"
+    return ctx

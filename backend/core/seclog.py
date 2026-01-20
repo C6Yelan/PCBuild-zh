@@ -36,7 +36,6 @@ _EVENT_LEVELS: dict[str, int] = {
     "session_rotated": logging.INFO,
     "session_revoked": logging.INFO,
     "session_invalid_cookie": logging.WARNING,
-    "session_invalid_cookie": logging.WARNING,
 
     # --- email verify ---
     "email_verify_success": logging.INFO,
@@ -54,6 +53,7 @@ _EVENT_LEVELS: dict[str, int] = {
     # --- verification token ---
     "verification_token_issued": logging.INFO,
     "verification_token_consumed": logging.INFO,
+    "verification_token_rejected": logging.WARNING,
 }
 
 def _fmt_value(v: Any) -> str:

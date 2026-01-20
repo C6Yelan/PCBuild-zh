@@ -27,7 +27,16 @@ def _load_valid_token_and_user(
     """
     依 public_token 載入並驗證 token + user，但「不改寫也不 commit」。
     """
-    token_id, secret = split_public_token(public_token)
+    try:
+        token_id, secret = split_public_token(public_token)
+    except InvalidOrExpiredTokenError:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.INVALID.value,
+            reason="format_invalid",
+        )
+        raise
 
     token = (
         db.query(EmailVerificationToken)
@@ -38,17 +47,47 @@ def _load_valid_token_and_user(
         .first()
     )
     if token is None:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.INVALID.value,
+            token_id=token_id,
+            reason="token_not_found",
+        )
         raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
 
     user = db.query(User).filter(User.id == token.user_id).first()
     if user is None:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.INVALID.value,
+            token_id=token.id,
+            user_id=token.user_id,
+            reason="user_not_found",
+        )
         raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
 
     if not verify_token(secret, token.token_hash):
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.INVALID.value,
+            token_id=token.id,
+            user_id=token.user_id,
+            reason="hash_mismatch",
+        )
         raise InvalidOrExpiredTokenError("找不到對應的驗證資訊。", state=TokenState.INVALID)
 
     now = utcnow()
     if token.expires_at < now:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.EXPIRED.value,
+            token_id=token.id,
+            user_id=token.user_id,
+        )
         raise InvalidOrExpiredTokenError(state=TokenState.EXPIRED)
 
     if expected_purpose == VerificationPurpose.PASSWORD_RESET:
@@ -57,16 +96,45 @@ def _load_valid_token_and_user(
             user_id=user.id,
             purpose=VerificationPurpose.PASSWORD_RESET,
         )
-        if latest is not None and latest.id != token.id:
-            raise InvalidOrExpiredTokenError(state=TokenState.SUPERSEDED)
+    if latest is not None and latest.id != token.id:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.SUPERSEDED.value,
+            token_id=token.id,
+            user_id=user.id,
+            latest_token_id=latest.id,
+        )
+        raise InvalidOrExpiredTokenError(state=TokenState.SUPERSEDED)
 
-        if token.is_used:
-            raise InvalidOrExpiredTokenError(state=TokenState.USED)
+    if token.is_used:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.USED.value,
+            token_id=token.id,
+            user_id=user.id,
+        )
+        raise InvalidOrExpiredTokenError(state=TokenState.USED)
+
     else:
         if token.is_used:
+            log_security(
+                "verification_token_rejected",
+                purpose=expected_purpose.value,
+                state=TokenState.USED.value,
+                token_id=token.id,
+                user_id=user.id,
+            )
             raise InvalidOrExpiredTokenError(state=TokenState.USED)
-
         if expected_purpose == VerificationPurpose.SIGNUP and user.is_active:
+            log_security(
+                "verification_token_rejected",
+                purpose=expected_purpose.value,
+                state=TokenState.ALREADY_VERIFIED.value,
+                token_id=token.id,
+                user_id=user.id,
+            )
             raise InvalidOrExpiredTokenError(state=TokenState.ALREADY_VERIFIED)
 
     return token, user

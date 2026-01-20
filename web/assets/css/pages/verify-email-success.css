@@ -3,3 +3,9 @@
   --muted: color-mix(in srgb, CanvasText 50%, Canvas);
   --danger: #22c55e; /* 保留同一套 CSS 結構，僅把標題色改為成功色 */
 }
+
+#success-content,
+#success-hint {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}

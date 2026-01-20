@@ -15,11 +15,15 @@
   font-size: 14px;
   line-height: 1.6;
   margin-bottom: 16px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 .hint {
   font-size: 13px;
   color: var(--muted);
   margin: 0 0 20px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 .actions {
   display: flex;

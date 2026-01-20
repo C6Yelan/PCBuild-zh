@@ -12,10 +12,14 @@ _SENSITIVE_KEYS = {
     "token",
     "access_token",
     "refresh_token",
+    "public_token",
+    "token_hash",
+    "csrf_token",
     "authorization",
     "cookie",
     "set_cookie",
     "session",
+    "session_id",
 }
 
 # 事件分級：成功/預期流程 INFO；阻擋/可疑 WARNING；真正異常 ERROR
@@ -36,10 +40,17 @@ _EVENT_LEVELS: dict[str, int] = {
     "session_rotated": logging.INFO,
     "session_revoked": logging.INFO,
     "session_invalid_cookie": logging.WARNING,
+    "session_not_found": logging.WARNING,
+    "session_expired": logging.WARNING,
+    "session_user_missing": logging.WARNING,
 
     # --- email verify ---
     "email_verify_success": logging.INFO,
     "email_verify_token_invalid": logging.WARNING,
+    "email_verify_session_mismatch": logging.WARNING,
+    "email_verification_resend_anonymous": logging.INFO,
+    "email_verification_resend_rate_limited": logging.WARNING,
+    "email_verification_resent": logging.INFO,
 
     # --- password reset ---
     "password_reset_email_sent": logging.INFO,
@@ -52,8 +63,12 @@ _EVENT_LEVELS: dict[str, int] = {
 
     # --- verification token ---
     "verification_token_issued": logging.INFO,
+    "verification_token_validated": logging.INFO,
     "verification_token_consumed": logging.INFO,
     "verification_token_rejected": logging.WARNING,
+
+    # --- csrf ---
+    "csrf_block": logging.WARNING,
 }
 
 def _fmt_value(v: Any) -> str:
@@ -79,6 +94,14 @@ def _fmt_value(v: Any) -> str:
 def log_security(event: str, **fields: Any) -> None:
     # 最小防呆：避免敏感資訊進入 log
     safe_fields = {k: v for k, v in fields.items() if k.lower() not in _SENSITIVE_KEYS}
+
+    # 通用欄位（若呼叫端未提供）
+    if "method" not in safe_fields:
+        safe_fields["method"] = "-"
+    if "client" not in safe_fields:
+        safe_fields["client"] = "-"
+    if "path" not in safe_fields:
+        safe_fields["path"] = "-"
 
     # 統一 key=value（logfmt 風格），便於 Alloy stage.logfmt 解析
     kv = " ".join(f"{k}={_fmt_value(safe_fields[k])}" for k in sorted(safe_fields.keys()))

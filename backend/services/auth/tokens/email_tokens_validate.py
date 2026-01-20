@@ -87,9 +87,11 @@ def _load_valid_token_and_user(
             state=TokenState.EXPIRED.value,
             token_id=token.id,
             user_id=token.user_id,
+            reason="expired",
         )
         raise InvalidOrExpiredTokenError(state=TokenState.EXPIRED)
 
+    latest = None
     if expected_purpose == VerificationPurpose.PASSWORD_RESET:
         latest = get_latest_token_for_user(
             db=db,
@@ -104,6 +106,7 @@ def _load_valid_token_and_user(
             token_id=token.id,
             user_id=user.id,
             latest_token_id=latest.id,
+            reason="replaced",
         )
         raise InvalidOrExpiredTokenError(state=TokenState.SUPERSEDED)
 
@@ -114,28 +117,28 @@ def _load_valid_token_and_user(
             state=TokenState.USED.value,
             token_id=token.id,
             user_id=user.id,
+            reason="used",
         )
         raise InvalidOrExpiredTokenError(state=TokenState.USED)
 
-    else:
-        if token.is_used:
-            log_security(
-                "verification_token_rejected",
-                purpose=expected_purpose.value,
-                state=TokenState.USED.value,
-                token_id=token.id,
-                user_id=user.id,
-            )
-            raise InvalidOrExpiredTokenError(state=TokenState.USED)
-        if expected_purpose == VerificationPurpose.SIGNUP and user.is_active:
-            log_security(
-                "verification_token_rejected",
-                purpose=expected_purpose.value,
-                state=TokenState.ALREADY_VERIFIED.value,
-                token_id=token.id,
-                user_id=user.id,
-            )
-            raise InvalidOrExpiredTokenError(state=TokenState.ALREADY_VERIFIED)
+    if expected_purpose == VerificationPurpose.SIGNUP and user.is_active:
+        log_security(
+            "verification_token_rejected",
+            purpose=expected_purpose.value,
+            state=TokenState.ALREADY_VERIFIED.value,
+            token_id=token.id,
+            user_id=user.id,
+            reason="already_verified",
+        )
+        raise InvalidOrExpiredTokenError(state=TokenState.ALREADY_VERIFIED)
+
+    log_security(
+        "verification_token_validated",
+        result="valid",
+        purpose=expected_purpose.value,
+        token_id=token.id,
+        user_id=user.id,
+    )
 
     return token, user
 

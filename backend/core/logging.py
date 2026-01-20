@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import logging.config
+import os
 import time
 import uuid
 from typing import Callable, Awaitable
@@ -25,6 +26,17 @@ def configure_logging(*, log_level: str) -> None:
         return
 
     level = (log_level or "INFO").upper()
+    service_name = os.getenv("SERVICE_NAME", "fastapi")
+
+    default_factory = logging.getLogRecordFactory()
+
+    def record_factory(*args, **kwargs):
+        record = default_factory(*args, **kwargs)
+        if not hasattr(record, "service_name"):
+            record.service_name = service_name
+        return record
+
+    logging.setLogRecordFactory(record_factory)
 
     logging.config.dictConfig(
         {
@@ -32,7 +44,7 @@ def configure_logging(*, log_level: str) -> None:
             "disable_existing_loggers": False,
             "formatters": {
                 "default": {
-                    "format": "ts=\"%(asctime)s\" level=%(levelname)s logger=%(name)s %(message)s",
+                    "format": "ts=\"%(asctime)s\" level=%(levelname)s logger=%(name)s service_name=%(service_name)s %(message)s",
                 },
             },
             "handlers": {

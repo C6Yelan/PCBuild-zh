@@ -34,7 +34,7 @@ def _resolve_current_user(
         session_id = UUID(raw_token)
     except ValueError:
         if emit_log:
-            log_security("session_cookie_invalid", **security_ctx(request))
+            log_security("session_invalid_cookie", **security_ctx(request))
         return None
 
     now = datetime.now(timezone.utc)

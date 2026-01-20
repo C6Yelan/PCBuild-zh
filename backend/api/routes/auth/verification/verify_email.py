@@ -12,7 +12,7 @@ from backend.api.auth.utils import clear_session_cookie, get_valid_session_from_
 from backend.models import Session as SessionModel
 from backend.services.auth.workflows.signup_verification import verify_signup_token_and_activate_user
 from backend.services.auth.verification.core import InvalidOrExpiredTokenError
-from backend.core.seclog import log_security
+from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ def verify_email(
     request: Request,
     db: OrmSession = Depends(get_db),
 ):
+    ctx = security_ctx(request, include_path=False)
     # 1) 先驗證 token + 啟用帳號
     try:
         user = verify_signup_token_and_activate_user(db=db, public_token=token)
@@ -31,19 +32,13 @@ def verify_email(
             "email_verify_success",
             user_id=user.id,
             endpoint="verify_email",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
     except InvalidOrExpiredTokenError:
         log_security(
             "email_verify_token_invalid",
             endpoint="verify_email",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
         return RedirectResponse(url="/verify-email-failed.html", status_code=status.HTTP_302_FOUND)
 
@@ -64,10 +59,7 @@ def verify_email(
             log_security(
                 "session_invalid_cookie",
                 endpoint="verify_email",
-                client=(request.headers.get("cf-connecting-ip")
-                        or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                        or getattr(request.client, "host", "-")),
-                method="GET",
+                **ctx,
             )
         resp = _success("login")
         if raw_cookie:
@@ -82,10 +74,7 @@ def verify_email(
             verified_user_id=user.id,
             session_kind=(current_session.kind or "login"),
             endpoint="verify_email",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
 
         current_session.revoked = True
@@ -98,10 +87,7 @@ def verify_email(
             user_id=current_session.user_id,
             session_kind=(current_session.kind or "login"),
             endpoint="verify_email",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
 
         resp = _success("login")
@@ -120,10 +106,7 @@ def verify_email(
             user_id=user.id,
             session_kind="signup",
             endpoint="verify_email",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
 
         resp = _success("login")
@@ -153,10 +136,7 @@ def verify_email(
         user_id=user.id,
         session_kind="login",
         endpoint="verify_email",
-        client=(request.headers.get("cf-connecting-ip")
-                or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                or getattr(request.client, "host", "-")),
-        method="GET",
+        **ctx,
     )
 
     resp = _success("home")

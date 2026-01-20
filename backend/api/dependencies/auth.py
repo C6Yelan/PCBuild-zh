@@ -99,3 +99,20 @@ def get_current_user(
     if not user:
         raise _unauthenticated()
     return user
+
+def get_active_user(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if not current_user.is_active:
+        log_security(
+            "authz_denied",
+            reason="email_unverified",
+            user_id=current_user.id,
+            **security_ctx(request),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email 尚未驗證，請先完成信箱驗證。",
+        )
+    return current_user

@@ -50,6 +50,10 @@ _EVENT_LEVELS: dict[str, int] = {
     "password_reset_token_invalid": logging.WARNING,
     "password_reset_policy_violation": logging.WARNING,
     "password_reset_success": logging.INFO,
+
+    # --- verification token ---
+    "verification_token_issued": logging.INFO,
+    "verification_token_consumed": logging.INFO,
 }
 
 def _fmt_value(v: Any) -> str:

@@ -16,6 +16,7 @@ from backend.services.auth.verification.core import (
     resolve_lifetime_minutes,
     get_latest_token_for_user,
 )
+from backend.core.seclog import log_security
 
 
 def issue_verification_token(
@@ -47,6 +48,13 @@ def issue_verification_token(
     db.add(token)
     db.commit()
     db.refresh(token)
+    log_security(
+        "verification_token_issued",
+        user_id=user.id,
+        purpose=purpose.value,
+        token_id=token.id,
+        expires_in_minutes=lifetime_minutes,
+    )
 
     return f"{token.id}.{secret}"
 
@@ -74,6 +82,15 @@ def issue_password_reset_token_for_user(
         purpose=VerificationPurpose.PASSWORD_RESET,
     )
     if latest is not None and latest.created_at + timedelta(minutes=min_interval_minutes) > now:
+        retry_after_sec = int(
+            (latest.created_at + timedelta(minutes=min_interval_minutes) - now).total_seconds()
+        )
+        log_security(
+            "password_reset_rate_limited",
+            user_id=user.id,
+            purpose=VerificationPurpose.PASSWORD_RESET.value,
+            retry_after_sec=retry_after_sec,
+        )
         raise VerificationEmailRateLimitedError("重設密碼請求太頻繁，請稍後再試。")
 
     return issue_verification_token(

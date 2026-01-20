@@ -15,6 +15,7 @@ from backend.services.auth.verification.core import (
     split_public_token,
     get_latest_token_for_user,
 )
+from backend.core.seclog import log_security
 
 
 def _load_valid_token_and_user(
@@ -105,4 +106,10 @@ def consume_verification_token(
         expected_purpose=purpose,
     )
     token.is_used = True
+    log_security(
+        "verification_token_consumed",
+        user_id=user.id,
+        purpose=purpose.value,
+        token_id=token.id,
+    )
     return user, token

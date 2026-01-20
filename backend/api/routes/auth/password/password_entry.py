@@ -10,7 +10,7 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
-from backend.core.seclog import log_security
+from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ def reset_password_entry(
     request: Request,  # ← 新增（即使函式內不用）
     db: OrmSession = Depends(get_db),
 ):
+    ctx = security_ctx(request, include_path=False)
     """
     忘記密碼 Email 連結入口。
 
@@ -42,10 +43,7 @@ def reset_password_entry(
         log_security(
             "password_reset_token_invalid",
             endpoint="reset_password_entry",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method="GET",
+            **ctx,
         )
         return RedirectResponse(
             url="/reset-password-failed.html",
@@ -53,14 +51,11 @@ def reset_password_entry(
         )
     
     log_security(
-    "password_reset_token_valid",
-    endpoint="reset_password_entry",
-    client=(request.headers.get("cf-connecting-ip")
-            or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-            or getattr(request.client, "host", "-")),
-    method="GET",
+        "password_reset_token_valid",
+        endpoint="reset_password_entry",
+        **ctx,
     )
-    
+
     return RedirectResponse(
         url=f"/reset-password.html?token={token}",
         status_code=status.HTTP_302_FOUND,

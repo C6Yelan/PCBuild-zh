@@ -36,3 +36,9 @@ input[type="password"] {
   font-size: 13px;
   text-align: center;
 }
+
+@media (max-width: 420px) {
+  .actions-row {
+    flex-wrap: wrap;
+  }
+}

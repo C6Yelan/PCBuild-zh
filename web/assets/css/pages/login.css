@@ -65,3 +65,9 @@ input[type="text"] {
   top: 50%;
   transform: translateY(-50%);
 }
+
+@media (max-width: 420px) {
+  .actions-row {
+    flex-wrap: wrap;
+  }
+}

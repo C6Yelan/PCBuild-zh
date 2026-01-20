@@ -165,3 +165,16 @@ line-height: 1;
 outline: 2px solid color-mix(in srgb, CanvasText 65%, Canvas);
 outline-offset: 2px;
 }
+
+@media (max-width: 420px) {
+  .top-bar,
+  .top-bar__actions,
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .markdown-body table {
+    display: block;
+    overflow-x: auto;
+  }
+}

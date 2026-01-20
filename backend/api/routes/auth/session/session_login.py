@@ -15,7 +15,7 @@ from backend.models import User, Session as SessionModel
 from backend.schemas.auth import LoginIn
 from backend.security import verify_password
 from backend.core.middleware.throttling.rate_limit import limiter
-from backend.core.seclog import log_security
+from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
 
@@ -29,6 +29,7 @@ def login(
     response: Response,
     db: OrmSession = Depends(get_db),
 ):
+    ctx = security_ctx(request)
     # 1. 檢查 Email 格式
     try:
         EMAIL_ADAPTER.validate_python(body.email)
@@ -36,11 +37,7 @@ def login(
         log_security(
             "authn_input_invalid",
             reason="email_format",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         raise_400({"email": "Email 格式不正確。"})
 
@@ -52,11 +49,7 @@ def login(
             "authn_failed",
             reason="invalid_credentials",
             email_domain=email_domain,
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         raise_400({"credentials": "帳號或密碼錯誤。"})
 
@@ -80,11 +73,7 @@ def login(
             user_id=user.id,
             session_kind="login",
             account_state="inactive",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
 
         set_session_cookie(response, str(session.id))
@@ -94,11 +83,7 @@ def login(
             user_id=user.id,
             account_state="inactive",
             outcome="needs_verification",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
 
         return {"ok": True, "needs_verification": True}
@@ -122,11 +107,7 @@ def login(
         user_id=user.id,
         session_kind="login",
         account_state="active",
-        client=(request.headers.get("cf-connecting-ip")
-                or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                or getattr(request.client, "host", "-")),
-        method=request.method,
-        path=request.url.path,
+        **ctx
     )
 
     set_session_cookie(response, str(session.id))
@@ -136,11 +117,7 @@ def login(
         user_id=user.id,
         account_state="active",
         outcome="ok",
-        client=(request.headers.get("cf-connecting-ip")
-                or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                or getattr(request.client, "host", "-")),
-        method=request.method,
-        path=request.url.path,
+        **ctx
     )
 
     return {"ok": True}

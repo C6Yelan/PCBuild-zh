@@ -10,6 +10,7 @@ from backend.api.dependencies.db import get_db
 from backend.models import User, Session as SessionModel
 from backend.core.seclog import log_security, security_ctx
 
+
 def _unauthenticated() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,14 +92,11 @@ def get_current_user(
     request: Request,
     db: OrmSession = Depends(get_db),
 ) -> User:
-    """
-    從 HttpOnly Cookie (pcbuild_session) 取得目前登入的使用者。
-    若 Cookie 不存在、session 無效或過期，一律回傳 401。
-    """
     user = _resolve_current_user(request=request, db=db, emit_log=True)
     if not user:
         raise _unauthenticated()
     return user
+
 
 def get_active_user(
     request: Request,

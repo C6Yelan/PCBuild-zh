@@ -16,7 +16,7 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
-from backend.core.seclog import log_security
+from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ def forgot_password(
     response: Response, # <- 新增這行（符合 SlowAPI headers_enabled=True 的要求）
     db: OrmSession = Depends(get_db),
 ):
+    ctx = security_ctx(request)
     """
     忘記密碼入口：
 
@@ -45,11 +46,7 @@ def forgot_password(
             "authn_input_invalid",
             reason="email_format",
             endpoint="forgot_password",
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         raise_400({"email": "Email 格式不正確。"})
 
@@ -59,11 +56,7 @@ def forgot_password(
         log_security(
             "password_reset_request_unknown",
             email_domain=email_domain,
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
         return {"ok": True}
 
@@ -91,11 +84,7 @@ def forgot_password(
             "password_reset_rate_limited",
             user_id=user.id,
             retry_after=retry_after,
-            client=(request.headers.get("cf-connecting-ip")
-                    or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                    or getattr(request.client, "host", "-")),
-            method=request.method,
-            path=request.url.path,
+            **ctx,
         )
 
         raise HTTPException(
@@ -107,10 +96,6 @@ def forgot_password(
     log_security(
         "password_reset_email_sent",
         user_id=user.id,
-        client=(request.headers.get("cf-connecting-ip")
-                or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-                or getattr(request.client, "host", "-")),
-        method=request.method,
-        path=request.url.path,
+        **ctx,
     )
     return {"ok": True}

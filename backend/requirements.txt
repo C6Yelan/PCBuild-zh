@@ -10,3 +10,4 @@ pydantic-settings
 alembic
 slowapi==0.1.9
 redis>3,!=4.5.2,!=4.5.3,<6.0.0
+httpx>=0.27

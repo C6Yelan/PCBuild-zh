@@ -1,0 +1,78 @@
+# backend/services/crawler/http_client.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Mapping, Optional
+
+import httpx
+
+from .config import CrawlerSettings
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    url: str
+    final_url: str
+    status_code: int
+    headers: Mapping[str, str]
+    text: str
+
+
+class CrawlerHttpClient:
+    """
+    純 HTTP 抓取核心：
+    - 統一 timeout、UA、redirect policy
+    - 連線層 retries（降低不穩網路的失敗率）
+    - 先不做解析、不做 DB，保持單一職責
+    """
+
+    def __init__(self, settings: Optional[CrawlerSettings] = None) -> None:
+        self.settings = settings or CrawlerSettings()
+
+        transport = httpx.HTTPTransport(retries=self.settings.connect_retries)
+
+        # httpx 的 timeout 概念是「網路閒置超時」等分項 timeout；此處先用總體簡化版
+        timeout = httpx.Timeout(self.settings.timeout_seconds)
+
+        self._client = httpx.Client(
+            transport=transport,
+            timeout=timeout,
+            follow_redirects=True,
+            max_redirects=self.settings.max_redirects,
+            headers={"User-Agent": self.settings.user_agent},
+        )
+
+    def close(self) -> None:
+        self._client.close()
+
+    def fetch(
+        self,
+        url: str,
+        *,
+        headers: Optional[Mapping[str, str]] = None,
+    ) -> FetchResult:
+        """
+        回傳文字內容（HTML/JSON 皆可用 text 先承接）。
+        - 解析 JSON / HTML 的責任留給下一層 parser
+        - headers 可用於條件式請求（If-None-Match/If-Modified-Since）後續擴充
+          這類 HTTP revalidation(重新驗證) 機制可參考 MDN 的說明。:contentReference[oaicite:3]{index=3}
+        """
+        req_headers = {}
+        if headers:
+            req_headers.update(headers)
+
+        resp = self._client.get(url, headers=req_headers)
+
+        return FetchResult(
+            url=url,
+            final_url=str(resp.url),
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+            text=resp.text,
+        )
+
+    def __enter__(self) -> "CrawlerHttpClient":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()

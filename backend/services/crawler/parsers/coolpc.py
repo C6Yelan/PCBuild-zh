@@ -25,17 +25,16 @@ _ITEM_TEXT_RE = re.compile(
     r"(?m)^(?P<title>.{6,200}?)\s*含稅[:：]?\s*NT(?P<price>[0-9,]{3,})\b"
 )
 
-# 初版 sku_hint：保守擴充 Xeon / TR / TR PRO
 _SKU_HINT_RE = re.compile(
-    r"(?i)\b("
-    r"(?:i[3579]-\d{4,5}[a-z]{0,4})|"                       # i5-12400F
-    r"(?:core\s+ultra\s+\d+\s+\d{3}[a-z]{0,3})|"            # Core Ultra 5 225F
-    r"(?:ryzen\s+[3579]\s+\d{4,5}[a-z]{0,4})|"              # Ryzen 7 9800X3D（粗略）
-    r"(?:r[3579]\s*\d{4,5}[a-z]{0,4})|"                     # R5 3400G / R9 9900X
-    r"(?:xeon\s+w\d+-\d{4,5}[a-z]{0,3})|"                   # Xeon W9-3475X
-    r"(?:ryzen\s+tr\s+(?:pro\s+)?\d{4,5}[a-z]{0,4})|"       # Ryzen TR 9960X / TR PRO 9955WX
-    r"(?:threadripper\s+(?:pro\s+)?\d{4,5}[a-z]{0,4})"
-    r")\b"
+    r"(?i)(?<![A-Za-z0-9])("  # 左邊界：前一字元不是英數（避免吃到字中間）
+    r"(?:i[3579]-\d{4,5}[a-z0-9]{0,6})|"                       # i5-12400F / i7-14700K
+    r"(?:core\s+ultra\s+\d+\s+\d{3}[a-z0-9]{0,6})|"            # Core Ultra 5 225F
+    r"(?:ryzen\s+[3579]\s+\d{4,5}[a-z0-9]{0,6})|"              # Ryzen 7 9800X3D（含 X3D）
+    r"(?:amd\s+)?r[3579]\s*\d{4,5}[a-z0-9]{0,6}|"              # AMD R5 8400F盒 / R7 9800X3D代理...
+    r"(?:xeon\s+w\d+-\d{4,5}[a-z0-9]{0,6})|"                   # Xeon W7-3465X
+    r"(?:ryzen\s+tr\s+(?:pro\s+)?\d{4,5}[a-z0-9]{0,6})|"       # Ryzen TR / TR PRO
+    r"(?:threadripper\s+(?:pro\s+)?\d{4,5}[a-z0-9]{0,6})"
+    r")(?=[^A-Za-z0-9]|$)"  # 右邊界：下一字元不是英數（中文緊貼也能切開）
 )
 
 def _to_text(fragment: str) -> str:

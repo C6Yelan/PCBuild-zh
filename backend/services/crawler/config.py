@@ -25,3 +25,10 @@ class CrawlerSettings(BaseSettings):
 
     # 之後做 robots / 封鎖策略時會用到（先保留設定）
     respect_robots_txt: bool = Field(default=True)
+
+    # 禮貌延遲：同一 host 兩次請求間至少間隔幾秒（避免短時間打爆對方）
+    politeness_delay_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
+
+    # robots.txt 快取時間（秒）；避免每個 URL 都重抓 robots.txt
+    robots_cache_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+

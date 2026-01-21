@@ -4,10 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Optional
 
+import time
+from urllib.parse import urlparse
 import httpx
 
 from .config import CrawlerSettings
-
+from .robots import RobotsManager
 
 @dataclass(frozen=True)
 class FetchResult:
@@ -41,6 +43,12 @@ class CrawlerHttpClient:
             max_redirects=self.settings.max_redirects,
             headers={"User-Agent": self.settings.user_agent},
         )
+        self._robots = RobotsManager(
+            client=self._client,
+            user_agent=self.settings.user_agent,
+            cache_ttl_seconds=self.settings.robots_cache_ttl_seconds,
+        )
+        self._last_req_mono_by_host: dict[str, float] = {}
 
     def close(self) -> None:
         self._client.close()
@@ -57,11 +65,31 @@ class CrawlerHttpClient:
         - headers 可用於條件式請求（If-None-Match/If-Modified-Since）後續擴充
           這類 HTTP revalidation(重新驗證) 機制可參考 MDN 的說明。:contentReference[oaicite:3]{index=3}
         """
+        parsed = urlparse(url)
+        host_key = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+
+        # 1) 禮貌延遲（同 host）
+        delay = float(self.settings.politeness_delay_seconds or 0.0)
+        if delay > 0.0 and host_key:
+            last = self._last_req_mono_by_host.get(host_key)
+            now = time.monotonic()
+            if last is not None:
+                wait = delay - (now - last)
+                if wait > 0:
+                    time.sleep(wait)
+
+        # 2) robots.txt 檢查（若 robots fetch 失敗，本實作會先保守 disallow all）
+        if self.settings.respect_robots_txt:
+            if not self._robots.can_fetch(url):
+                raise PermissionError(f"Blocked by robots.txt: {url}")
+
         req_headers = {}
         if headers:
             req_headers.update(headers)
 
         resp = self._client.get(url, headers=req_headers)
+        if host_key:
+            self._last_req_mono_by_host[host_key] = time.monotonic()
 
         return FetchResult(
             url=url,

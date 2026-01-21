@@ -5,6 +5,7 @@ import html as _html
 import re
 from urllib.parse import quote, urljoin, urlparse, parse_qs
 
+from .sku_hints import extract_sku_hint
 from .base import ListingCandidate
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -75,6 +76,7 @@ class CoolpcListingParser:
     source_id = "coolpc"
 
     def parse_listings(self, *, html: str, page_url: str) -> list[ListingCandidate]:
+        category = _infer_category_from_page_url(page_url) or "UNKNOWN"
         if not html:
             return []
 
@@ -102,9 +104,9 @@ class CoolpcListingParser:
                     title=raw_title,
                     price=price,
                     currency="TWD",
-                    category="CPU",
+                    category=category,
                     url=buy_url,
-                    sku_hint=_sku_hint(raw_title),
+                    sku_hint=extract_sku_hint(category, raw_title),
                 )
             )
 
@@ -129,9 +131,9 @@ class CoolpcListingParser:
                     title=raw_title,
                     price=price,
                     currency="TWD",
-                    category="CPU",
+                    category=category,
                     url=page_url,
-                    sku_hint=_sku_hint(raw_title),
+                    sku_hint=extract_sku_hint(category, raw_title),
                 )
             )
 

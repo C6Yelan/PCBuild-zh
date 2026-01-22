@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .cpu import extract_cpu_hints, extract_cpu_sku_hint
-from .gpu import extract_gpu_hints
-from .mb import extract_mb_sku_hint
-from .ram import extract_ram_hints
+from .sku_hints.cpu import extract_cpu_hints, extract_cpu_sku_hint
+from .sku_hints.gpu import extract_gpu_hints
+from .sku_hints.mb import extract_mb_sku_hint
+from .sku_hints.ram import extract_ram_hints
 
 
 @dataclass(frozen=True)

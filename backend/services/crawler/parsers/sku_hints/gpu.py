@@ -20,6 +20,9 @@ _RX_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9])RX\s*(?P<num>\d{4})(?:\s*(?P<suffix>XTX|XT))?"
     r"(?=[^A-Za-z0-9]|$)"
 )
+_RX_GRE_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])RX\s*(?P<num>\d{3,4})\s*GRE(?=[^A-Za-z0-9]|$)"
+)
 _ARC_RE = re.compile(
     r"(?i)(?<![A-Za-z0-9])ARC\s*(?P<series>[AB])\s*(?P<num>\d{3,4})(?=[^A-Za-z0-9]|$)"
 )
@@ -70,10 +73,14 @@ _SPEC_TOKEN_RE = re.compile(
     r"(?i)^(?:\d{1,2}G(?:B)?|\d{2,3}BIT|GDDR\d|DDR\d|HDMI|DVI|VGA|DP|"
     r"DISPLAYPORT|LOW|PROFILE|LP|PCI-?E\d?|BLACKWELL|MAX-?Q)$"
 )
+_BRACKET_MODEL_RE = re.compile(
+    r"[（(【]\s*(?P<code>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\s*[）)】]"
+)
 _CHIP_REMOVE_PATTERNS: list[re.Pattern[str]] = [
     _RTX_PRO_RE,
     _RTX_A_RE,
     _RTX_RE,
+    _RX_GRE_RE,
     _RX_RE,
     _ARC_RE,
     _GT_RE,
@@ -102,6 +109,10 @@ def _normalize_rx(match: re.Match[str]) -> str:
     if suffix:
         parts.append(suffix)
     return " ".join(parts)
+
+def _normalize_rx_gre(match: re.Match[str]) -> str:
+    num = match.group("num")
+    return f"RX {num} GRE"
 
 
 def _normalize_arc(match: re.Match[str]) -> str:
@@ -176,30 +187,48 @@ def _is_spec_token(token: str) -> bool:
         return True
     return False
 
+def _extract_bracket_model_hint(text: str) -> str | None:
+    for m in _BRACKET_MODEL_RE.finditer(text or ""):
+        code = m.group("code")
+        if len(code) < 5:
+            continue
+        if not re.search(r"[A-Za-z]", code) or not re.search(r"\d", code):
+            continue
+        if len(re.findall(r"\d", code)) < 2:
+            continue
+        return code
+    return None
+
 def _extract_product_model_hint(line: str, aib_hint: str | None) -> str | None:
     head = head_before_brackets(line)
-    if not head:
-        return None
-    text = head
-    if aib_hint:
-        text = _strip_aib(text)
-    text = _strip_chip(text)
-    text = _VENDOR_RE.sub(" ", text)
-    text = _normalize_model_separators(text)
-    text = normalize_spaces(text).strip(" -_/|")
-    if not text:
-        return None
-    tokens = [t for t in text.split(" ") if t]
-    cleaned: list[str] = []
-    for token in tokens:
-        if _is_spec_token(token):
-            continue
-        cleaned.append(token)
-    if not cleaned:
-        return None
-    if len(cleaned) == 1 and len(cleaned[0]) < 3 and not any(ch.isdigit() for ch in cleaned[0]):
-        return None
-    return " ".join(cleaned)
+    hint = None
+    if head:
+        text = head
+        if aib_hint:
+            text = _strip_aib(text)
+        text = _strip_chip(text)
+        text = _VENDOR_RE.sub(" ", text)
+        text = _normalize_model_separators(text)
+        text = normalize_spaces(text).strip(" -_/|")
+        if text:
+            tokens = [t for t in text.split(" ") if t]
+            cleaned: list[str] = []
+            for token in tokens:
+                if _is_spec_token(token):
+                    continue
+                cleaned.append(token)
+            if cleaned:
+                if not (
+                    len(cleaned) == 1
+                    and len(cleaned[0]) < 3
+                    and not any(ch.isdigit() for ch in cleaned[0])
+                ):
+                    hint = " ".join(cleaned)
+    if hint is None:
+        bracket_hint = _extract_bracket_model_hint(line)
+        if bracket_hint:
+            return bracket_hint
+    return hint
 
 def _extract_vram_gb(text: str) -> int | None:
     for pat in (_VRAM_GB_RE, _VRAM_GBD_RE, _VRAM_GD_RE, _VRAM_O_G_RE):
@@ -216,6 +245,7 @@ def _match_chip(text: str) -> tuple[str | None, str | None]:
         (_RTX_PRO_RE, _normalize_rtx_pro, "NVIDIA"),
         (_RTX_A_RE, _normalize_rtx_a, "NVIDIA"),
         (_RTX_RE, _normalize_rtx, "NVIDIA"),
+        (_RX_GRE_RE, _normalize_rx_gre, "AMD"),
         (_RX_RE, _normalize_rx, "AMD"),
         (_ARC_RE, _normalize_arc, "Intel"),
         (_GT_RE, _normalize_gt, "NVIDIA"),

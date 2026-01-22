@@ -13,6 +13,7 @@ class ListingCandidate:
     category: str | None       # 先用字串；之後再做 enum/對照表
     url: str
     sku_hint: str | None       # 從品名抽出的「可能型號」，先不保證正確
+    extra: dict[str, object] | None = None  # 零件特有欄位（可選）
 
 
 class ListingParser(Protocol):

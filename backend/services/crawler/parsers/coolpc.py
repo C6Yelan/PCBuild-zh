@@ -5,7 +5,7 @@ import html as _html
 import re
 from urllib.parse import quote, urljoin, urlparse, parse_qs
 
-from .sku_hints import extract_sku_hint
+from .sku_hints import extract_listing_hints
 from .base import ListingCandidate
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -24,18 +24,6 @@ _BLOCK_RE = re.compile(
 # 退回純文字模式（拿不到 iBuy 時，url 只能先用 page_url）
 _ITEM_TEXT_RE = re.compile(
     r"(?m)^(?P<title>.{6,200}?)\s*含稅[:：]?\s*NT(?P<price>[0-9,]{3,})\b"
-)
-
-_SKU_HINT_RE = re.compile(
-    r"(?i)(?<![A-Za-z0-9])("  # 左邊界：前一字元不是英數（避免吃到字中間）
-    r"(?:i[3579]-\d{4,5}[a-z0-9]{0,6})|"                       # i5-12400F / i7-14700K
-    r"(?:core\s+ultra\s+\d+\s+\d{3}[a-z0-9]{0,6})|"            # Core Ultra 5 225F
-    r"(?:ryzen\s+[3579]\s+\d{4,5}[a-z0-9]{0,6})|"              # Ryzen 7 9800X3D（含 X3D）
-    r"(?:amd\s+)?r[3579]\s*\d{4,5}[a-z0-9]{0,6}|"              # AMD R5 8400F盒 / R7 9800X3D代理...
-    r"(?:xeon\s+w\d+-\d{4,5}[a-z0-9]{0,6})|"                   # Xeon W7-3465X
-    r"(?:ryzen\s+tr\s+(?:pro\s+)?\d{4,5}[a-z0-9]{0,6})|"       # Ryzen TR / TR PRO
-    r"(?:threadripper\s+(?:pro\s+)?\d{4,5}[a-z0-9]{0,6})"
-    r")(?=[^A-Za-z0-9]|$)"  # 右邊界：下一字元不是英數（中文緊貼也能切開）
 )
 
 _COOLPC_IGRP_CATEGORY: dict[str, str] = {
@@ -68,10 +56,6 @@ def _parse_int_price(s: str) -> int | None:
     s = (s or "").replace(",", "").strip()
     return int(s) if s.isdigit() else None
 
-def _sku_hint(title: str) -> str | None:
-    m = _SKU_HINT_RE.search(title or "")
-    return m.group(1) if m else None
-
 class CoolpcListingParser:
     source_id = "coolpc"
 
@@ -98,6 +82,13 @@ class CoolpcListingParser:
             # iBuy 是 base64，含 + / =，必須 URL encode 才穩定
             buy_url = f"https://www.coolpc.com.tw/evaluate.php?iBuy={quote(ibuy, safe='')}"
             buy_url = urljoin(page_url, buy_url)
+            hints = extract_listing_hints(category, raw_title)
+            if category == "CPU" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+            if category == "MB" and hints.is_bundle:
+                continue
+            if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
+                continue
 
             items.append(
                 ListingCandidate(
@@ -106,7 +97,8 @@ class CoolpcListingParser:
                     currency="TWD",
                     category=category,
                     url=buy_url,
-                    sku_hint=extract_sku_hint(category, raw_title),
+                    sku_hint=hints.sku_hint,
+                    extra=hints.extra,
                 )
             )
 
@@ -126,6 +118,14 @@ class CoolpcListingParser:
                 continue
             seen.add(key)
 
+            hints = extract_listing_hints(category, raw_title)
+            if category == "CPU" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+            if category == "MB" and hints.is_bundle:
+                continue
+            if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+
             items.append(
                 ListingCandidate(
                     title=raw_title,
@@ -133,7 +133,8 @@ class CoolpcListingParser:
                     currency="TWD",
                     category=category,
                     url=page_url,
-                    sku_hint=extract_sku_hint(category, raw_title),
+                    sku_hint=hints.sku_hint,
+                    extra=hints.extra,
                 )
             )
 

@@ -8,3 +8,5 @@ venv/
 logs/
 .vscode/
 .idea/
+temp
+_crawler_raw

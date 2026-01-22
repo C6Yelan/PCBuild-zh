@@ -1,3 +1,4 @@
+# backend/tests/test_gpu_sku_hints.py
 from backend.services.crawler.parsers.sku_hints.gpu import extract_gpu_hints
 
 

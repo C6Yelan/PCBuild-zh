@@ -29,3 +29,9 @@ def head_before_brackets(text: str) -> str:
 
 def strip_leading_note(text: str) -> str:
     return _LEADING_NOTE_RE.sub("", (text or "")).strip()
+
+
+def compact_extra(extra: dict[str, object] | None) -> dict[str, object]:
+    if not extra:
+        return {}
+    return {k: v for k, v in extra.items() if v is not None}

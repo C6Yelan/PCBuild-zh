@@ -29,6 +29,7 @@ _ITEM_TEXT_RE = re.compile(
 _COOLPC_IGRP_CATEGORY: dict[str, str] = {
     "4": "CPU",   # 處理器總覽 :contentReference[oaicite:1]{index=1}
     "5": "MB",    # 主機板總覽 :contentReference[oaicite:2]{index=2}
+    "6": "RAM",   # 記憶體總覽
     "12": "GPU",  # 顯示卡總覽 :contentReference[oaicite:3]{index=3}
     # 之後要擴充再加：機殼 IGrp=14、電源 IGrp=15、風扇/配件 IGrp=16 ... :contentReference[oaicite:4]{index=4}
 }
@@ -89,6 +90,8 @@ class CoolpcListingParser:
                 continue
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
+            if category == "RAM" and hints.extra and hints.extra.get("is_accessory"):
+                continue
 
             items.append(
                 ListingCandidate(
@@ -124,6 +127,8 @@ class CoolpcListingParser:
             if category == "MB" and hints.is_bundle:
                 continue
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+            if category == "RAM" and hints.extra and hints.extra.get("is_accessory"):
                 continue
 
             items.append(

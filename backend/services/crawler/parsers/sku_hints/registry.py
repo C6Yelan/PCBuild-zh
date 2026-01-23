@@ -9,12 +9,12 @@ from .mb import extract_mb_hints, extract_mb_sku_hint
 
 
 @dataclass(frozen=True)
-class ListingHints:
+class ListingHints: # 從品名抽出的各種提示（型號、是否為套裝等），並統一回傳格式。
     sku_hint: str | None
     extra: dict[str, object] | None
     is_bundle: bool
 
-def extract_sku_hint(category: str | None, title: str) -> str | None:
+def extract_sku_hint(category: str | None, title: str) -> str | None: # 只回傳 sku_hint(型號提示)，不回傳 extra。
     c = (category or "").upper()
     if c == "CPU":
         return extract_cpu_sku_hint(title)
@@ -26,7 +26,7 @@ def extract_sku_hint(category: str | None, title: str) -> str | None:
     return None
 
 
-def extract_listing_hints(category: str | None, title: str) -> ListingHints:
+def extract_listing_hints(category: str | None, title: str) -> ListingHints: # 回傳包含 sku_hint、extra、is_bundle 的 ListingHints。
     c = (category or "").upper()
     if c == "CPU":
         sku_hint, extra = extract_cpu_hints(title)

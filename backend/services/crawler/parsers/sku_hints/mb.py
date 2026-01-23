@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import re
 
-_SPLIT_RE = re.compile(r"[（(【]")  # 遇到括號/【】就切掉後面的規格
-_WS_RE = re.compile(r"\s+")
+_SPLIT_RE = re.compile(r"[（(【]")  # 遇到括號/【】就切掉後面的規格（通常括號後是規格敘述）
+_WS_RE = re.compile(r"\s+") # 多個空白合併為一個空白
 
 # 套裝/大全配（非單一主機板）關鍵字：出現任一通常就不是單品 MB
 _BUNDLE_RE = re.compile(
@@ -25,32 +25,32 @@ _BRAND_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?:\bBIOSTAR\b|映泰)", flags=re.IGNORECASE), "BIOSTAR"),
 ]
 
-_CPU_SOCKET_RE = re.compile(
+_CPU_SOCKET_RE = re.compile( # 用來從標題中抽取 CPU 腳位資訊
     r"\b(?P<sock>LGA\s*\d{3,4}|AM[45]|s?TR5|s?WRX8)\b",
     flags=re.IGNORECASE,
 )
-_FORM_FACTOR_RE = re.compile(
+_FORM_FACTOR_RE = re.compile( # 用來從標題中抽取主機板外形規格
     r"\b(?P<form>E-?ATX|ATX|M-?ATX|MICRO[ -]?ATX|MATX|MINI[ -]?ITX|ITX|CEB|EEB)\b",
     flags=re.IGNORECASE,
 )
-_DDR_RE = re.compile(r"\bDDR(?P<gen>[45])\b", flags=re.IGNORECASE)
-_CHIPSET_PRIMARY_RE = re.compile(
+_DDR_RE = re.compile(r"\bDDR(?P<gen>[45])\b", flags=re.IGNORECASE) # 用來從標題中抽取記憶體類型（DDR4/DDR5）
+_CHIPSET_PRIMARY_RE = re.compile( # 用來從標題中抽取主機板晶片組(工作站/伺服器用)
     r"\b(?P<chip>WRX90|WRX80|TRX50)(?=[A-Za-z]|\b)",
     flags=re.IGNORECASE,
 )
-_CHIPSET_E_SUFFIX_RE = re.compile(
+_CHIPSET_E_SUFFIX_RE = re.compile( # 用來從標題中抽取主機板晶片組(AMD E 版本)
     r"\b(?P<chip>(?:B|X)\d{3}E)(?=[A-Za-z]|\b)",
     flags=re.IGNORECASE,
 )
-_CHIPSET_MAIN_RE = re.compile(
+_CHIPSET_MAIN_RE = re.compile( # 用來從標題中抽取主機板晶片組(一般用)
     r"\b(?P<chip>[ABHXZW]\d{3,4})(?=[A-Za-z]|\b)",
     flags=re.IGNORECASE,
 )
-_CHIPSET_2DIGIT_RE = re.compile(
+_CHIPSET_2DIGIT_RE = re.compile( # 用來從標題中抽取主機板晶片組(兩位數版本，較舊)
     r"\b(?P<chip>[ABHZXQ]\d{2})(?=[A-Za-z]|\b)",
     flags=re.IGNORECASE,
 )
-_CHIPSET_EXCLUDE = {"X550", "I225", "I226", "I211", "I210"}
+_CHIPSET_EXCLUDE = {"X550", "I225", "I226", "I211", "I210"} # 這些不是晶片組，是網卡晶片
 
 # 這些多半是規格或外形，不應納入 sku_hint（可依你資料再擴充）
 _STOPWORDS = {
@@ -69,7 +69,7 @@ _VARIANT_ALIASES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?i)\bSTEALTH\b"), "STEALTH"),
 ]
 
-def _infer_brand_hint(title: str) -> str | None:
+def _infer_brand_hint(title: str) -> str | None: # 根據標題推斷主機板品牌
     text = (title or "").strip()
     if not text:
         return None
@@ -78,14 +78,14 @@ def _infer_brand_hint(title: str) -> str | None:
             return norm
     return None
 
-def _first_non_empty_line(text: str) -> str:
+def _first_non_empty_line(text: str) -> str: # 從多行文字中取第一個「非空行」當作代表行。
     for line in (text or "").splitlines():
         line = line.strip()
         if line:
             return line
     return (text or "").strip()
 
-def _extract_head(title: str) -> str:
+def _extract_head(title: str) -> str: # 從標題中抽取代表性的「頭部」文字（通常是型號前半段）
     line = _first_non_empty_line(title)
     if not line:
         return ""
@@ -93,7 +93,7 @@ def _extract_head(title: str) -> str:
     head = _WS_RE.sub(" ", head).strip()
     return head
 
-def _norm_form_factor(raw: str | None) -> str | None:
+def _norm_form_factor(raw: str | None) -> str | None: # 正規化主機板外形規格
     if not raw:
         return None
     u = raw.upper().replace("_", "-")
@@ -111,7 +111,7 @@ def _norm_form_factor(raw: str | None) -> str | None:
         return "EEB"
     return raw
 
-def _extract_label_value(text: str, label: str) -> str | None:
+def _extract_label_value(text: str, label: str) -> str | None: # 從標題中抽取指定標籤（如 CPU: xxx）後的值
     if not text:
         return None
     pattern = re.compile(
@@ -121,7 +121,7 @@ def _extract_label_value(text: str, label: str) -> str | None:
     m = pattern.search(text)
     return m.group("val").strip() if m else None
 
-def _normalize_socket(text: str | None, *, allow_bare: bool) -> str | None:
+def _normalize_socket(text: str | None, *, allow_bare: bool) -> str | None: # 正規化 CPU 腳位資訊
     if not text:
         return None
     if re.search(r"\bS?TR5\b", text, flags=re.IGNORECASE):
@@ -140,7 +140,7 @@ def _normalize_socket(text: str | None, *, allow_bare: bool) -> str | None:
             return f"LGA{m.group(1)}"
     return None
 
-def _extract_chipset(text: str | None) -> str | None:
+def _extract_chipset(text: str | None) -> str | None: # 從文字中抽取主機板晶片組提示
     if not text:
         return None
     for pat in (_CHIPSET_PRIMARY_RE, _CHIPSET_E_SUFFIX_RE, _CHIPSET_MAIN_RE, _CHIPSET_2DIGIT_RE):
@@ -151,7 +151,7 @@ def _extract_chipset(text: str | None) -> str | None:
             return chip
     return None
 
-def _is_bundle_head(head: str) -> bool:
+def _is_bundle_head(head: str) -> bool: # 判斷主機板標題是否為套裝/大全配
     if not head:
         return False
     if _BUNDLE_RE.search(head):
@@ -160,7 +160,7 @@ def _is_bundle_head(head: str) -> bool:
         return True
     return False
 
-def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
+def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提取主機板相關提示資訊
     """
     回傳 (sku_hint, extra)；extra 至少包含：
       - brand_hint / model_hint
@@ -206,7 +206,7 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
         "model_hint": sku_hint,
         "chipset_hint": chipset_hint,
         "socket_hint": socket_hint,
-        "form_factor_hint": form_factor_hint,
+        "form_factor_hint": form_factor_hint, # 主機板外形規格
         "memory_type_hint": memory_type_hint,
         "is_bundle": is_bundle,
     }

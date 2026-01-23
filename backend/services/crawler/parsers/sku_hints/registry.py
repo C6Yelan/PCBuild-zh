@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from .cpu import extract_cpu_hints, extract_cpu_sku_hint
 from .gpu import extract_gpu_hints
-from .mb import extract_mb_sku_hint
+from .mb import extract_mb_hints, extract_mb_sku_hint
 
 
 @dataclass(frozen=True)
@@ -32,8 +32,8 @@ def extract_listing_hints(category: str | None, title: str) -> ListingHints:
         sku_hint, extra = extract_cpu_hints(title)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c in ("MB", "MOTHERBOARD"):
-        sku_hint = extract_mb_sku_hint(title)
-        return ListingHints(sku_hint=sku_hint, extra=None, is_bundle=False)
+        sku_hint, extra = extract_mb_hints(title)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c == "GPU":
         sku_hint, extra = extract_gpu_hints(title)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))

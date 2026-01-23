@@ -6,9 +6,56 @@ import re
 _SPLIT_RE = re.compile(r"[（(【]")  # 遇到括號/【】就切掉後面的規格
 _WS_RE = re.compile(r"\s+")
 
+# 套裝/大全配（非單一主機板）關鍵字：出現任一通常就不是單品 MB
+_BUNDLE_RE = re.compile(
+    r"(大全配|套裝|優惠組合|組合|主題.*(大全配|套裝))",
+    flags=re.IGNORECASE,
+)
+_BUNDLE_PLUS_RE = re.compile(
+    r"(機殼|電源|水冷|顯卡|顯示卡|散熱|散熱器|風扇)",
+    flags=re.IGNORECASE,
+)
+
+# 主機板品牌（中英混用）
+_BRAND_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(?:\bASUS\b|華碩)", flags=re.IGNORECASE), "ASUS"),
+    (re.compile(r"(?:\bMSI\b|微星)", flags=re.IGNORECASE), "MSI"),
+    (re.compile(r"(?:\bGIGABYTE\b|技嘉)", flags=re.IGNORECASE), "GIGABYTE"),
+    (re.compile(r"(?:\bASROCK\b|華擎)", flags=re.IGNORECASE), "ASRock"),
+    (re.compile(r"(?:\bBIOSTAR\b|映泰)", flags=re.IGNORECASE), "BIOSTAR"),
+]
+
+_CPU_SOCKET_RE = re.compile(
+    r"\b(?P<sock>LGA\s*\d{3,4}|AM[45]|s?TR5|s?WRX8)\b",
+    flags=re.IGNORECASE,
+)
+_FORM_FACTOR_RE = re.compile(
+    r"\b(?P<form>E-?ATX|ATX|M-?ATX|MICRO[ -]?ATX|MATX|MINI[ -]?ITX|ITX|CEB|EEB)\b",
+    flags=re.IGNORECASE,
+)
+_DDR_RE = re.compile(r"\bDDR(?P<gen>[45])\b", flags=re.IGNORECASE)
+_CHIPSET_PRIMARY_RE = re.compile(
+    r"\b(?P<chip>WRX90|WRX80|TRX50)(?=[A-Za-z]|\b)",
+    flags=re.IGNORECASE,
+)
+_CHIPSET_E_SUFFIX_RE = re.compile(
+    r"\b(?P<chip>(?:B|X)\d{3}E)(?=[A-Za-z]|\b)",
+    flags=re.IGNORECASE,
+)
+_CHIPSET_MAIN_RE = re.compile(
+    r"\b(?P<chip>[ABHXZW]\d{3,4})(?=[A-Za-z]|\b)",
+    flags=re.IGNORECASE,
+)
+_CHIPSET_2DIGIT_RE = re.compile(
+    r"\b(?P<chip>[ABHZXQ]\d{2})(?=[A-Za-z]|\b)",
+    flags=re.IGNORECASE,
+)
+_CHIPSET_EXCLUDE = {"X550", "I225", "I226", "I211", "I210"}
+
 # 這些多半是規格或外形，不應納入 sku_hint（可依你資料再擴充）
 _STOPWORDS = {
     "ATX", "M-ATX", "MATX", "MICRO", "E-ATX", "ITX", "MINI-ITX",
+    "CEB", "EEB",
     "DDR4", "DDR5", "WIFI6", "WIFI6E", "WIFI7",
     "LAN", "RGB", "ARGB",
 }
@@ -22,13 +69,155 @@ _VARIANT_ALIASES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?i)\bSTEALTH\b"), "STEALTH"),
 ]
 
+def _infer_brand_hint(title: str) -> str | None:
+    text = (title or "").strip()
+    if not text:
+        return None
+    for pat, norm in _BRAND_PATTERNS:
+        if pat.search(text):
+            return norm
+    return None
+
+def _first_non_empty_line(text: str) -> str:
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return (text or "").strip()
+
+def _extract_head(title: str) -> str:
+    line = _first_non_empty_line(title)
+    if not line:
+        return ""
+    head = _SPLIT_RE.split(line, 1)[0]
+    head = _WS_RE.sub(" ", head).strip()
+    return head
+
+def _norm_form_factor(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    u = raw.upper().replace("_", "-")
+    if u in ("M-ATX", "MATX", "MICRO-ATX", "MICRO ATX", "MICROATX"):
+        return "mATX"
+    if u in ("MINI-ITX", "MINI ITX", "MINIITX", "ITX"):
+        return "ITX"
+    if u in ("E-ATX", "EATX"):
+        return "E-ATX"
+    if u == "ATX":
+        return "ATX"
+    if u == "CEB":
+        return "CEB"
+    if u == "EEB":
+        return "EEB"
+    return raw
+
+def _extract_label_value(text: str, label: str) -> str | None:
+    if not text:
+        return None
+    pattern = re.compile(
+        rf"(?:^|[\s\n]){re.escape(label)}\s*[:：]\s*(?P<val>.+?)(?=(?:\s+[\w\u4e00-\u9fff]{{1,8}}\s*[:：])|$)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    m = pattern.search(text)
+    return m.group("val").strip() if m else None
+
+def _normalize_socket(text: str | None, *, allow_bare: bool) -> str | None:
+    if not text:
+        return None
+    if re.search(r"\bS?TR5\b", text, flags=re.IGNORECASE):
+        return "sTR5"
+    if re.search(r"\bS?WRX8\b", text, flags=re.IGNORECASE):
+        return "sWRX8"
+    m = re.search(r"\bLGA\s*(\d{3,4})\b", text, flags=re.IGNORECASE)
+    if m:
+        return f"LGA{m.group(1)}"
+    m = re.search(r"\bAM\s*([45])\b", text, flags=re.IGNORECASE)
+    if m:
+        return f"AM{m.group(1)}"
+    if allow_bare:
+        m = re.search(r"(?<!\d)(\d{3,4})(?!\d)", text)
+        if m:
+            return f"LGA{m.group(1)}"
+    return None
+
+def _extract_chipset(text: str | None) -> str | None:
+    if not text:
+        return None
+    for pat in (_CHIPSET_PRIMARY_RE, _CHIPSET_E_SUFFIX_RE, _CHIPSET_MAIN_RE, _CHIPSET_2DIGIT_RE):
+        for m in pat.finditer(text):
+            chip = m.group("chip").upper()
+            if chip in _CHIPSET_EXCLUDE:
+                continue
+            return chip
+    return None
+
+def _is_bundle_head(head: str) -> bool:
+    if not head:
+        return False
+    if _BUNDLE_RE.search(head):
+        return True
+    if re.search(r"[+＋]", head) and _BUNDLE_PLUS_RE.search(head):
+        return True
+    return False
+
+def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
+    """
+    回傳 (sku_hint, extra)；extra 至少包含：
+      - brand_hint / model_hint
+      - chipset_hint / socket_hint / form_factor_hint / memory_type_hint（能抓則抓）
+      - is_bundle
+    """
+    sku_hint = extract_mb_sku_hint(title)
+    head = _extract_head(title)
+    brand_hint = _infer_brand_hint(head)
+
+    cpu_field = _extract_label_value(title or "", "CPU")
+    socket_hint = _normalize_socket(cpu_field, allow_bare=True)
+    if not socket_hint:
+        socket_hint = _normalize_socket(head, allow_bare=False)
+    if not socket_hint:
+        sock_m = _CPU_SOCKET_RE.search(title or "")
+        socket_hint = sock_m.group("sock") if sock_m else None
+        socket_hint = _normalize_socket(socket_hint, allow_bare=False)
+
+    form_m = _FORM_FACTOR_RE.search(head or "") or _FORM_FACTOR_RE.search(title or "")
+    form_factor_hint = _norm_form_factor(form_m.group("form") if form_m else None)
+
+    ddr_m = _DDR_RE.search(head or "") or _DDR_RE.search(title or "")
+    memory_type_hint = f"DDR{ddr_m.group('gen')}" if ddr_m else None
+
+    # chipset 優先從 sku_hint/head 抽，不掃網路/USB 描述
+    chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head)
+
+    if memory_type_hint is None:
+        if socket_hint in ("AM4", "sWRX8"):
+            memory_type_hint = "DDR4"
+        elif socket_hint in ("AM5", "sTR5"):
+            memory_type_hint = "DDR5"
+        elif chipset_hint in ("WRX80",):
+            memory_type_hint = "DDR4"
+        elif chipset_hint in ("TRX50", "WRX90"):
+            memory_type_hint = "DDR5"
+
+    is_bundle = _is_bundle_head(head)
+
+    extra = {
+        "brand_hint": brand_hint,
+        "model_hint": sku_hint,
+        "chipset_hint": chipset_hint,
+        "socket_hint": socket_hint,
+        "form_factor_hint": form_factor_hint,
+        "memory_type_hint": memory_type_hint,
+        "is_bundle": is_bundle,
+    }
+    return sku_hint, extra
+
 def extract_mb_sku_hint(title: str) -> str | None:
     if not title:
         return None
 
     # 1) 先切掉規格描述
-    head = _SPLIT_RE.split(title, 1)[0]
-    head = _WS_RE.sub(" ", head).strip()
+    head = _extract_head(title)
 
     # 2) 取出 variant（背插/隱藏接口）標記：BTF / PZ / STEALTH
     variant: str | None = None

@@ -17,7 +17,6 @@ class FetchResult:
     final_url: str
     status_code: int
     headers: Mapping[str, str]
-    content: bytes
     text: str
 
 
@@ -104,7 +103,6 @@ class CrawlerHttpClient:
             final_url=str(resp.url),
             status_code=resp.status_code,
             headers=dict(resp.headers),
-            content=resp.content,
             text=resp.text,
         )
 

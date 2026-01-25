@@ -45,6 +45,7 @@ _COOLPC_IGRP_CATEGORY: dict[str, str] = {
     "6": "RAM",   # 記憶體總覽
     "7": "SSD",   # 固態硬碟 M.2｜SSD
     "8": "HDD",   # 硬碟 HDD
+    "10": "COOLER", # CPU散熱｜散熱墊｜散熱膏總覽
     "12": "GPU",  # 顯示卡總覽 :contentReference[oaicite:3]{index=3}
     # 之後要擴充再加：機殼 IGrp=14、電源 IGrp=15、風扇/配件 IGrp=16 ...
 }
@@ -97,7 +98,7 @@ class CoolpcListingParser:
         items: list[ListingCandidate] = []
         seen_ibuy: set[str] = set()
 
-        if category in ("RAM", "SSD", "HDD"):
+        if category in ("RAM", "SSD", "HDD", "COOLER"):
             seen: set[tuple[str, int]] = set()
             for m in _RAM_BLOCK_RE.finditer(html):
                 raw_title = _to_text(m.group("title"))
@@ -172,7 +173,7 @@ class CoolpcListingParser:
                     category=category,
                     url=buy_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER") else hints.extra,
                 )
             )
 
@@ -210,7 +211,7 @@ class CoolpcListingParser:
                     category=category,
                     url=page_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER") else hints.extra,
                 )
             )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .cpu import extract_cpu_hints, extract_cpu_sku_hint
+from .cooler import extract_cooler_hints, extract_cooler_sku_hint
 from .gpu import extract_gpu_hints
 from .hdd import extract_hdd_hints, extract_hdd_sku_hint
 from .mb import extract_mb_hints, extract_mb_sku_hint
@@ -32,6 +33,8 @@ def extract_sku_hint(category: str | None, title: str) -> str | None: # åªå›žå‚
         return extract_ssd_sku_hint(title)
     if c == "HDD":
         return extract_hdd_sku_hint(title)
+    if c == "COOLER":
+        return extract_cooler_sku_hint(title)
     return None
 
 
@@ -55,4 +58,7 @@ def extract_listing_hints(category: str | None, title: str) -> ListingHints: # å
     if c == "HDD":
         sku_hint, extra = extract_hdd_hints(title)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=False)
+    if c == "COOLER":
+        sku_hint, extra = extract_cooler_hints(title)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     return ListingHints(sku_hint=extract_sku_hint(category, title), extra=None, is_bundle=False)

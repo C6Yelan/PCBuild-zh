@@ -5,38 +5,38 @@ import re
 
 from .common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
 
-_CAPACITY_RE = re.compile(
+_CAPACITY_RE = re.compile( # 容量，支援 TB、GB 單位
     r"(?i)(?<!\d)(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>TB|T|GB|G)(?![A-Za-z0-9])"
 )
-_RPM_RE = re.compile(r"(?P<rpm>\d{4,5})\s*轉")
-_CACHE_MB_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*MB\b")
-_CACHE_M_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*M\b")
-_FORM_25_RE = re.compile(r"2\.5吋|2\.5\"", flags=re.IGNORECASE)
-_FORM_35_RE = re.compile(r"3\.5吋|3\.5\"", flags=re.IGNORECASE)
-_THICKNESS_RE = re.compile(r"(?i)(?P<mm>\d+(?:\.\d+)?)\s*mm\b")
-_SATA_RE = re.compile(r"(?i)\bSATA\b")
-_SAS_RE = re.compile(r"(?i)\bSAS\b")
-_USB_RE = re.compile(r"(?i)\bUSB\b|Type-?C")
-_SERIES_RE = re.compile(r"【(?P<text>[^】]+)】")
-_LIMIT_RE = re.compile(r"(限組裝|限購)")
-_RESCUE_RE = re.compile(r"(?i)(?P<yrs>\d+)\s*年\s*Rescue")
-_WARRANTY_RE = re.compile(r"(?P<yrs>\d+)\s*年保")
-_WARRANTY_SLASH_RE = re.compile(r"/\s*(?P<yrs>\d+)\s*年\s*/")
-_WARRANTY_RES_PAIR_RE = re.compile(r"(?P<w>\d+)\s*年\s*/\s*(?P<r>\d+)\s*年\s*Rescue", flags=re.IGNORECASE)
+_RPM_RE = re.compile(r"(?P<rpm>\d{4,5})\s*轉") # 轉速, 單位 RPM
+_CACHE_MB_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*MB\b") # 快取容量, 單位 MB
+_CACHE_M_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*M\b") # 快取容量的備用模式, 單位 MB
+_FORM_25_RE = re.compile(r"2\.5吋|2\.5\"", flags=re.IGNORECASE) # 用於識別 2.5 吋規格
+_FORM_35_RE = re.compile(r"3\.5吋|3\.5\"", flags=re.IGNORECASE) # 用於識別 3.5 吋規格
+_THICKNESS_RE = re.compile(r"(?i)(?P<mm>\d+(?:\.\d+)?)\s*mm\b") # 厚度, 單位 mm
+_SATA_RE = re.compile(r"(?i)\bSATA\b") # 用於識別 SATA 規格
+_SAS_RE = re.compile(r"(?i)\bSAS\b") # 用於識別 SAS(企業級) 規格
+_USB_RE = re.compile(r"(?i)\bUSB\b|Type-?C") # 用於識別 USB 規格
+_SERIES_RE = re.compile(r"【(?P<text>[^】]+)】") # 提取系列名稱
+_LIMIT_RE = re.compile(r"(限組裝|限購)") # 用於識別限購或限組裝
+_RESCUE_RE = re.compile(r"(?i)(?P<yrs>\d+)\s*年\s*Rescue") # 提取 Rescue 年限
+_WARRANTY_RE = re.compile(r"(?P<yrs>\d+)\s*年保") # 提取保固年限
+_WARRANTY_SLASH_RE = re.compile(r"/\s*(?P<yrs>\d+)\s*年\s*/") # 提取斜線分隔的保固年限
+_WARRANTY_RES_PAIR_RE = re.compile(r"(?P<w>\d+)\s*年\s*/\s*(?P<r>\d+)\s*年\s*Rescue", flags=re.IGNORECASE) # 提取保固與 Rescue 年限對應組合
 
 _SEAGATE_RE = re.compile(r"\bSeagate\b|希捷", flags=re.IGNORECASE)
 _WD_RE = re.compile(r"\bWD\b|Western\s*Digital", flags=re.IGNORECASE)
 _TOSHIBA_RE = re.compile(r"\bToshiba\b|東芝", flags=re.IGNORECASE)
 
 _MODEL_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"\bST[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bWD[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bWUS[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bHDWR[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bHDWG[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bHDW[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bMQ[0-9A-Z]+\b", flags=re.IGNORECASE),
-    re.compile(r"\bMG[0-9A-Z]+\b", flags=re.IGNORECASE),
+    re.compile(r"\bST[0-9A-Z]+\b", flags=re.IGNORECASE), # Seagate
+    re.compile(r"\bWD[0-9A-Z]+\b", flags=re.IGNORECASE), # Western Digital
+    re.compile(r"\bWUS[0-9A-Z]+\b", flags=re.IGNORECASE), # Western Digital Ultrastar
+    re.compile(r"\bHDWR[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
+    re.compile(r"\bHDWG[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
+    re.compile(r"\bHDW[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
+    re.compile(r"\bMQ[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
+    re.compile(r"\bMG[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
 ]
 
 _SEGMENT_RULES: list[tuple[re.Pattern[str], str]] = [
@@ -47,7 +47,7 @@ _SEGMENT_RULES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
-def _extract_capacity_gib(text: str) -> int | None:
+def _extract_capacity_gib(text: str) -> int | None: # 提取容量並轉換為 GiB。
     m = _CAPACITY_RE.search(text or "")
     if not m:
         return None
@@ -60,7 +60,7 @@ def _extract_capacity_gib(text: str) -> int | None:
     return int(round(bytes_val / (1 << 30)))
 
 
-def _extract_model_token(text: str) -> str | None:
+def _extract_model_token(text: str) -> str | None: # 提取型號提示。
     if not text:
         return None
     for m in _SERIES_RE.finditer(text):
@@ -76,19 +76,19 @@ def _extract_model_token(text: str) -> str | None:
     return None
 
 
-def _extract_series_hint(text: str) -> str | None:
+def _extract_series_hint(text: str) -> str | None: # 提取系列提示。
     m = _SERIES_RE.search(text or "")
     return m.group("text") if m else None
 
 
-def _extract_segment_hint(text: str) -> str | None:
+def _extract_segment_hint(text: str) -> str | None: # 提取市場區隔提示。
     for pat, label in _SEGMENT_RULES:
         if pat.search(text or ""):
             return label
     return None
 
 
-def _extract_warranty_years(text: str) -> int | None:
+def _extract_warranty_years(text: str) -> int | None: #　提取保固年限。
     m = _WARRANTY_RE.search(text or "")
     if m:
         return int(m.group("yrs"))
@@ -101,12 +101,12 @@ def _extract_warranty_years(text: str) -> int | None:
     return None
 
 
-def _extract_rescue_years(text: str) -> int | None:
+def _extract_rescue_years(text: str) -> int | None: # 提取 Rescue 年限。
     m = _RESCUE_RE.search(text or "")
     return int(m.group("yrs")) if m else None
 
 
-def _infer_brand(text: str) -> str | None:
+def _infer_brand(text: str) -> str | None: # 推斷品牌提示。
     if _SEAGATE_RE.search(text or ""):
         return "SEAGATE"
     if _WD_RE.search(text or ""):
@@ -116,7 +116,7 @@ def _infer_brand(text: str) -> str | None:
     return None
 
 
-def extract_hdd_sku_hint(title: str) -> str | None:
+def extract_hdd_sku_hint(title: str) -> str | None: # 回傳 HDD 型號提示（sku_hint）。
     line = normalize_spaces(strip_leading_note(first_line(title)))
     return _extract_model_token(line)
 
@@ -182,18 +182,18 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         limit_hint = limit_m.group(1)
 
     extra = {
-        "brand_hint": brand_hint,
-        "model_hint": model_hint,
-        "capacity_gib": capacity_gib,
-        "form_factor_hint": form_factor_hint,
-        "thickness_mm_hint": thickness_mm_hint,
-        "interface_hint": interface_hint,
-        "rpm_hint": rpm_hint,
-        "cache_mb_hint": cache_mb_hint,
-        "series_hint": series_hint,
-        "segment_hint": segment_hint,
-        "rescue_years": rescue_years,
-        "warranty_years": warranty_years,
-        "limit_hint": limit_hint,
+        "brand_hint": brand_hint, # 品牌提示
+        "model_hint": model_hint, # 型號提示
+        "capacity_gib": capacity_gib, # 容量提示，單位 GiB
+        "form_factor_hint": form_factor_hint, # 規格提示（2.5"、3.5"）
+        "thickness_mm_hint": thickness_mm_hint, # 厚度提示，單位 mm
+        "interface_hint": interface_hint, # 介面提示（SATA、SAS、USB）
+        "rpm_hint": rpm_hint, # 轉速提示，單位 RPM
+        "cache_mb_hint": cache_mb_hint, # 快取容量提示，單位 MB
+        "series_hint": series_hint, # 系列提示
+        "segment_hint": segment_hint, # 市場區隔提示（桌機、NAS、企業等）
+        "rescue_years": rescue_years, # Rescue 年限
+        "warranty_years": warranty_years, # 保固年限
+        "limit_hint": limit_hint, # 限購或限組裝提示
     }
     return sku_hint, extra

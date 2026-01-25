@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .cpu import extract_cpu_hints, extract_cpu_sku_hint
 from .gpu import extract_gpu_hints
+from .hdd import extract_hdd_hints, extract_hdd_sku_hint
 from .mb import extract_mb_hints, extract_mb_sku_hint
 from .ram import extract_ram_hints, extract_ram_sku_hint
 from .ssd import extract_ssd_hints, extract_ssd_sku_hint
@@ -29,6 +30,8 @@ def extract_sku_hint(category: str | None, title: str) -> str | None: # åªå›žå‚
         return extract_ram_sku_hint(title)
     if c == "SSD":
         return extract_ssd_sku_hint(title)
+    if c == "HDD":
+        return extract_hdd_sku_hint(title)
     return None
 
 
@@ -48,5 +51,8 @@ def extract_listing_hints(category: str | None, title: str) -> ListingHints: # å
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c == "SSD":
         sku_hint, extra = extract_ssd_hints(title)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=False)
+    if c == "HDD":
+        sku_hint, extra = extract_hdd_hints(title)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=False)
     return ListingHints(sku_hint=extract_sku_hint(category, title), extra=None, is_bundle=False)

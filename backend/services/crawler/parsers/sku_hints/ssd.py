@@ -241,22 +241,22 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         limit_hint = limit_m.group(1)
 
     extra = {
-        "brand_hint": brand_hint,
-        "model_hint": model_hint,
-        "capacity_gib": capacity_gib,
-        "form_factor_hint": form_factor_hint,
-        "m2_length_hint": m2_length_hint,
-        "interface_hint": interface_hint,
-        "pcie_gen_hint": pcie_gen_hint,
-        "protocol_hint": protocol_hint,
-        "seq_read_mb_s": seq_read_mb_s,
-        "seq_write_mb_s": seq_write_mb_s,
-        "nand_hint": nand_hint,
-        "dram_cache_hint": dram_cache_hint,
-        "controller_hint": controller_hint,
-        "has_heatsink_hint": has_heatsink_hint,
-        "single_sided_hint": single_sided_hint,
-        "warranty_years": warranty_years,
-        "limit_hint": limit_hint,
+        "brand_hint": brand_hint, # 品牌提示
+        "model_hint": model_hint, # 型號提示
+        "capacity_gib": capacity_gib, # 容量提示（GiB）
+        "form_factor_hint": form_factor_hint, # 規格提示（2.5"、M.2）
+        "m2_length_hint": m2_length_hint, # M.2 長度提示
+        "interface_hint": interface_hint, # 介面提示（SATA、PCIe）
+        "pcie_gen_hint": pcie_gen_hint, # PCIe 世代提示(3、4、5)
+        "protocol_hint": protocol_hint, # 協議提示（AHCI、NVMe）
+        "seq_read_mb_s": seq_read_mb_s, # 連續讀取速度提示（MB/s）
+        "seq_write_mb_s": seq_write_mb_s, # 連續寫入速度提示（MB/s）
+        "nand_hint": nand_hint, # NAND 類型提示（TLC、QLC、3D NAND）
+        "dram_cache_hint": dram_cache_hint, # DRAM 快取提示(有/無)
+        "controller_hint": controller_hint, # 控制器提示(型號)
+        "has_heatsink_hint": has_heatsink_hint, # 是否有散熱片提示
+        "single_sided_hint": single_sided_hint, # 是否單面提示
+        "warranty_years": warranty_years, # 保固年限提示
+        "limit_hint": limit_hint, # 限購/限組裝提示
     }
     return sku_hint, extra

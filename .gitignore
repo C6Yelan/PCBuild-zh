@@ -10,3 +10,4 @@ logs/
 .idea/
 temp
 _crawler_raw
+.codex

@@ -46,6 +46,7 @@ _COOLPC_IGRP_CATEGORY: dict[str, str] = {
     "7": "SSD",   # 固態硬碟 M.2｜SSD
     "8": "HDD",   # 硬碟 HDD
     "10": "COOLER", # CPU散熱｜散熱墊｜散熱膏總覽
+    "11": "LIQUID_COOLING", # 水冷總覽
     "12": "GPU",  # 顯示卡總覽 :contentReference[oaicite:3]{index=3}
     # 之後要擴充再加：機殼 IGrp=14、電源 IGrp=15、風扇/配件 IGrp=16 ...
 }
@@ -98,7 +99,7 @@ class CoolpcListingParser:
         items: list[ListingCandidate] = []
         seen_ibuy: set[str] = set()
 
-        if category in ("RAM", "SSD", "HDD", "COOLER"):
+        if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING"):
             seen: set[tuple[str, int]] = set()
             for m in _RAM_BLOCK_RE.finditer(html):
                 raw_title = _to_text(m.group("title"))
@@ -125,6 +126,8 @@ class CoolpcListingParser:
                     seen.add(key)
 
                 hints = extract_listing_hints(category, raw_title)
+                if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
+                    continue
                 items.append(
                     ListingCandidate(
                         title=raw_title,
@@ -164,6 +167,8 @@ class CoolpcListingParser:
                 continue
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
+            if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
+                continue
 
             items.append(
                 ListingCandidate(
@@ -173,7 +178,7 @@ class CoolpcListingParser:
                     category=category,
                     url=buy_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING") else hints.extra,
                 )
             )
 
@@ -202,6 +207,8 @@ class CoolpcListingParser:
                 continue
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
+            if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
+                continue
 
             items.append(
                 ListingCandidate(
@@ -211,7 +218,7 @@ class CoolpcListingParser:
                     category=category,
                     url=page_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING") else hints.extra,
                 )
             )
 

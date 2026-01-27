@@ -11,6 +11,7 @@ from .gpu import extract_gpu_hints
 from .hdd import extract_hdd_hints, extract_hdd_sku_hint
 from .liquid_cooling import extract_liquid_cooling_hints, extract_liquid_cooling_sku_hint
 from .mb import extract_mb_hints, extract_mb_sku_hint
+from .expansion_card import extract_expansion_card_hints, extract_expansion_card_sku_hint
 from .psu import extract_psu_hints, extract_psu_sku_hint
 from .ram import extract_ram_hints, extract_ram_sku_hint
 from .ssd import extract_ssd_hints, extract_ssd_sku_hint
@@ -47,6 +48,8 @@ def extract_sku_hint(category: str | None, title: str) -> str | None: # 只回�
         return extract_psu_sku_hint(title)
     if c == "CASE_FAN":
         return extract_case_fan_sku_hint(title)
+    if c == "EXPANSION_CARD":
+        return extract_expansion_card_sku_hint(title)
     return None
 
 
@@ -84,5 +87,8 @@ def extract_listing_hints(category: str | None, title: str, desc_lines: list[str
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c == "CASE_FAN":
         sku_hint, extra = extract_case_fan_listing_hints(title, desc_lines)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
+    if c == "EXPANSION_CARD":
+        sku_hint, extra = extract_expansion_card_hints(title, desc_lines)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     return ListingHints(sku_hint=extract_sku_hint(category, title), extra=None, is_bundle=False)

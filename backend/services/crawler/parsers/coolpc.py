@@ -54,6 +54,7 @@ _COOLPC_IGRP_CATEGORY: dict[str, str] = {
     "14": "CASE", # 機殼總覽
     "15": "PSU",  # 電源供應器總覽
     "16": "CASE_FAN",  # 機殼風扇｜機殼配件總覽
+    "27": "EXPANSION_CARD",  # 介面擴充卡｜專業Raid卡總覽
     "12": "GPU",  # 顯示卡總覽 :contentReference[oaicite:3]{index=3}
     # 之後要擴充再加：機殼 IGrp=14、電源 IGrp=15、風扇/配件 IGrp=16 ...
 }
@@ -175,7 +176,7 @@ class CoolpcListingParser:
             buy_url = urljoin(page_url, buy_url)
             if category == "RAM" and _is_ram_promo(raw_title, buy_url, price):
                 continue
-            detail_lines = _extract_detail_lines(m.group("details")) if category in ("CASE", "PSU", "CASE_FAN") else None
+            detail_lines = _extract_detail_lines(m.group("details")) if category in ("CASE", "PSU", "CASE_FAN", "EXPANSION_CARD") else None
             hints = extract_listing_hints(category, raw_title, detail_lines)
             if category == "CPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
@@ -194,7 +195,7 @@ class CoolpcListingParser:
                     category=category,
                     url=buy_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING", "CASE", "PSU", "CASE_FAN") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING", "CASE", "PSU", "CASE_FAN", "EXPANSION_CARD") else hints.extra,
                 )
             )
 
@@ -234,7 +235,7 @@ class CoolpcListingParser:
                     category=category,
                     url=page_url,
                     sku_hint=hints.sku_hint,
-                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING", "CASE", "PSU", "CASE_FAN") else hints.extra,
+                    extra=_compact_extra(hints.extra) if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING", "CASE", "PSU", "CASE_FAN", "EXPANSION_CARD") else hints.extra,
                 )
             )
 

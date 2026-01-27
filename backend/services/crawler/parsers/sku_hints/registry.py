@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .case import extract_case_hints, extract_case_sku_hint
 from .cpu import extract_cpu_hints, extract_cpu_sku_hint
 from .cooler import extract_cooler_hints, extract_cooler_sku_hint
 from .gpu import extract_gpu_hints
@@ -38,10 +39,12 @@ def extract_sku_hint(category: str | None, title: str) -> str | None: # 只回�
         return extract_cooler_sku_hint(title)
     if c == "LIQUID_COOLING":
         return extract_liquid_cooling_sku_hint(title)
+    if c == "CASE":
+        return extract_case_sku_hint(title)
     return None
 
 
-def extract_listing_hints(category: str | None, title: str) -> ListingHints: # 回傳包含 sku_hint、extra、is_bundle 的 ListingHints。
+def extract_listing_hints(category: str | None, title: str, desc_lines: list[str] | None = None) -> ListingHints: # 回傳包含 sku_hint、extra、is_bundle 的 ListingHints。
     c = (category or "").upper()
     if c == "CPU":
         sku_hint, extra = extract_cpu_hints(title)
@@ -66,5 +69,8 @@ def extract_listing_hints(category: str | None, title: str) -> ListingHints: # �
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c == "LIQUID_COOLING":
         sku_hint, extra = extract_liquid_cooling_hints(title)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
+    if c == "CASE":
+        sku_hint, extra = extract_case_hints(title, desc_lines)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     return ListingHints(sku_hint=extract_sku_hint(category, title), extra=None, is_bundle=False)

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .case import extract_case_hints, extract_case_sku_hint
+from .case_fan import extract_case_fan_listing_hints, extract_case_fan_sku_hint
 from .cpu import extract_cpu_hints, extract_cpu_sku_hint
 from .cooler import extract_cooler_hints, extract_cooler_sku_hint
 from .gpu import extract_gpu_hints
@@ -44,6 +45,8 @@ def extract_sku_hint(category: str | None, title: str) -> str | None: # 只回�
         return extract_case_sku_hint(title)
     if c == "PSU":
         return extract_psu_sku_hint(title)
+    if c == "CASE_FAN":
+        return extract_case_fan_sku_hint(title)
     return None
 
 
@@ -78,5 +81,8 @@ def extract_listing_hints(category: str | None, title: str, desc_lines: list[str
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     if c == "PSU":
         sku_hint, extra = extract_psu_hints(title, desc_lines)
+        return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
+    if c == "CASE_FAN":
+        sku_hint, extra = extract_case_fan_listing_hints(title, desc_lines)
         return ListingHints(sku_hint=sku_hint, extra=extra, is_bundle=bool(extra.get("is_bundle")))
     return ListingHints(sku_hint=extract_sku_hint(category, title), extra=None, is_bundle=False)

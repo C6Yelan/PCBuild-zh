@@ -7,6 +7,7 @@ from pathlib import Path
 
 from backend.services.crawler.sources import SourceId
 from backend.services.crawler.parsers import get_listing_parser
+from backend.services.crawler.schema_gate.validate import SchemaGateError, validate_payload_fail_fast
 
 
 def main() -> int:
@@ -22,7 +23,17 @@ def main() -> int:
     parser = get_listing_parser(SourceId(args.source))
     items = parser.parse_listings(html=html, page_url=meta.get("final_url") or meta["url"])
 
-    print(json.dumps([item.__dict__ for item in items], ensure_ascii=False, indent=2))
+    payload = [item.__dict__ for item in items]
+
+    try:
+        validate_payload_fail_fast(source_id=args.source, payload=payload)
+    except SchemaGateError as e:
+        # fail fast：輸出報告到 stderr，並停止
+        import sys
+        print(json.dumps(e.report, ensure_ascii=False, indent=2), file=sys.stderr)
+        return 2
+
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
 

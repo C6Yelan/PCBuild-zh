@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/cpu.schema.json",
+  "title": "CoolPC CPU ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "CPU" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+    "sku_hint": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand_hint", "model_hint", "is_bundle", "is_accessory"],
+      "properties": {
+        "brand_hint": {
+          "anyOf": [
+            { "type": "string", "enum": ["AMD", "Intel"] },
+            { "type": "null" }
+          ]
+        },
+        "model_hint": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "is_bundle": { "type": "boolean" },
+        "is_accessory": { "type": "boolean" }
+      }
+    }
+  }
+}

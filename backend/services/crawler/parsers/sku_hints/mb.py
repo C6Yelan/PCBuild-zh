@@ -26,14 +26,16 @@ _BRAND_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _CPU_SOCKET_RE = re.compile( # 用來從標題中抽取 CPU 腳位資訊
-    r"\b(?P<sock>LGA\s*\d{3,4}|AM[45]|s?TR5|s?WRX8)\b",
+    r"(?<![A-Za-z0-9])(?P<sock>LGA\s*\d{3,4}|AM[45]|s?TR5|s?WRX8)(?![A-Za-z0-9])",
     flags=re.IGNORECASE,
 )
 _FORM_FACTOR_RE = re.compile( # 用來從標題中抽取主機板外形規格
-    r"\b(?P<form>E-?ATX|ATX|M-?ATX|MICRO[ -]?ATX|MATX|MINI[ -]?ITX|ITX|CEB|EEB)\b",
+    r"(?<![A-Za-z0-9])(?P<form>E-?ATX|ATX|M-?ATX|MICRO[ -]?ATX|MATX|MINI[ -]?ITX|ITX|CEB|EEB)(?![A-Za-z0-9])",
     flags=re.IGNORECASE,
 )
-_DDR_RE = re.compile(r"\bDDR(?P<gen>[45])\b", flags=re.IGNORECASE) # 用來從標題中抽取記憶體類型（DDR4/DDR5）
+_DDR_RE = re.compile(  # 用來從標題中抽取記憶體類型（DDR4/DDR5）
+    r"(?<![A-Za-z0-9])DDR(?P<gen>[345])(?![A-Za-z0-9])",
+    flags=re.IGNORECASE)
 _CHIPSET_PRIMARY_RE = re.compile( # 用來從標題中抽取主機板晶片組(工作站/伺服器用)
     r"\b(?P<chip>WRX90|WRX80|TRX50)(?=[A-Za-z]|\b)",
     flags=re.IGNORECASE,
@@ -53,13 +55,44 @@ _CHIPSET_2DIGIT_RE = re.compile( # 用來從標題中抽取主機板晶片組(�
 _CHIPSET_EXCLUDE = {"X550", "I225", "I226", "I211", "I210"} # 這些不是晶片組，是網卡晶片
 
 # 用 chipset 推導 socket（降低不必要的 null；讓 schema 可更嚴格）
-_INTEL_LGA1700_CHIPSETS = {
-    "H610", "B660", "H670", "Z690", "W680",
-    "B760", "H770", "Z790",
-}
-_INTEL_LGA1200_CHIPSETS = {"H410", "B460", "H470", "Z490", "H510", "B560", "H570", "Z590", "W580"}
-_AMD_AM5_CHIPSETS = {"A620", "B650", "B650E", "X670", "X670E"}
-_AMD_AM4_CHIPSETS = {"A320", "B350", "X370", "B450", "X470", "A520", "B550", "X570"}
+_AMD_AM5_CHIPSETS = {"X870E", "X870", "B850", "B840", "X670E", "X670", "B650E", "B650", "A620"}
+_AMD_AM4_CHIPSETS = {"X570", "B550", "A520", "X470", "B450", "A320"}
+
+_INTEL_LGA1851_CHIPSETS = {"Z890", "B860", "H810", "W880"}  # 依你資料先列出出現過的
+_INTEL_LGA1700_CHIPSETS = {"Z790", "H770", "B760", "H760", "H610", "Z690", "H670", "B660"}
+_INTEL_LGA1200_CHIPSETS = {"Z590", "H570", "B560", "H510", "Z490", "H470", "B460", "H410"}
+
+_INTEL_LGA1151_CHIPSETS = {"H110", "H310"}
+_INTEL_LGA1150_CHIPSETS = {"H81"}
+
+_AMD_STR5_CHIPSETS = {"TRX50", "WRX90"}
+_AMD_SWRX8_CHIPSETS = {"WRX80"}
+
+def _infer_socket_from_chipset(chipset: str | None) -> str | None:
+    if not chipset:
+        return None
+    c = chipset.upper()
+    if c in _AMD_AM5_CHIPSETS:
+        return "AM5"
+    if c in _AMD_AM4_CHIPSETS:
+        return "AM4"
+    if c in _AMD_STR5_CHIPSETS:
+        return "sTR5"
+    if c in _AMD_SWRX8_CHIPSETS:
+        return "sWRX8"
+    if c in _INTEL_LGA1851_CHIPSETS:
+        return "LGA1851"
+    if c in _INTEL_LGA1700_CHIPSETS:
+        return "LGA1700"
+    if c in _INTEL_LGA1200_CHIPSETS:
+        return "LGA1200"
+    if c in _INTEL_LGA1151_CHIPSETS:
+        return "LGA1151"
+    if c in _INTEL_LGA1150_CHIPSETS:
+        return "LGA1150"
+    if c == "W790":
+        return "LGA4677"
+    return None
 
 def _infer_socket_from_chipset(chipset: str | None) -> str | None:
     if not chipset:
@@ -183,16 +216,13 @@ def _is_bundle_head(head: str) -> bool: # 判斷主機板標題是否為套裝/�
         return True
     return False
 
-def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提取主機板相關提示資訊
-    """
-    回傳 (sku_hint, extra)；extra 至少包含：
-      - brand_hint / model_hint
-      - chipset_hint / socket_hint / form_factor_hint / memory_type_hint（能抓則抓）
-      - is_bundle
-    """
+def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
     sku_hint = extract_mb_sku_hint(title)
     head = _extract_head(title)
     brand_hint = _infer_brand_hint(head)
+
+    # 先拿 chipset_hint，供 socket 推導使用
+    chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head)
 
     cpu_field = _extract_label_value(title or "", "CPU")
     socket_hint = _normalize_socket(cpu_field, allow_bare=True)
@@ -200,8 +230,11 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提�
         socket_hint = _normalize_socket(head, allow_bare=False)
     if not socket_hint:
         sock_m = _CPU_SOCKET_RE.search(title or "")
-        socket_hint = sock_m.group("sock") if sock_m else None
-        socket_hint = _normalize_socket(socket_hint, allow_bare=False)
+        socket_hint = _normalize_socket(sock_m.group("sock") if sock_m else None, allow_bare=False)
+
+    # ★補推導：socket 抽不到才用 chipset 推
+    if not socket_hint:
+        socket_hint = _infer_socket_from_chipset(chipset_hint)
 
     form_m = _FORM_FACTOR_RE.search(head or "") or _FORM_FACTOR_RE.search(title or "")
     form_factor_hint = _norm_form_factor(form_m.group("form") if form_m else None)
@@ -209,18 +242,14 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提�
     ddr_m = _DDR_RE.search(head or "") or _DDR_RE.search(title or "")
     memory_type_hint = f"DDR{ddr_m.group('gen')}" if ddr_m else None
 
-    # chipset 優先從 sku_hint/head 抽，不掃網路/USB 描述
-    chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head)
-
-    # 若標題未出現 socket，但 chipset 可確定 socket，則補齊
-    if not socket_hint:
-        socket_hint = _infer_socket_from_chipset(chipset_hint)
-
     if memory_type_hint is None:
-        if socket_hint in ("AM4", "sWRX8"):
+        # 只對「不會歧義」的平台做推導
+        if socket_hint in ("AM4", "sWRX8", "LGA1200"):
             memory_type_hint = "DDR4"
-        elif socket_hint in ("AM5", "sTR5"):
+        elif socket_hint in ("AM5", "sTR5", "LGA1851", "LGA4677"):
             memory_type_hint = "DDR5"
+        elif socket_hint == "LGA1150":
+            memory_type_hint = "DDR3"
         elif chipset_hint in ("WRX80",):
             memory_type_hint = "DDR4"
         elif chipset_hint in ("TRX50", "WRX90"):
@@ -233,7 +262,7 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提�
         "model_hint": sku_hint,
         "chipset_hint": chipset_hint,
         "socket_hint": socket_hint,
-        "form_factor_hint": form_factor_hint, # 主機板外形規格
+        "form_factor_hint": form_factor_hint,
         "memory_type_hint": memory_type_hint,
         "is_bundle": is_bundle,
     }

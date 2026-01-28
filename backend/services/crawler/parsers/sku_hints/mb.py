@@ -225,8 +225,18 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
     form_m = _FORM_FACTOR_RE.search(head or "") or _FORM_FACTOR_RE.search(title or "")
     form_factor_hint = _norm_form_factor(form_m.group("form") if form_m else None)
 
-    ddr_m = _DDR_RE.search(head or "") or _DDR_RE.search(title or "")
-    memory_type_hint = f"DDR{ddr_m.group('gen')}" if ddr_m else None
+    # 原本 _DDR_RE 只抓 DDR4/DDR5，改成也抓 D4/D5
+    _MEM_RE = re.compile(
+        r"(?<![A-Za-z0-9])(?:DDR(?P<ddr_gen>[345])|D(?P<d_gen>[45]))(?![A-Za-z0-9])",
+        flags=re.IGNORECASE,
+    )
+
+    m = _MEM_RE.search(sku_hint or "") or _MEM_RE.search(head or "") or _MEM_RE.search(title or "")
+    if m:
+        gen = m.group("ddr_gen") or m.group("d_gen")
+        memory_type_hint = f"DDR{gen}"
+    else:
+        memory_type_hint = None
 
     if memory_type_hint is None:
         # 只對「不會歧義」的平台做推導

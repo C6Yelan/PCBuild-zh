@@ -59,7 +59,7 @@ _AMD_AM5_CHIPSETS = {"X870E", "X870", "B850", "B840", "X670E", "X670", "B650E", 
 _AMD_AM4_CHIPSETS = {"X570", "B550", "A520", "X470", "B450", "A320"}
 
 _INTEL_LGA1851_CHIPSETS = {"Z890", "B860", "H810", "W880"}  # 依你資料先列出出現過的
-_INTEL_LGA1700_CHIPSETS = {"Z790", "H770", "B760", "H760", "H610", "Z690", "H670", "B660"}
+_INTEL_LGA1700_CHIPSETS = {"Z790", "H770", "B760", "H760", "H610", "Z690", "H670", "B660", "W680"}
 _INTEL_LGA1200_CHIPSETS = {"Z590", "H570", "B560", "H510", "Z490", "H470", "B460", "H410"}
 
 _INTEL_LGA1151_CHIPSETS = {"H110", "H310"}
@@ -92,20 +92,6 @@ def _infer_socket_from_chipset(chipset: str | None) -> str | None:
         return "LGA1150"
     if c == "W790":
         return "LGA4677"
-    return None
-
-def _infer_socket_from_chipset(chipset: str | None) -> str | None:
-    if not chipset:
-        return None
-    c = chipset.upper()
-    if c in _INTEL_LGA1700_CHIPSETS:
-        return "LGA1700"
-    if c in _INTEL_LGA1200_CHIPSETS:
-        return "LGA1200"
-    if c in _AMD_AM5_CHIPSETS:
-        return "AM5"
-    if c in _AMD_AM4_CHIPSETS:
-        return "AM4"
     return None
 
 # 這些多半是規格或外形，不應納入 sku_hint（可依你資料再擴充）

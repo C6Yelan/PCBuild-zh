@@ -52,6 +52,29 @@ _CHIPSET_2DIGIT_RE = re.compile( # 用來從標題中抽取主機板晶片組(�
 )
 _CHIPSET_EXCLUDE = {"X550", "I225", "I226", "I211", "I210"} # 這些不是晶片組，是網卡晶片
 
+# 用 chipset 推導 socket（降低不必要的 null；讓 schema 可更嚴格）
+_INTEL_LGA1700_CHIPSETS = {
+    "H610", "B660", "H670", "Z690", "W680",
+    "B760", "H770", "Z790",
+}
+_INTEL_LGA1200_CHIPSETS = {"H410", "B460", "H470", "Z490", "H510", "B560", "H570", "Z590", "W580"}
+_AMD_AM5_CHIPSETS = {"A620", "B650", "B650E", "X670", "X670E"}
+_AMD_AM4_CHIPSETS = {"A320", "B350", "X370", "B450", "X470", "A520", "B550", "X570"}
+
+def _infer_socket_from_chipset(chipset: str | None) -> str | None:
+    if not chipset:
+        return None
+    c = chipset.upper()
+    if c in _INTEL_LGA1700_CHIPSETS:
+        return "LGA1700"
+    if c in _INTEL_LGA1200_CHIPSETS:
+        return "LGA1200"
+    if c in _AMD_AM5_CHIPSETS:
+        return "AM5"
+    if c in _AMD_AM4_CHIPSETS:
+        return "AM4"
+    return None
+
 # 這些多半是規格或外形，不應納入 sku_hint（可依你資料再擴充）
 _STOPWORDS = {
     "ATX", "M-ATX", "MATX", "MICRO", "E-ATX", "ITX", "MINI-ITX",
@@ -188,6 +211,10 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]: # 提�
 
     # chipset 優先從 sku_hint/head 抽，不掃網路/USB 描述
     chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head)
+
+    # 若標題未出現 socket，但 chipset 可確定 socket，則補齊
+    if not socket_hint:
+        socket_hint = _infer_socket_from_chipset(chipset_hint)
 
     if memory_type_hint is None:
         if socket_hint in ("AM4", "sWRX8"):

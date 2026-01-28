@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import is_dataclass
 from importlib import resources
 from typing import Any
 
@@ -21,59 +20,94 @@ def _load_schema(rel_path: str) -> dict[str, Any]: # 從指定路徑載入 JSON 
         return json.load(f)
 
 
-def validate_payload_fail_fast(*, source_id: str, payload: list[Any]) -> None: # 僅針對 CoolPC 的 CPU 類別進行 schema 驗證
+# (source_id, category) -> schema file (relative to this package)
+# 明確 allowlist：新增 schema 時只需要在這裡加一行 mapping。
+_SCHEMA_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("coolpc", "CPU"): "schemas/coolpc/cpu.schema.json",
+    ("coolpc", "MB"): "schemas/coolpc/mb.schema.json",
+}
+
+
+def validate_payload_fail_fast(*, source_id: str, payload: list[Any]) -> None:
     """
-    Fail-fast schema gate.
+    Fail-fast schema gate (allowlist-based).
 
-    CPU only for now:
-      - if payload category == "CPU": validate with CoolPC CPU schema
-      - any validation error -> raise SchemaGateError(report)
+    - 依 (source_id, category) 選擇 schema
+    - 任一筆資料不符合 schema 或缺少 schema mapping -> raise SchemaGateError(report)
     """
-    if not payload: # 空的 payload 不進行驗證，直接返回
+    source_id = (source_id or "").strip().lower()
+    if not payload:
         return
 
-    # payload is list[dict] (from item.__dict__)
-    # 從 payload 中提取所有的 category 值，並檢查是否包含 "CPU"
-    categories = {((row or {}).get("category")) for row in payload if isinstance(row, dict)}
-    if "CPU" not in categories: # 如果沒有 "CPU" 類別，則不進行驗證，直接返回
-        return
+    # per-run cache：避免重複載入 schema/建立 validator
+    validator_cache: dict[str, Draft202012Validator] = {}
 
-    if source_id != "coolpc": # 如果來源不是 coolpc，則不進行驗證，直接返回
-        # CPU schema not defined for other sources in this step.
-        return
-
-    schema = _load_schema("schemas/coolpc/cpu.schema.json") # 建立 JSON schema 驗證器
-    validator = Draft202012Validator(schema, format_checker=FormatChecker()) # 使用 Draft202012Validator 進行驗證
-
+    categories: set[str] = set()
     errors: list[dict[str, Any]] = []
-    for idx, row in enumerate(payload): # 逐一驗證 payload 中的每一項
-        if not isinstance(row, dict): # 如果該項不是字典，則記錄錯誤並繼續
+
+    for idx, row in enumerate(payload):
+        if not isinstance(row, dict):
             errors.append(
                 {
                     "index": idx,
+                    "category": None,
                     "path": "",
                     "message": f"Item is not an object/dict (got {type(row).__name__})",
                 }
             )
             continue
 
-        for e in validator.iter_errors(row): # 對每一項進行 schema 驗證，收集錯誤訊息
-            path = "/" + "/".join(str(p) for p in e.absolute_path)  # e.absolute_path 是錯誤發生的位置路徑
+        raw_cat = row.get("category")
+        if not isinstance(raw_cat, str) or not raw_cat.strip():
             errors.append(
                 {
                     "index": idx,
+                    "category": raw_cat,
+                    "path": "/category",
+                    "message": "Missing or invalid category",
+                }
+            )
+            continue
+
+        category = raw_cat.strip().upper()
+        categories.add(category)
+
+        schema_rel_path = _SCHEMA_ALLOWLIST.get((source_id, category))
+        if not schema_rel_path:
+            errors.append(
+                {
+                    "index": idx,
+                    "category": category,
+                    "path": "",
+                    "message": f"No schema registered for (source_id={source_id!r}, category={category!r})",
+                }
+            )
+            continue
+
+        validator = validator_cache.get(schema_rel_path)
+        if validator is None:
+            schema = _load_schema(schema_rel_path)
+            validator = Draft202012Validator(schema, format_checker=FormatChecker())
+            validator_cache[schema_rel_path] = validator
+
+        for e in validator.iter_errors(row):
+            path = "/" + "/".join(str(p) for p in e.absolute_path)
+            errors.append(
+                {
+                    "index": idx,
+                    "category": category,
                     "path": path if path != "/" else "",
-                    "message": e.message, # e.message 是錯誤訊息(人類可讀訊息)
-                    "validator": e.validator, # e.validator 是觸發錯誤的驗證器名稱(例如：required, type)
-                    "schema_path": "/" + "/".join(str(p) for p in e.absolute_schema_path),  # e.absolute_schema_path 是錯誤發生的 schema 路徑
+                    "message": e.message,
+                    "validator": e.validator,
+                    "schema_path": "/" + "/".join(str(p) for p in e.absolute_schema_path),
                 }
             )
 
     if errors:
-        report = { # 如果有錯誤，則建立報告並引發 SchemaGateError 例外，包含錯誤詳情
+        report = {
             "source_id": source_id,
-            "categories": sorted(c for c in categories if c),
+            "categories": sorted(categories),
             "error_count": len(errors),
-            "errors": errors[:200],  # 防止爆量；先截 200 筆
+            "errors": errors[:200],
         }
         raise SchemaGateError(report=report)

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/mb.schema.json",
+  "title": "CoolPC MB ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "MB" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+
+    "sku_hint": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "brand_hint",
+        "model_hint",
+        "chipset_hint",
+        "socket_hint",
+        "form_factor_hint",
+        "memory_type_hint",
+        "is_bundle"
+      ],
+      "properties": {
+        "brand_hint": { "type": "string", "minLength": 1 },
+
+        "model_hint": { "type": "string", "minLength": 1 },
+
+        "chipset_hint": { "type": "string", "minLength": 1 },
+
+        "socket_hint": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(AM[45]|LGA\\d{4}|sTR5|sWRX8)$"
+        },
+
+        "form_factor_hint": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "enum": ["ITX", "mATX", "ATX", "E-ATX", "EATX", "CEB", "EEB"]
+            }
+          ]
+        },
+
+        "memory_type_hint": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "enum": ["DDR3", "DDR4", "DDR5"] }
+          ]
+        },
+
+        "is_bundle": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -29,6 +29,7 @@ _SCHEMA_ALLOWLIST: dict[tuple[str, str], str] = {
     ("coolpc", "SSD"): "schemas/coolpc/ssd.schema.json",
     ("coolpc", "HDD"): "schemas/coolpc/hdd.schema.json",
     ("coolpc", "COOLER"): "schemas/coolpc/cooler.schema.json",
+    ("coolpc", "LIQUID_COOLING"): "schemas/coolpc/liquid_cooling.schema.json",
 }
 
 

@@ -19,8 +19,10 @@ _LIMIT_RE = re.compile(r"(限組裝|限購|限量)") # 限制提示詞
 _BUNDLE_RE = re.compile(r"(大全配|套裝|組合|bundle)", flags=re.IGNORECASE) # 套裝提示詞
 _PLUS_RE = re.compile(r"[+＋]") # 加號
 _ACCESSORY_RE = re.compile(r"(扣具|支架|轉接|控制器|延長線|套件|配件|管路|水冷液|水冷頭風扇)") # 配件提示詞
+_ACCESSORY_NEG_RE = re.compile(r"(不含|未含|無含|不附|未附|無附)\s*控制器")  # 避免「不含控制器」誤判為配件
 
-_WARRANTY_RE = re.compile(r"(\d+)\s*年(?:保固|保)") # 保固年份
+# 保固年份：同時支援「5年保/5年保固」與「6年【WXZ】/6年【XZ】」這種寫法
+_WARRANTY_RE = re.compile(r"(\d{1,2})\s*年(?:(?:保固|保)\b|(?=[【\[]))")
 _REGISTER_RE = re.compile(r"(?:註冊)?\s*(\d+)\s*\+\s*(\d+)\s*年?") # 登錄延長保固
 
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
@@ -104,9 +106,8 @@ def _extract_lcd_size(text: str) -> float | None: # 從標題中抽出 LCD 尺�
     if not m:
         return None
     size = float(m.group(1))
-    if size <= 6.0:
-        return size
-    return None
+    # 6.5/6.67/6.86 吋等大螢幕 AIO 也要保留
+    return size
 
 
 def _extract_rgb_hint(text: str) -> str | None: # 從標題中抽出 RGB/ARGB 提示。
@@ -153,27 +154,34 @@ def extract_liquid_cooling_hints(title: str) -> tuple[str | None, dict[str, obje
     lcd_size_inch_hint, rgb_hint, socket_support_hint, warranty_years,
     limit_hint, is_bundle, is_accessory
     """
-    line = normalize_spaces(strip_leading_note(first_line(title)))
-    head = head_before_brackets(line)
+    # 第一行：用於型號/品牌（避免第二行規格污染 model_hint）
+    line1 = normalize_spaces(strip_leading_note(first_line(title)))
+    head = head_before_brackets(line1)
+    # 全標題：用於抓第二行的厚度/ARGB/保固等資訊（把換行當空白）
+    full = normalize_spaces(strip_leading_note((title or "").replace("\n", " ")))
 
-    brand_hint = _extract_brand(head or line)
-    model_hint = _extract_model_hint(line)
+    brand_hint = _extract_brand(head or line1)
+    model_hint = _extract_model_hint(line1)
     sku_hint = model_hint
 
-    radiator_size_mm_hint = _extract_radiator_size(line)
-    radiator_thickness_mm_hint = _extract_radiator_thickness(line)
-    lcd_size_inch_hint = _extract_lcd_size(line)
-    rgb_hint = _extract_rgb_hint(line)
-    socket_support_hint = _extract_sockets(line)
-    warranty_years = _extract_warranty_years(line)
+    # 這些欄位允許出現在第二行，因此改用 full
+    radiator_size_mm_hint = _extract_radiator_size(full)
+    radiator_thickness_mm_hint = _extract_radiator_thickness(full)
+    lcd_size_inch_hint = _extract_lcd_size(full)
+    rgb_hint = _extract_rgb_hint(full)
+    socket_support_hint = _extract_sockets(full)
+    warranty_years = _extract_warranty_years(full)
 
     limit_hint = None
-    limit_m = _LIMIT_RE.search(line)
+    limit_m = _LIMIT_RE.search(full)
     if limit_m:
         limit_hint = limit_m.group(1)
 
-    is_bundle = bool(_BUNDLE_RE.search(head))
-    is_accessory = True if _ACCESSORY_RE.search(line) else False
+    # bundle/accessory 也用 full，並避免「不含控制器」造成 AIO 誤判
+    is_bundle = bool(_BUNDLE_RE.search(full))
+    accessory_hit = bool(_ACCESSORY_RE.search(full)) and not bool(_ACCESSORY_NEG_RE.search(full))
+    # 避免一般 AIO 因為提到控制器就被誤標：有冷排尺寸的，優先視為 AIO 非配件
+    is_accessory = bool(accessory_hit and radiator_size_mm_hint is None)
 
     extra = {
         "brand_hint": brand_hint,

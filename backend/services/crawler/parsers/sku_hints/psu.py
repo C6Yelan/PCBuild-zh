@@ -44,10 +44,10 @@ _EFFICIENCY_RULES: list[tuple[re.Pattern[str], str]] = [ # 用於識別並正規
 
 _MODULAR_FULL_RE = re.compile(r"全模組|全模") # 用於識別全模組字樣。
 _MODULAR_SEMI_RE = re.compile(r"半模組|半模") # 用於識別半模組字樣。
-_MODULAR_NON_RE = re.compile(r"直出扁線|直出線") # 用於識別非模組字樣。
+_MODULAR_NON_RE = re.compile(r"直出壓紋線|直出扁線|直出線") # 用於識別非模組字樣。
 
 _CABLE_FLAT_RE = re.compile(r"直出扁線|直出線\s*/\s*扁平線") # 用於識別扁平直出線字樣。
-_CABLE_FIXED_RE = re.compile(r"直出線") # 用於識別直出線字樣。
+_CABLE_FIXED_RE = re.compile(r"直出壓紋線|直出線|壓紋線材|壓紋線") # 用於識別直出線字樣。
 
 _SPEC_CLEAN_RE = re.compile( # 用於清理型號中的多餘規格字樣。
     r"ATX\s*3\.[01]|ATX3\.[01]|PCI-?E\s*5(?:\.[01])?|PCIE\s*5(?:\.[01])?"

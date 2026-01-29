@@ -28,6 +28,9 @@ _SIDE_ACRYLIC_RE = re.compile(r"(壓克力|Acrylic)", flags=re.IGNORECASE) # 壓
 _SIDE_SOLID_RE = re.compile(r"(無側透|鐵側板|Solid|金屬側板|網孔)", flags=re.IGNORECASE) # 實心面板提示
 
 _DRIVE_BAY_RE = re.compile(r"(5\.25|3\.5|2\.5)\s*[*x×]\s*(\d+)", flags=re.IGNORECASE) # 硬碟空間數量標籤
+_DRIVE_BAY_SSD_RE = re.compile(r"(?<![A-Za-z0-9])SSD\s*[*x×]\s*(\d+)", flags=re.IGNORECASE)
+_DRIVE_BAY_HDD_RE = re.compile(r"(?<![A-Za-z0-9])HDD\s*[*x×]\s*(\d+)", flags=re.IGNORECASE)
+_DRIVE_HOTSWAP_RE = re.compile(r"(?<!\d)(\d+)\s*[*x×]\s*硬碟熱插拔")
 
 _BUNDLE_RE = re.compile(r"(大全配|套裝|組合|bundle)", flags=re.IGNORECASE) # 套裝提示
 _LIMIT_RE = re.compile(r"(限組裝|限購|限量|客訂)", flags=re.IGNORECASE) # 限制購買提示
@@ -186,22 +189,48 @@ def _extract_side_panel(text: str) -> str | None:
 
 def _extract_drive_bays(lines: list[str]) -> dict[str, int] | None:
     for line in lines:
-        if "硬碟空間" not in line:
+        # 允許 title/desc 常見寫法：硬碟位、SSD*2、熱插拔等
+        if not any(k in line for k in ("硬碟空間", "硬碟位", "SSD", "HDD", "熱插拔")):
             continue
         content = line
         if "：" in content:
             content = content.split("：", 1)[1]
         elif ":" in content:
             content = content.split(":", 1)[1]
-        if "(" in content or ")" in content or re.search(r"\bor\b", content, flags=re.IGNORECASE):
+        # 拿掉括號內容（常見 2.5/3.5 吋註記、型號括號），避免過度保守直接 return None
+        content = re.sub(r"\([^)]*\)", "", content)
+        if re.search(r"\bor\b|或", content, flags=re.IGNORECASE):
             return None
-        matches = _DRIVE_BAY_RE.findall(content)
-        if not matches:
-            continue
+
         result: dict[str, int] = {}
-        for size, count in matches:
-            result[size] = int(count)
-        return result or None
+
+        # 1) 直接尺寸：3.5*9 / 2.5*2 / 5.25*1 ...
+        for size, count in _DRIVE_BAY_RE.findall(content):
+            n = int(count)
+            prev = result.get(size)
+            result[size] = n if prev is None else max(prev, n)
+
+        # 2) SSD*2 / HDD*4
+        m = _DRIVE_BAY_SSD_RE.search(content)
+        if m:
+            n = int(m.group(1))
+            prev = result.get("2.5")
+            result["2.5"] = n if prev is None else max(prev, n)
+        m = _DRIVE_BAY_HDD_RE.search(content)
+        if m:
+            n = int(m.group(1))
+            prev = result.get("3.5")
+            result["3.5"] = n if prev is None else max(prev, n)
+
+        # 3) 8*硬碟熱插拔(...)：通常 tray 可兼容 2.5/3.5，先保守記為 3.5=8
+        m = _DRIVE_HOTSWAP_RE.search(content)
+        if m:
+            n = int(m.group(1))
+            prev = result.get("3.5")
+            result["3.5"] = n if prev is None else max(prev, n)
+
+        if result:
+            return result
     return None
 
 

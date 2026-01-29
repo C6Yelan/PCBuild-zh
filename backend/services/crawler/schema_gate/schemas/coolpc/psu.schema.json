@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/psu.schema.json",
+  "title": "CoolPC PSU ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "PSU" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+    "sku_hint": { "type": "string", "minLength": 1 },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["watt_w_hint", "efficiency_hint"],
+      "properties": {
+        "watt_w_hint": { "type": "integer", "minimum": 1, "maximum": 3000 },
+
+        "efficiency_hint": {
+          "type": "string",
+          "enum": ["bronze", "silver", "gold", "platinum", "titanium", "standard"]
+        },
+
+        "modular_hint": {
+          "type": "string",
+          "enum": ["full", "semi", "non"]
+        },
+
+        "cable_type_hint": {
+          "type": "string",
+          "enum": ["fixed", "flat_fixed"]
+        },
+
+        "atx_version_hint": {
+          "type": "string",
+          "enum": ["3.0", "3.1"]
+        },
+
+        "pcie_version_hint": {
+          "type": "string",
+          "enum": ["5.0", "5.1"]
+        },
+
+        "native_12v_connector_hint": {
+          "type": "string",
+          "enum": ["12+4", "12v-2x6"]
+        },
+
+        "native_12v_connector_count_hint": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+
+        "psu_length_hint": {
+          "type": "string",
+          "pattern": "^\\d+(?:\\.\\d+)?(?:\\+\\d+(?:\\.\\d+)?)?$"
+        },
+
+        "warranty_years": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+
+        "caps_hint": {
+          "type": "string",
+          "enum": ["all_japanese", "main_japanese"]
+        },
+
+        "color_hint": {
+          "type": "string",
+          "enum": ["black", "white"]
+        },
+
+        "form_factor_hint": {
+          "type": "string",
+          "enum": ["sfx", "sfx-l"]
+        },
+
+        "has_zero_rpm_hint": { "type": "boolean" },
+
+        "limit_hint": { "type": "string", "minLength": 1 },
+
+        "is_bundle": { "type": "boolean" },
+        "is_accessory": { "type": "boolean" }
+      }
+    }
+  }
+}

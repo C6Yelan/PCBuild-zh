@@ -32,7 +32,10 @@ _DRIVE_BAY_RE = re.compile(r"(5\.25|3\.5|2\.5)\s*[*x×]\s*(\d+)", flags=re.IGNOR
 _BUNDLE_RE = re.compile(r"(大全配|套裝|組合|bundle)", flags=re.IGNORECASE) # 套裝提示
 _LIMIT_RE = re.compile(r"(限組裝|限購|限量|客訂)", flags=re.IGNORECASE) # 限制購買提示
 _ACCESSORY_RE = re.compile(r"(配件|支架|扣具)", flags=re.IGNORECASE) # 配件提示
-
+_CASE_LIKE_RE = re.compile(
+    r"(?i)(顯卡長|卡長|CPU高|U高|水冷|風扇支援|前I/O|尺寸|"
+    r"E-?ATX|ATX|M-?ATX|Micro-ATX|Mini-ITX|ITX|玻璃|透側|機殼|電源)"
+)
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
 
 _PSU_INCLUDED_RE = re.compile(r"(含電源|機殼\+電源|內附\s*\d*\s*W?\s*電源)", flags=re.IGNORECASE) # 含電源提示
@@ -301,7 +304,10 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
 
     is_bundle = bool(_BUNDLE_RE.search(head))
     accessory_text = head_before_brackets(clean_line) or clean_line
-    is_accessory = True if _ACCESSORY_RE.search(accessory_text) else None
+    blob = " ".join([line] + lines)
+
+    # 只有「出現配件關鍵字」且「整體不像機殼本體」才判定 accessory
+    is_accessory = True if (_ACCESSORY_RE.search(accessory_text) and not _CASE_LIKE_RE.search(blob)) else None
 
     # sanity-check examples fixed here:
     # - "M-ATX" / "E-ATX" no longer back-matches ATX.

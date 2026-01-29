@@ -115,7 +115,7 @@ class CoolpcListingParser:
         items: list[ListingCandidate] = []
         seen_ibuy: set[str] = set()
 
-        if category in ("RAM", "SSD", "HDD", "COOLER", "LIQUID_COOLING"):
+        if category == "RAM":
             seen: set[tuple[str, int]] = set()
             for m in _RAM_BLOCK_RE.finditer(html):
                 raw_title = _to_text(m.group("title"))
@@ -190,9 +190,6 @@ class CoolpcListingParser:
                 continue
             if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
                 continue
-            # 這些類別要求「每筆單品 URL」，純文字 fallback 只能給 page_url（分類頁），直接跳過避免錯連結
-            if category in ("SSD", "HDD", "COOLER", "LIQUID_COOLING"):
-                continue
 
             items.append(
                 ListingCandidate(
@@ -232,6 +229,10 @@ class CoolpcListingParser:
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
             if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+            
+            # 這些類別必須有 evaluate.php?iBuy= 的單品 URL；純文字 fallback 只能給分類頁 page_url，直接跳過
+            if category in ("SSD", "HDD", "COOLER", "LIQUID_COOLING"):
                 continue
 
             items.append(

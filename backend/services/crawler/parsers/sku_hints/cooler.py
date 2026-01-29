@@ -237,7 +237,9 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
     pad_dimensions_mm_hint, thermal_conductivity_w_mk_hint, weight_g_hint,
     warranty_years, limit_hint, is_bundle, is_accessory
     """
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    raw = strip_leading_note(title)
+    line = normalize_spaces(first_line(raw))          # 用於 model/sku 等「第一行語意」
+    full = normalize_spaces(raw)                      # 用於掃 PWM/RGB/socket 這類「可能在第二行」的資訊
     head = head_before_brackets(line)
 
     cooler_kind_hint = _detect_cooler_kind(line)
@@ -245,7 +247,7 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
     is_bundle = bool(_PLUS_RE.search(head) or _BUNDLE_RE.search(head))
 
     limit_hint = None
-    limit_m = _LIMIT_RE.search(line)
+    limit_m = _LIMIT_RE.search(full)
     if limit_m:
         limit_hint = limit_m.group(1)
 
@@ -284,9 +286,18 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
             if fan_m:
                 fan_count_hint = int(fan_m.group(1))
         fan_sizes_mm_hint = _extract_fan_sizes(line)
-        pwm_hint = True if _PWM_RE.search(line) else None
-        rgb_hint = True if _RGB_RE.search(line) else None
-        socket_support_hint = _extract_sockets(line)
+        pwm_hint = True if _PWM_RE.search(full) else None
+        rgb_hint = True if _RGB_RE.search(full) else None
+        socket_support_hint = _extract_sockets(full)
+    elif cooler_kind_hint == "cpu_liquid_aio":
+        # AIO 常把 PWM/RGB/支援腳位寫在第二行，至少補齊這三個
+        pwm_hint = True if _PWM_RE.search(full) else None
+        rgb_hint = True if _RGB_RE.search(full) else None
+        socket_support_hint = _extract_sockets(full)
+    elif cooler_kind_hint in ("ssd_heatsink", "notebook_cooler"):
+        # 這兩類常見 PWM/RGB（例如帶小風扇的 SSD 散熱、RGB 筆電散熱座）
+        pwm_hint = True if _PWM_RE.search(full) else None
+        rgb_hint = True if _RGB_RE.search(full) else None
     elif cooler_kind_hint == "ssd_heatsink":
         m2_m = _M2_LEN_RE.search(line)
         if m2_m:
@@ -299,7 +310,7 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         thermal_conductivity_w_mk_hint = _extract_thermal_cond(line)
         weight_g_hint = _extract_weight(line)
 
-    warranty_years = _extract_warranty_years(line)
+    warranty_years = _extract_warranty_years(full)
 
     extra = {
         "brand_hint": brand_hint,

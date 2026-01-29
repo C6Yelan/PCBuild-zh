@@ -35,15 +35,18 @@ _MODEL_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bHDWR[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
     re.compile(r"\bHDWG[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
     re.compile(r"\bHDW[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
+    # Toshiba: handle both "HDWR..." / "HDWG..." and spaced "HDW Dxxxx..."
+    re.compile(r"\bHDW(?!R|G)\s*[0-9A-Z]+\b", flags=re.IGNORECASE),
     re.compile(r"\bMQ[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
     re.compile(r"\bMG[0-9A-Z]+\b", flags=re.IGNORECASE), # Toshiba
 ]
 
 _SEGMENT_RULES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"企業|EXOS|Ultrastar", flags=re.IGNORECASE), "Enterprise"),
-    (re.compile(r"監控|SkyHawk|監控鷹", flags=re.IGNORECASE), "Surveillance"),
-    (re.compile(r"\bNAS\b|那嘶狼|IronWolf", flags=re.IGNORECASE), "NAS"),
-    (re.compile(r"新梭魚|Barracuda|桌機|藍標", flags=re.IGNORECASE), "Desktop"),
+    (re.compile(r"企業|EXOS|Ultrastar|金標|Gold", flags=re.IGNORECASE), "Enterprise"),
+    (re.compile(r"監控|SkyHawk|監控鷹|紫標|Purple", flags=re.IGNORECASE), "Surveillance"),
+    # note: don't use \\bNAS\\b because NAS碟 won't match under Unicode \\w rules
+    (re.compile(r"NAS|那嘶狼|IronWolf|紅標|Red", flags=re.IGNORECASE), "NAS"),
+    (re.compile(r"新梭魚|Barracuda|桌機|藍標|Blue", flags=re.IGNORECASE), "Desktop"),
 ]
 
 
@@ -68,17 +71,23 @@ def _extract_model_token(text: str) -> str | None: # 提取型號提示。
         for pat in _MODEL_PATTERNS:
             hit = pat.search(block)
             if hit:
-                return hit.group(0)
+                return re.sub(r"\s+", "", hit.group(0))
     for pat in _MODEL_PATTERNS:
         hit = pat.search(text)
         if hit:
-            return hit.group(0)
+            return re.sub(r"\s+", "", hit.group(0))
     return None
 
 
 def _extract_series_hint(text: str) -> str | None: # 提取系列提示。
-    m = _SERIES_RE.search(text or "")
-    return m.group("text") if m else None
+    for m in _SERIES_RE.finditer(text or ""):
+        t = (m.group("text") or "").strip()
+        if not t:
+            continue
+        if t in ("限組裝", "限購", "監控型"):
+            continue
+        return t
+    return None
 
 
 def _extract_segment_hint(text: str) -> str | None: # 提取市場區隔提示。
@@ -171,6 +180,9 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     elif _USB_RE.search(line):
         interface_hint = "USB"
 
+    if interface_hint is None and form_factor_hint in ('2.5"', '3.5"'):
+        interface_hint = "SATA"
+
     series_hint = _extract_series_hint(line)
     segment_hint = _extract_segment_hint(line)
     rescue_years = _extract_rescue_years(line)
@@ -196,4 +208,5 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         "warranty_years": warranty_years, # 保固年限
         "limit_hint": limit_hint, # 限購或限組裝提示
     }
+    extra = {k: v for k, v in extra.items() if v is not None}
     return sku_hint, extra

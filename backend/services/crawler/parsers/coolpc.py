@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import html as _html
 import re
-from urllib.parse import quote, urljoin, urlparse, parse_qs
+from urllib.parse import quote, unquote, urljoin, urlparse, parse_qs
 
 from .sku_hints import extract_listing_hints
 from .base import ListingCandidate
@@ -11,6 +11,7 @@ from .base import ListingCandidate
 _TAG_RE = re.compile(r"<[^>]+>")
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b.*?>.*?</\1>")
 _BR_RE = re.compile(r"(?i)<br\s*/?>")
+_IBUY_IN_HREF_RE = re.compile(r"[?&]iBuy=([^&]+)", flags=re.IGNORECASE)
 
 # 以「div.w(iBuy token) + span(商品區塊)」成對解析
 _BLOCK_RE = re.compile(
@@ -123,6 +124,14 @@ class CoolpcListingParser:
                 href = (m.group("href") or "").strip()
                 ibuy = (m.group("ibuy") or "").strip()
                 buy_url = None
+                
+                # 若 div.w 沒抓到 iBuy，但 href 其實帶有 iBuy，則抽出來重建 URL（統一做 percent-encoding）
+                if not ibuy and href:
+                    mm = _IBUY_IN_HREF_RE.search(href)
+                    if mm:
+                        # 先 unquote，避免 href 已經是 %2B/%2F 之類時被 quote 二次編碼；
+                        # 同時 unquote 不會把 '+' 當空白（避免 parse_qs 的 unquote_plus 行為）
+                        ibuy = unquote(mm.group(1))
                 if ibuy:
                     if ibuy in seen_ibuy:
                         continue
@@ -205,6 +214,10 @@ class CoolpcListingParser:
 
         if items:
             return items
+        
+        # 這些類別必須有“單品 URL”，純文字 fallback 只能給分類頁 page_url，會造成錯連結污染
+        if category in ("SSD", "HDD", "COOLER", "LIQUID_COOLING"):
+            return []
 
         # 2) fallback：純文字（拿不到 iBuy 時就只能用 page_url）
         text = _to_text(html)

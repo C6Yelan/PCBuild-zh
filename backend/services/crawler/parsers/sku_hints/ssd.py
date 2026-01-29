@@ -217,9 +217,14 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         protocol_hint = "NVMe"
     elif _SATA_RE.search(line):
         interface_hint = "SATA"
-        protocol_hint = "AHCI" if _AHCI_RE.search(line) else "SATA"
+        protocol_hint = "AHCI"
     elif _PCIE_RE.search(line) or _PCIE_GEN_RE.search(line) or _PCIE_VER_RE.search(line):
         interface_hint = "PCIe"
+
+    # Fallback: CoolPC SSD 類別下，2.5" 且未明示介面時，合理推定為 SATA/AHCI
+    if form_factor_hint == '2.5"' and interface_hint is None:
+        interface_hint = "SATA"
+        protocol_hint = "AHCI"
 
     # PCIe SSD 幾乎皆為 NVMe 協定（標題常不明寫 NVMe）
     if interface_hint == "PCIe" and protocol_hint is None:

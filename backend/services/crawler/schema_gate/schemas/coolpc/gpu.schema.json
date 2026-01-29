@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/gpu.schema.json",
+  "title": "CoolPC GPU ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "GPU" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+
+    "sku_hint": { "type": "string", "minLength": 1 },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aib_hint",
+        "brand_hint",
+        "chip_hint",
+        "product_model_hint",
+        "vram_gb_hint",
+        "is_bundle",
+        "is_accessory"
+      ],
+      "properties": {
+        "aib_hint": { "type": "string", "minLength": 1 },
+
+        "brand_hint": {
+          "type": "string",
+          "enum": ["NVIDIA", "AMD", "Intel"]
+        },
+
+        "chip_hint": { "type": "string", "minLength": 1 },
+
+        "product_model_hint": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+
+        "vram_gb_hint": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+
+        "is_bundle": { "type": "boolean" },
+        "is_accessory": { "type": "boolean" }
+      }
+    }
+  }
+}

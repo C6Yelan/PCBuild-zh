@@ -38,6 +38,24 @@ _SINGLE_RE = re.compile(r"(單條|單支|單顆)", flags=re.IGNORECASE) # 單條
 _NB_RE = re.compile(r"(?<![A-Za-z0-9])NB(?![A-Za-z0-9])|筆電", flags=re.IGNORECASE) # 筆電用記憶體標示
 _FIRST_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*") # 抓取第一個連續字元序列
 
+_BUNDLE_KEYWORDS_RE = re.compile(r"(大全配|優惠組合|組合|套餐|搭機|整機)", flags=re.IGNORECASE)
+_NON_RAM_PART_RE = re.compile(
+    r"(主機板|CPU|處理器|顯卡|SSD|硬碟|HDD|電源|機殼|散熱|水冷|風扇|電源供應器)",
+    flags=re.IGNORECASE,
+)
+
+def _is_bundle_head(head: str) -> bool:
+    h = head or ""
+    if not h:
+        return False
+    # 明確的套裝/組合字眼
+    if _BUNDLE_KEYWORDS_RE.search(h):
+        return True
+    # 有 + 且同時出現非 RAM 零件字眼 → 視為 bundle
+    if _PLUS_SPLIT_RE.search(h) and _NON_RAM_PART_RE.search(h):
+        return True
+    return False
+
 _MAKER_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?:\bBIWIN\b|佰維)", flags=re.IGNORECASE), "BIWIN"),
     (re.compile(r"(?:\bCORSAIR\b|海盜船)", flags=re.IGNORECASE), "CORSAIR"),
@@ -202,7 +220,7 @@ def extract_ram_hints(title: str) -> tuple[str, dict[str, object]]:
     expo_hint = True if _EXPO_RE.search(line) else None
     ecc_hint = True if _ECC_RE.search(line) else None
     is_accessory = bool(_ACCESSORY_RE.search(line))
-    is_bundle = False
+    is_bundle = _is_bundle_head(head)
 
     single_hint = bool(_SINGLE_RE.search(line))
     nb_hint = bool(_NB_RE.search(line)) or form_factor_hint == "SO-DIMM"

@@ -49,7 +49,10 @@ _BRAND_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?:\bKIOXIA\b|鎧俠|東芝)", flags=re.IGNORECASE), "KIOXIA"),
     (re.compile(r"(?:\bWD\b|WESTERN\s*DIGITAL|威騰)", flags=re.IGNORECASE), "WD"),
     (re.compile(r"(?:\bSEAGATE\b|希捷)", flags=re.IGNORECASE), "SEAGATE"),
-    (re.compile(r"(?:\bZHITAI\b|致鈦)", flags=re.IGNORECASE), "ZHITAI"),
+    (re.compile(r"(?i)\bCORSAIR\b|海盜船"), "CORSAIR"),
+    (re.compile(r"(?i)\bMSI\b|微星"), "MSI"),
+    (re.compile(r"(?i)\bTEAMGROUP\b|\bTEAM\s*GROUP\b|\bT-?FORCE\b|十銓"), "TEAMGROUP"),
+    (re.compile(r"(?i)\bZHITAI\b|致鈦|致態|致态"), "ZHITAI"),
 ]
 
 

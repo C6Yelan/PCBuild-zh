@@ -188,7 +188,7 @@ def _clean_fallback_title(title: str) -> str: # 清理標題以作為備用的�
 
 def extract_ram_hints(title: str) -> tuple[str, dict[str, object]]:
     """
-    回傳 (sku_hint, extra)；extra keys 固定且必須存在：
+    回傳 (sku_hint, extra)：
     maker_hint, ddr_gen_hint, speed_mts_hint, capacity_gb_hint,
     kit_dimms_hint, per_dimm_gb_hint, cl_hint,
     xmp_hint, expo_hint, rgb_hint, form_factor_hint, ecc_hint,
@@ -220,7 +220,8 @@ def extract_ram_hints(title: str) -> tuple[str, dict[str, object]]:
     expo_hint = True if _EXPO_RE.search(line) else None
     ecc_hint = True if _ECC_RE.search(line) else None
     is_accessory = bool(_ACCESSORY_RE.search(line))
-    is_bundle = _is_bundle_head(head)
+    bundle_text = normalize_spaces(_BRACKET_REMOVE_RE.sub(" ", line))
+    is_bundle = _is_bundle_head(bundle_text)
 
     single_hint = bool(_SINGLE_RE.search(line))
     nb_hint = bool(_NB_RE.search(line)) or form_factor_hint == "SO-DIMM"

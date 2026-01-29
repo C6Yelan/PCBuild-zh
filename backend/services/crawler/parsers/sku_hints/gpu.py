@@ -30,14 +30,13 @@ _GT_RE = re.compile( # NVIDIA GT 系列型號格式
     r"(?i)(?<![A-Za-z0-9])GT\s*(?P<num>210|710|730|1030)(?=[^A-Za-z0-9]|$)"
 )
 _N_GT_RE = re.compile( # NVIDIA N 系列型號格式 (老卡)
-    r"(?i)(?<![A-Za-z0-9])N(?P<num>210|710|730)(?=[^A-Za-z0-9]|$)"
+    r"(?i)(?<![A-Za-z0-9])N(?P<num>210|710|730)(?=[^0-9]|$)"
 )
 _AMD_PRO_RE = re.compile( # AMD Radeon AI PRO 系列型號格式
     r"(?i)(?<![A-Za-z0-9])(?:RADEON\s+)?AI\s+PRO\s+R(?P<num>\d{4})(?=[^A-Za-z0-9]|$)"
 )
 _RADEON_R79_RE = re.compile( # AMD Radeon R7/R9 系列型號格式
-    r"(?i)(?<![A-Za-z0-9])RADEON\s+R(?P<series>[79])\s*(?P<num>\d{3,4})(?P<suffix>X2|X)?"
-    r"(?=[^A-Za-z0-9]|$)"
+    r"(?i)(?<!\d)(?:RADEON\s+)?R(?P<series>[79])\s*(?P<num>\d{3,4})(?P<suffix>X2|X)?(?=[^0-9]|$)"
 )
 _VRAM_GB_RE = re.compile(  # 顯示記憶體容量格式：如 4G、8GB
     r"(?i)(?<![A-Za-z0-9])(?P<gb>\d{1,2})\s*G(?:B)?(?=[^A-Za-z0-9]|$)"

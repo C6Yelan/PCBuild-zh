@@ -314,25 +314,26 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         rgb_hint = True if _RGB_RE.search(full) else None
         socket_support_hint = _extract_sockets(full)
     elif cooler_kind_hint == "notebook_cooler":
-        rgb_hint = True if _RGB_RE.search(line) else None
-    elif cooler_kind_hint in ("ssd_heatsink", "notebook_cooler"):
-        # 這兩類常見 PWM/RGB（例如帶小風扇的 SSD 散熱、RGB 筆電散熱座）
-        pwm_hint = True if _PWM_RE.search(full) else None
         rgb_hint = True if _RGB_RE.search(full) else None
     elif cooler_kind_hint == "ssd_heatsink":
-        m2_m = _M2_LEN_RE.search(line)
+        m2_m = _M2_LEN_RE.search(full)
         if m2_m:
             m2_length_hint = int(m2_m.group(1))
-        hp_m = _HEATPIPE_RE.search(line)
+
+        hp_m = _HEATPIPE_COUNT_RE.search(full)
         if hp_m:
-            heatpipe_count_hint = int(hp_m.group(1))
-        fan_sizes_mm_hint = _extract_fan_sizes(line)
-        if _FAN_WORD_RE.search(line) and not _NO_FAN_RE.search(line):
+            heatpipe_count_hint = int(hp_m.group("n"))
+
+        fan_sizes_mm_hint = _extract_fan_sizes(full)
+
+        if _FAN_WORD_RE.search(full) and not _NO_FAN_RE.search(full):
             fan_count_hint = 1
-            mult_m = _FAN_MULT_RE.search(line)
+            mult_m = _FAN_MULT_RE.search(full)
             if mult_m:
                 fan_count_hint = int(mult_m.group(1))
-        pwm_hint = True if _PWM_RE.search(line) else None
+
+        pwm_hint = True if _PWM_RE.search(full) else None
+        rgb_hint = True if _RGB_RE.search(full) else None
     elif cooler_kind_hint == "thermal_pad":
         pad_thickness_mm_hint = _extract_pad_thickness(line)
         pad_dimensions_mm_hint = _extract_pad_dimensions(line)

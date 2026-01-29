@@ -54,6 +54,21 @@ _ACCESSORY_RE = re.compile( # 顯卡配件關鍵字
     r"(?i)(支撐架|支架|支撐|顯示卡支架|GPU\s*holder|holder|bracket|Herculx|"
     r"轉接線|轉接頭|轉接器|轉接|轉換線|延長線|線材)"
 )
+_PLUS_SPLIT_RE = re.compile(r"[+＋]")
+
+_BUNDLE_KEYWORDS_RE = re.compile(
+    r"(?i)(大全配|套裝|組合|優惠組合|優惠組|套件|組|combo|bundle)"
+)
+# 只要 + 的另一側出現這些「非顯卡本體」字樣，就視為 bundle
+_OTHER_PARTS_RE = re.compile(
+    r"(?i)(CPU|處理器|主機板|MB|RAM|記憶體|SSD|HDD|硬碟|電源|PSU|機殼|散熱|水冷|螢幕|鍵盤|滑鼠)"
+)
+# 排除「規格串接」類的 +，例如 HDMI+DP、8+6pin 等
+_SPEC_PLUS_RE = re.compile(
+    r"(?i)(HDMI|DP|DVI|VGA|USB|TYPE-?C|PCI-?E|GDDR\d|DDR\d|\d{1,2}PIN|\d{1,2}BIT)"
+    r"\s*[+＋]\s*"
+    r"(HDMI|DP|DVI|VGA|USB|TYPE-?C|PCI-?E|GDDR\d|DDR\d|\d{1,2}PIN|\d{1,2}BIT)"
+)
 _AIB_PATTERNS: list[tuple[re.Pattern[str], str]] = [ # 常見 AIB 廠商名稱及其正規化形式
     (re.compile(r"(?i)\bASUS\b|華碩"), "ASUS"),
     (re.compile(r"(?i)\bMSI\b|微星"), "MSI"),
@@ -271,6 +286,25 @@ def _extract_chip_from_core_lines(text: str) -> tuple[str | None, str | None]: #
                 return sku_hint, brand_hint
     return None, None
 
+def _infer_is_bundle(title: str) -> bool:
+    text = title or ""
+    line = strip_leading_note(first_line(text))
+    head = head_before_brackets(line) or line
+
+    if _BUNDLE_KEYWORDS_RE.search(text):
+        return True
+
+    if not _PLUS_SPLIT_RE.search(head):
+        return False
+
+    # 例如 HDMI+DP 這種規格串接：直接排除
+    if _SPEC_PLUS_RE.search(head):
+        return False
+
+    parts = [p.strip() for p in _PLUS_SPLIT_RE.split(head) if p.strip()]
+    # 若 + 後面出現其他零件關鍵字 -> bundle
+    return any(_OTHER_PARTS_RE.search(p) for p in parts[1:])
+
 def extract_gpu_hints(title: str) -> tuple[str | None, dict[str, object]]: # 從標題中抽取 GPU 型號提示及其他額外資訊
     full_text = title or ""
     line = strip_leading_note(first_line(full_text))
@@ -286,7 +320,7 @@ def extract_gpu_hints(title: str) -> tuple[str | None, dict[str, object]]: # 從
         "chip_hint": sku_hint, # GPU 核心提示
         "product_model_hint": _extract_product_model_hint(line, aib_hint), # 產品型號提示
         "vram_gb_hint": _extract_vram_gb(full_text), # 顯示記憶體容量提示
-        "is_bundle": False, # 是否為套裝
+        "is_bundle": _infer_is_bundle(full_text), # 是否為套裝
         "is_accessory": bool(_ACCESSORY_RE.search(full_text)), # 是否為 GPU 配件
     }
     return sku_hint, extra

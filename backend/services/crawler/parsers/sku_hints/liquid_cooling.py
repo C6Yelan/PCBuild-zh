@@ -23,10 +23,12 @@ _ACCESSORY_NEG_RE = re.compile(r"(不含|未含|無含|不附|未附|無附)\s*�
 
 # 保固年份：同時支援「5年保/5年保固」與「6年【WXZ】/6年【XZ】」這種寫法
 _WARRANTY_RE = re.compile(r"(\d{1,2})\s*年(?:(?:保固|保)\b|(?=[【\[]))")
-_REGISTER_RE = re.compile(r"(?:註冊)?\s*(\d+)\s*\+\s*(\d+)\s*年?") # 登錄延長保固
+_REGISTER_RE = re.compile(r"註冊\s*(\d+)\s*\+\s*(\d+)\s*年?")  # 登錄延長保固（必須有「註冊」才算）
 
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
 _BRAND_IGNORE = {"CPU", "PWM", "RGB", "ARGB", "AIO", "TDP", "M2", "SSD", "HDD", "LCD"} # 忽略的品牌字串
+
+_DRGB_RE = re.compile(r"(?<![A-Za-z0-9])D-?RGB(?![A-Za-z0-9])", flags=re.IGNORECASE) # 排除 D-RGB 誤判
 
 _BRAND_PREFIX_RULES: list[tuple[re.Pattern[str], str]] = [ # 品牌前綴對應規則
     (re.compile(r"^利民"), "THERMALRIGHT"),
@@ -39,6 +41,10 @@ _BRAND_PREFIX_RULES: list[tuple[re.Pattern[str], str]] = [ # 品牌前綴對應�
     (re.compile(r"^保銳"), "ENERMAX"),
     (re.compile(r"^微星"), "MSI"),
     (re.compile(r"^華碩"), "ASUS"),
+    (re.compile(r"^聯力"), "LIANLI"),
+    (re.compile(r"^幾何未來"), "GEOMETRICFUTURE"),
+    (re.compile(r"^旋剛"), "SHARKOON"),
+    (re.compile(r"^技嘉"), "GIGABYTE"),
     (re.compile(r"^darkflash", flags=re.IGNORECASE), "DARKFLASH"),
     (re.compile(r"^montech", flags=re.IGNORECASE), "MONTECH"),
     (re.compile(r"^scythe", flags=re.IGNORECASE), "SCYTHE"),
@@ -111,6 +117,8 @@ def _extract_lcd_size(text: str) -> float | None: # 從標題中抽出 LCD 尺�
 
 
 def _extract_rgb_hint(text: str) -> str | None: # 從標題中抽出 RGB/ARGB 提示。
+    if _DRGB_RE.search(text or ""):
+        return "d-rgb"
     if _ARGB_RE.search(text or ""):
         return "argb"
     if _RGB_RE.search(text or ""):

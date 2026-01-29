@@ -223,8 +223,13 @@ def _extract_caps_hint(text: str) -> str | None: # 抓取日系電容字樣。
     return None
 
 
-def _clean_model_head(text: str) -> str: # 清理並正規化型號開頭字樣。
-    head = head_before_brackets(_strip_leading_bracket_tags(text))
+def _clean_model_head(text: str) -> str:  # 清理並正規化型號開頭字樣。
+    text = _strip_leading_bracket_tags(text)
+
+    # NEW: 若開頭是「品牌(代理/別名) 型號...」，先移除這個括號，避免 head_before_brackets 只剩品牌
+    text = re.sub(r"^([^\s(（【\[]+)[(（][^）)]{1,80}[)）]\s*", r"\1 ", text)
+
+    head = head_before_brackets(text)
     head = re.split(r"[／/|｜]", head, 1)[0]
     head = re.split(r"[，,、:：]", head, 1)[0]
     head = _SPEC_CLEAN_RE.sub(" ", head)

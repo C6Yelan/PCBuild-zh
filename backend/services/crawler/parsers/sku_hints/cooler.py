@@ -24,6 +24,7 @@ _HEIGHT_MM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)\s*mm", flags
 _HEIGHT_CM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:cm|公分)", flags=re.IGNORECASE) # 提取高度（cm）
 _HEIGHT_NUM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)") # 提取高度（無單位）
 _HEATPIPE_RE = re.compile(r"(\d+)\s*(?:導管|熱管)") # 提取熱導管數量
+_HEATPIPE_COUNT_RE = re.compile(r"(?P<n>\d{1,2})\s*(?:導管|熱管)")
 _FAN_MULT_RE = re.compile(r"(?i)(?:風扇|fan)\s*[*x×]\s*(\d{1,2})")  # 風扇*2 / fan x2
 # 避免 TL-E12風扇、A12X25風扇 這種「型號尾碼」誤判成數量
 _FAN_COUNT_RE = re.compile(r"(?<![A-Za-z0-9-])(\d{1,2})\s*風扇")
@@ -286,9 +287,9 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         if tdp_m:
             tdp_w_hint = int(tdp_m.group(1))
         height_mm_hint = _extract_height_mm(line)
-        hp_m = _HEATPIPE_RE.search(line)
+        hp_m = _HEATPIPE_COUNT_RE.search(full)
         if hp_m:
-            heatpipe_count_hint = int(hp_m.group(1))
+            heatpipe_count_hint = int(hp_m.group("n"))
         for word, count in _FAN_WORDS.items():
             if word in line:
                 fan_count_hint = count

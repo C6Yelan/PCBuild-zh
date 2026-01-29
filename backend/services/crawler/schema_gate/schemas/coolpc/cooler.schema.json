@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/cooler.schema.json",
+  "title": "CoolPC COOLER ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "COOLER" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+
+    "sku_hint": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand_hint", "model_hint", "cooler_kind_hint", "is_bundle", "is_accessory"],
+      "properties": {
+        "brand_hint": { "type": "string", "minLength": 1 },
+        "model_hint": { "type": "string", "minLength": 1 },
+
+        "cooler_kind_hint": {
+          "type": "string",
+          "enum": ["cpu_air", "ssd_heatsink", "thermal_pad", "thermal_paste", "notebook_cooler"]
+        },
+
+        "is_bundle": { "type": "boolean" },
+        "is_accessory": { "type": "boolean" },
+
+        "socket_support_hint": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+
+        "tdp_w_hint": { "type": "integer", "minimum": 0 },
+        "height_mm_hint": { "type": "integer", "minimum": 0 },
+        "heatpipe_count_hint": { "type": "integer", "minimum": 1 },
+
+        "fan_count_hint": { "type": "integer", "minimum": 0 },
+        "fan_sizes_mm_hint": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 },
+          "minItems": 1
+        },
+
+        "pwm_hint": { "type": "boolean" },
+        "rgb_hint": { "type": "boolean" },
+
+        "m2_length_hint": {
+          "type": "integer",
+          "enum": [22110, 2280, 2260, 2242, 2230]
+        },
+
+        "pad_thickness_mm_hint": { "type": "number", "minimum": 0 },
+        "pad_dimensions_mm_hint": {
+          "type": "string",
+          "pattern": "^\\d+(?:\\.\\d+)?x\\d+(?:\\.\\d+)?$"
+        },
+
+        "thermal_conductivity_w_mk_hint": { "type": "number", "minimum": 0 },
+        "weight_g_hint": { "type": "number", "minimum": 0 },
+
+        "warranty_years": { "type": "integer", "minimum": 0 },
+        "limit_hint": { "type": "string", "minLength": 1 }
+      },
+
+      "dependentRequired": {
+        "pad_thickness_mm_hint": ["pad_dimensions_mm_hint"],
+        "pad_dimensions_mm_hint": ["pad_thickness_mm_hint"]
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/ram.schema.json",
+  "title": "CoolPC RAM ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "RAM" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+
+    "sku_hint": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maker_hint",
+        "ddr_gen_hint",
+        "speed_mts_hint",
+        "capacity_gb_hint",
+        "is_bundle",
+        "is_accessory"
+      ],
+      "properties": {
+        "maker_hint": { "type": "string", "minLength": 1 },
+
+        "ddr_gen_hint": {
+          "type": "string",
+          "enum": ["DDR3", "DDR4", "DDR5"]
+        },
+
+        "speed_mts_hint": { "type": "integer", "minimum": 0 },
+
+        "capacity_gb_hint": { "type": "integer", "minimum": 0 },
+
+        "kit_dimms_hint": { "type": "integer", "minimum": 1 },
+
+        "per_dimm_gb_hint": { "type": "integer", "minimum": 1 },
+
+        "cl_hint": { "type": "integer", "minimum": 0 },
+
+        "rgb_hint": { "type": "boolean" },
+
+        "ecc_hint": { "type": "boolean" },
+
+        "is_bundle": { "type": "boolean" },
+
+        "is_accessory": { "type": "boolean" }
+      },
+
+      "dependentRequired": {
+        "kit_dimms_hint": ["per_dimm_gb_hint"],
+        "per_dimm_gb_hint": ["kit_dimms_hint"]
+      }
+    }
+  }
+}

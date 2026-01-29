@@ -127,6 +127,24 @@ def _extract_seq_speed(text: str, pat: re.Pattern[str]) -> int | None: # 提取�
         return None
     return int(m.group("val"))
 
+def _extract_write_after_read(text: str) -> int | None:
+    """
+    Fallback: handle patterns like:
+      - 讀7100/6100
+      - 讀7300/:6800
+    Only used when explicit '寫/write' is not found.
+    """
+    m = _READ_RE.search(text or "")
+    if not m:
+        return None
+
+    tail = (text or "")[m.end():]
+    m2 = re.search(r"[:/][^0-9]{0,4}(?P<val>\d{3,5})(?!\d)", tail)
+    if not m2:
+        return None
+    return int(m2.group("val"))
+
+
 
 def _extract_controller(text: str) -> str | None: # 提取控制器型號提示。
     m = _CONTROLLER_LABEL_RE.search(text or "")
@@ -237,6 +255,8 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     pcie_gen_hint = _extract_pcie_gen(line)
     seq_read_mb_s = _extract_seq_speed(line, _READ_RE)
     seq_write_mb_s = _extract_seq_speed(line, _WRITE_RE)
+    if seq_write_mb_s is None:
+        seq_write_mb_s = _extract_write_after_read(line)
 
     nand_hint = None
     nand_m = _NAND_RE.search(line)

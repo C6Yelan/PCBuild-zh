@@ -25,11 +25,13 @@ _BLOCK_RE = re.compile(
 
 # RAM: span onclick=Show(this) 形式（不保證有 iBuy）
 _RAM_BLOCK_RE = re.compile(
+    r"(?is)"
+    r"(?:<div\s+class=w>\s*(?P<ibuy>[^<]+?)\s*</div>\s*)?"
     r"<span\b[^>]*onclick=['\"]Show\(this\)['\"][^>]*>.*?"
     r"(?:<a\b[^>]*href=['\"](?P<href>[^'\"]+)['\"][^>]*>)?.*?"
     r"<div\s+class=t>\s*(?P<title>.*?)\s*</div>\s*"
     r"<div\s+class=x>\s*含稅[:：]?\s*NT(?P<price>[0-9,]{1,})\b.*?</div>.*?"
-    r"</span>\s*(?:<div\s+class=w>\s*(?P<ibuy>[^<]+?)\s*</div>)?",
+    r"</span>",
     flags=re.IGNORECASE | re.DOTALL,
 )
 

@@ -182,7 +182,7 @@ def extract_ssd_sku_hint(title: str) -> str | None: # 回傳 SSD 型號提示（
 
 def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     """
-    回傳 (sku_hint, extra)；extra keys 固定且必須存在：
+    回傳 (sku_hint, extra)：
     brand_hint, model_hint, capacity_gib, form_factor_hint, m2_length_hint,
     interface_hint, pcie_gen_hint, protocol_hint, seq_read_mb_s, seq_write_mb_s,
     nand_hint, dram_cache_hint, controller_hint, has_heatsink_hint,
@@ -270,4 +270,5 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         "warranty_years": warranty_years, # 保固年限提示
         "limit_hint": limit_hint, # 限購/限組裝提示
     }
+    extra = {k: v for k, v in extra.items() if v is not None}
     return sku_hint, extra

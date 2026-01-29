@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/ssd.schema.json",
+  "title": "CoolPC SSD ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "SSD" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+    "sku_hint": { "type": "string", "minLength": 1 },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_hint", "capacity_gib"],
+      "properties": {
+        "brand_hint": { "type": "string", "minLength": 1 },
+        "model_hint": { "type": "string", "minLength": 1 },
+
+        "capacity_gib": { "type": "integer", "minimum": 1 },
+        "form_factor_hint": { "type": "string", "enum": ["2.5\"", "M.2"] },
+        "m2_length_hint": { "type": "integer", "enum": [2230, 2242, 2260, 2280, 22110] },
+
+        "interface_hint": { "type": "string", "enum": ["SATA", "PCIe"] },
+        "pcie_gen_hint": { "type": "integer", "enum": [3, 4, 5] },
+        "protocol_hint": { "type": "string", "enum": ["AHCI", "SATA", "NVMe"] },
+
+        "seq_read_mb_s": { "type": "integer", "minimum": 1 },
+        "seq_write_mb_s": { "type": "integer", "minimum": 1 },
+
+        "nand_hint": { "type": "string", "minLength": 1 },
+        "dram_cache_hint": { "type": "boolean" },
+        "controller_hint": { "type": "string", "minLength": 1 },
+
+        "has_heatsink_hint": { "type": "boolean" },
+        "single_sided_hint": { "type": "boolean" },
+
+        "warranty_years": { "type": "integer", "minimum": 0 },
+        "limit_hint": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

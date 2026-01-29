@@ -140,11 +140,8 @@ def _extract_cl(text: str) -> int | None: # 抽取 CAS Latency(等待時間) 資
     return int(m.group("cl")) if m else None
 
 
-def _extract_rgb(text: str) -> str | None: # 抽取 RGB 燈效資訊。
-    m = _RGB_ARGB_RE.search(text or "")
-    if not m:
-        return None
-    return "RGB"
+def _extract_rgb(text: str) -> bool | None:  # 抽取 RGB/ARGB 燈效（是否具備）
+    return True if _RGB_ARGB_RE.search(text or "") else None
 
 
 def _extract_form_factor(text: str) -> str | None: # 抽取記憶體形態資訊，如 SO-DIMM、UDIMM、RDIMM 等。

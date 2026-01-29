@@ -25,6 +25,8 @@ def _load_schema(rel_path: str) -> dict[str, Any]: # 從指定路徑載入 JSON 
 _SCHEMA_ALLOWLIST: dict[tuple[str, str], str] = {
     ("coolpc", "CPU"): "schemas/coolpc/cpu.schema.json",
     ("coolpc", "MB"): "schemas/coolpc/mb.schema.json",
+    ("coolpc", "RAM"): "schemas/coolpc/ram.schema.json",
+    ("coolpc", "SSD"): "schemas/coolpc/ssd.schema.json",
 }
 
 

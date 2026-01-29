@@ -6,13 +6,13 @@ import re
 from .common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
 
 _NOTICE_RE = re.compile(r"(提醒|注意事項|說明)") # 用於識別注意事項類型
-_PASTE_RE = re.compile(r"(導熱膏|散熱膏|液態金屬)") # 用於識別導熱膏類型
-_PAD_RE = re.compile(r"(散熱墊|導熱墊|導熱片)") # 用於識別散熱墊類型
+_PASTE_RE = re.compile(r"(導熱膏|散熱膏|液態金屬|道康膏|涼膏)") # 用於識別導熱膏類型
+_PAD_RE = re.compile(r"(導熱墊|導熱片|Thermal\s*Pad)", flags=re.IGNORECASE) # 用於識別散熱墊類型
 _M2_RE = re.compile(r"M\.2", flags=re.IGNORECASE) # 用於識別 M.2 散熱片
 _M2_LEN_RE = re.compile(r"\b(22110|2280|2260|2242|2230)\b") # 用於識別 M.2 長度規格
 _HEATSINK_RE = re.compile(r"散熱") # 用於識別散熱相關字樣
 _LIQUID_RE = re.compile(r"(水冷|冷排|AIO|一體式)", flags=re.IGNORECASE) # 用於識別水冷類型
-_NOTEBOOK_RE = re.compile(r"(筆電|Notebook|Stand)", flags=re.IGNORECASE) # 用於識別筆電散熱座類型
+_NOTEBOOK_RE = re.compile(r"(筆電|Notebook|NotePal|ErgoStand|散熱墊|散熱座|Cooling\s*Pad|Laptop\s*Cooler|Stand)", flags=re.IGNORECASE) # 用於識別筆電散熱座類型
 _AIR_RE = re.compile(r"散熱器") # 用於識別空冷散熱器類型
 
 _LIMIT_RE = re.compile(r"(限購|限組裝|限量|客訂)") # 用於識別限購或限組裝
@@ -97,14 +97,14 @@ def _detect_cooler_kind(text: str) -> str: # 偵測散熱器類型。
         return "notice" # 注意事項
     if _PASTE_RE.search(text or ""):
         return "thermal_paste" # 導熱膏
+    if _NOTEBOOK_RE.search(text or ""):
+        return "notebook_cooler" # 筆電散熱座
     if _PAD_RE.search(text or ""):
         return "thermal_pad" # 導熱墊
     if (_M2_RE.search(text or "") or _M2_LEN_RE.search(text or "")) and _HEATSINK_RE.search(text or ""):
         return "ssd_heatsink" # M.2 散熱片
     if _LIQUID_RE.search(text or ""):
         return "cpu_liquid_aio" # 水冷一體式
-    if _NOTEBOOK_RE.search(text or ""):
-        return "notebook_cooler" # 筆電散熱座
     if _HEATPIPE_RE.search(text or ""):
         return "cpu_air" # 空冷散熱器(塔扇)
     if _AIR_HINT_RE.search(text or ""):
@@ -256,7 +256,7 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
     cooler_kind_hint = _detect_cooler_kind(line)
     is_mount_kit = True if _MOUNT_KIT_RE.search(line) else False
     is_accessory = True if is_mount_kit else (False if cooler_kind_hint in ("cpu_air", "cpu_liquid_aio") else True)
-    is_bundle = bool(_PLUS_RE.search(head) or _BUNDLE_RE.search(head))
+    is_bundle = bool(_BUNDLE_RE.search(head))
 
     limit_hint = None
     limit_m = _LIMIT_RE.search(full)
@@ -312,6 +312,8 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         pwm_hint = True if _PWM_RE.search(full) else None
         rgb_hint = True if _RGB_RE.search(full) else None
         socket_support_hint = _extract_sockets(full)
+    elif cooler_kind_hint == "notebook_cooler":
+        rgb_hint = True if _RGB_RE.search(line) else None
     elif cooler_kind_hint in ("ssd_heatsink", "notebook_cooler"):
         # 這兩類常見 PWM/RGB（例如帶小風扇的 SSD 散熱、RGB 筆電散熱座）
         pwm_hint = True if _PWM_RE.search(full) else None

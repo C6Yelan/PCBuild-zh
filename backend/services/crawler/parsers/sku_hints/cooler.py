@@ -24,7 +24,11 @@ _HEIGHT_MM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)\s*mm", flags
 _HEIGHT_CM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)\s*(?:cm|公分)", flags=re.IGNORECASE) # 提取高度（cm）
 _HEIGHT_NUM_RE = re.compile(r"(?:高|高度)\s*([0-9]+(?:\.[0-9]+)?)") # 提取高度（無單位）
 _HEATPIPE_RE = re.compile(r"(\d+)\s*(?:導管|熱管)") # 提取熱導管數量
-_FAN_COUNT_RE = re.compile(r"(\d+)\s*風扇") # 提取風扇數量
+_FAN_MULT_RE = re.compile(r"(?i)(?:風扇|fan)\s*[*x×]\s*(\d{1,2})")  # 風扇*2 / fan x2
+# 避免 TL-E12風扇、A12X25風扇 這種「型號尾碼」誤判成數量
+_FAN_COUNT_RE = re.compile(r"(?<![A-Za-z0-9-])(\d{1,2})\s*風扇")
+_NO_FAN_RE = re.compile(r"(無風扇|不含風扇|不附風扇)", flags=re.IGNORECASE)
+_MOUNT_KIT_RE = re.compile(r"(扣具|安裝套件|固定架|背板|支架)", flags=re.IGNORECASE)
 _FAN_MM_RE = re.compile(r"(\d{2,3})\s*mm", flags=re.IGNORECASE) # 提取風扇尺寸（mm）
 _FAN_CM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*cm", flags=re.IGNORECASE) # 提取風扇尺寸（cm）
 _FAN_WORD_RE = re.compile(r"(風扇|fan)", flags=re.IGNORECASE) # 用於識別風扇相關字樣
@@ -148,19 +152,26 @@ def _extract_height_mm(text: str) -> int | None: # 提取高度（mm）。
     return None
 
 
-def _extract_fan_sizes(text: str) -> list[int] | None: # 提取風扇尺寸（mm）。
+def _extract_fan_sizes(text: str) -> list[int] | None:
+    """
+    只在「風扇」的近距離語境下抓尺寸，避免像「雙風扇/高15cm」把高度 15cm 誤當風扇尺寸。
+    支援：
+      - 12cm風扇 / 120mm風扇
+      - 風扇12cm / 風扇120mm
+    """
+    t = text or ""
     sizes: set[int] = set()
-    for m in _FAN_MM_RE.finditer(text or ""):
-        window = (text or "")[max(0, m.start() - 8):min(len(text or ""), m.end() + 8)]
-        if _FAN_WORD_RE.search(window):
-            sizes.add(int(m.group(1)))
-    for m in _FAN_CM_RE.finditer(text or ""):
-        window = (text or "")[max(0, m.start() - 8):min(len(text or ""), m.end() + 8)]
-        if _FAN_WORD_RE.search(window):
-            sizes.add(int(round(float(m.group(1)) * 10)))
-    if not sizes:
-        return None
-    return sorted(sizes)
+    # number + unit + fan
+    for m in re.finditer(r"(?i)(\d{2,3})\s*mm\s*(?:風扇|fan)", t):
+        sizes.add(int(m.group(1)))
+    for m in re.finditer(r"(?i)(\d{1,2}(?:\.\d+)?)\s*cm\s*(?:風扇|fan)", t):
+        sizes.add(int(round(float(m.group(1)) * 10)))
+    # fan + number + unit
+    for m in re.finditer(r"(?i)(?:風扇|fan)\s*[:：]?\s*(\d{2,3})\s*mm", t):
+        sizes.add(int(m.group(1)))
+    for m in re.finditer(r"(?i)(?:風扇|fan)\s*[:：]?\s*(\d{1,2}(?:\.\d+)?)\s*cm", t):
+        sizes.add(int(round(float(m.group(1)) * 10)))
+    return sorted(sizes) if sizes else None
 
 
 def _extract_sockets(text: str) -> list[str] | None: # 提取支援插槽。
@@ -243,7 +254,8 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
     head = head_before_brackets(line)
 
     cooler_kind_hint = _detect_cooler_kind(line)
-    is_accessory = False if cooler_kind_hint in ("cpu_air", "cpu_liquid_aio") else True
+    is_mount_kit = True if _MOUNT_KIT_RE.search(line) else False
+    is_accessory = True if is_mount_kit else (False if cooler_kind_hint in ("cpu_air", "cpu_liquid_aio") else True)
     is_bundle = bool(_PLUS_RE.search(head) or _BUNDLE_RE.search(head))
 
     limit_hint = None
@@ -282,9 +294,15 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
                 fan_count_hint = count
                 break
         if fan_count_hint is None:
-            fan_m = _FAN_COUNT_RE.search(line)
+            mult_m = _FAN_MULT_RE.search(line)  # 風扇*2
+            if mult_m:
+                fan_count_hint = int(mult_m.group(1))
+        if fan_count_hint is None:
+            fan_m = _FAN_COUNT_RE.search(line)  # 2風扇
             if fan_m:
                 fan_count_hint = int(fan_m.group(1))
+        if fan_count_hint is None and _FAN_WORD_RE.search(line) and not _NO_FAN_RE.search(line):
+            fan_count_hint = 1  # 有提到「風扇」但沒講數量，保守推 1
         fan_sizes_mm_hint = _extract_fan_sizes(line)
         pwm_hint = True if _PWM_RE.search(full) else None
         rgb_hint = True if _RGB_RE.search(full) else None
@@ -302,6 +320,16 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         m2_m = _M2_LEN_RE.search(line)
         if m2_m:
             m2_length_hint = int(m2_m.group(1))
+        hp_m = _HEATPIPE_RE.search(line)
+        if hp_m:
+            heatpipe_count_hint = int(hp_m.group(1))
+        fan_sizes_mm_hint = _extract_fan_sizes(line)
+        if _FAN_WORD_RE.search(line) and not _NO_FAN_RE.search(line):
+            fan_count_hint = 1
+            mult_m = _FAN_MULT_RE.search(line)
+            if mult_m:
+                fan_count_hint = int(mult_m.group(1))
+        pwm_hint = True if _PWM_RE.search(line) else None
     elif cooler_kind_hint == "thermal_pad":
         pad_thickness_mm_hint = _extract_pad_thickness(line)
         pad_dimensions_mm_hint = _extract_pad_dimensions(line)

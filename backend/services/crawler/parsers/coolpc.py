@@ -129,6 +129,9 @@ class CoolpcListingParser:
                     seen_ibuy.add(ibuy)
                     buy_url = f"https://www.coolpc.com.tw/evaluate.php?iBuy={quote(ibuy, safe='')}"
                     buy_url = urljoin(page_url, buy_url)
+                # 非 RAM 類別：沒有 iBuy 就不要在這裡產生候選，否則會把 url fallback 成分類頁(page_url)污染資料
+                if category != "RAM" and not buy_url:
+                    continue
                 url = buy_url or (urljoin(page_url, href) if href else page_url)
 
                 if not raw_title or price is None:
@@ -156,7 +159,8 @@ class CoolpcListingParser:
                     )
                 )
 
-            if items:
+            # RAM 可能真的拿不到 iBuy，所以 RAM 仍保留這段 fast-path；其餘類別繼續往下用 _BLOCK_RE 解析 iBuy
+            if category == "RAM" and items:
                 return items
 
         # 1) 優先用 iBuy token 解析：可產生每筆單品唯一 URL
@@ -185,6 +189,9 @@ class CoolpcListingParser:
             if category == "GPU" and hints.extra and hints.extra.get("is_accessory"):
                 continue
             if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
+                continue
+            # 這些類別要求「每筆單品 URL」，純文字 fallback 只能給 page_url（分類頁），直接跳過避免錯連結
+            if category in ("SSD", "HDD", "COOLER", "LIQUID_COOLING"):
                 continue
 
             items.append(

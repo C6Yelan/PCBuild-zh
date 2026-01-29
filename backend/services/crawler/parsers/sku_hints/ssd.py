@@ -218,6 +218,14 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     elif _PCIE_RE.search(line) or _PCIE_GEN_RE.search(line) or _PCIE_VER_RE.search(line):
         interface_hint = "PCIe"
 
+    # PCIe SSD 幾乎皆為 NVMe 協定（標題常不明寫 NVMe）
+    if interface_hint == "PCIe" and protocol_hint is None:
+        protocol_hint = "NVMe"
+
+    # 標題若未明寫 M.2，但已判定 PCIe（且非 2.5"），在 IGrp=7 語境下可推為 M.2
+    if interface_hint == "PCIe" and form_factor_hint is None:
+        form_factor_hint = "M.2"
+
     pcie_gen_hint = _extract_pcie_gen(line)
     seq_read_mb_s = _extract_seq_speed(line, _READ_RE)
     seq_write_mb_s = _extract_seq_speed(line, _WRITE_RE)

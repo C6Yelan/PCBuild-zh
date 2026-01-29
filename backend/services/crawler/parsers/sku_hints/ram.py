@@ -187,8 +187,11 @@ def extract_ram_hints(title: str) -> tuple[str, dict[str, object]]:
 
     capacity_gb_hint = _extract_capacity(head) or _extract_capacity(line)
     per_dimm_gb_hint, kit_dimms_hint = _extract_kit(line)
-    if capacity_gb_hint is None and per_dimm_gb_hint is not None and kit_dimms_hint is not None:
-        capacity_gb_hint = per_dimm_gb_hint * kit_dimms_hint
+    if per_dimm_gb_hint is not None and kit_dimms_hint is not None:
+        total = per_dimm_gb_hint * kit_dimms_hint
+        # 若容量欄位抓到的是「每條容量」（常見於：雙通16G*2 這種沒有總容量前綴的標題）
+        if capacity_gb_hint is None or capacity_gb_hint == per_dimm_gb_hint:
+            capacity_gb_hint = total
 
     cl_hint = _extract_cl(line)
     rgb_hint = _extract_rgb(line)

@@ -35,13 +35,16 @@ _DRIVE_HOTSWAP_RE = re.compile(r"(?<!\d)(\d+)\s*[*x×]\s*硬碟熱插拔")
 _BUNDLE_RE = re.compile(r"(大全配|套裝|組合|bundle)", flags=re.IGNORECASE) # 套裝提示
 _LIMIT_RE = re.compile(r"(限組裝|限購|限量|客訂)", flags=re.IGNORECASE) # 限制購買提示
 _ACCESSORY_RE = re.compile(r"(配件|支架|扣具)", flags=re.IGNORECASE) # 配件提示
-_CASE_LIKE_RE = re.compile(
+_CASE_LIKE_RE = re.compile( # 機殼相關提示詞
     r"(?i)(顯卡長|卡長|CPU高|U高|水冷|風扇支援|前I/O|尺寸|"
     r"E-?ATX|ATX|M-?ATX|Micro-ATX|Mini-ITX|ITX|玻璃|透側|機殼|電源)"
 )
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
 
-_PSU_INCLUDED_RE = re.compile(r"(含電源|機殼\+電源|內附\s*\d*\s*W?\s*電源)", flags=re.IGNORECASE) # 含電源提示
+_PSU_INCLUDED_RE = re.compile(
+    r"(含電源|機殼\+電源|內附\s*\d{2,4}\s*W?\s*(?:\S+\s*){0,2}電源)",
+    flags=re.IGNORECASE,
+)
 _PSU_WATT_RE = re.compile(r"(\d{2,4})\s*W", flags=re.IGNORECASE) # 電源瓦數標籤
 
 _MODEL_BUNDLE_SPLIT_RE = re.compile(r"\s+[+＋]\s+") # 型號與套裝配件之間的分隔符號
@@ -331,11 +334,11 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     if limit_m:
         limit_hint = limit_m.group(1)
 
-    blob = " ".join(lines) or line  # 用整體描述/標題判斷套裝線索
+    bundle_blob = " ".join([line] + lines)  # 一定包含 title + desc
     is_bundle = bool(
-        _BUNDLE_RE.search(head)                 # 大全配/套裝/組合/bundle
-        or _PSU_INCLUDED_RE.search(blob)        # 含電源/內附xxxW電源/機殼+電源
-        or _MODEL_BUNDLE_SPLIT_RE.search(line)  # 以「空白 + 空白」明確分隔的 +，代表兩個品項
+        _BUNDLE_RE.search(head)
+        or _PSU_INCLUDED_RE.search(bundle_blob)
+        or _MODEL_BUNDLE_SPLIT_RE.search(line)
     )
 
     accessory_text = head_before_brackets(clean_line) or clean_line

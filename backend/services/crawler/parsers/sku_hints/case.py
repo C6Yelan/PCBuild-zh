@@ -331,7 +331,13 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     if limit_m:
         limit_hint = limit_m.group(1)
 
-    is_bundle = bool(_BUNDLE_RE.search(head))
+    blob = " ".join(lines) or line  # 用整體描述/標題判斷套裝線索
+    is_bundle = bool(
+        _BUNDLE_RE.search(head)                 # 大全配/套裝/組合/bundle
+        or _PSU_INCLUDED_RE.search(blob)        # 含電源/內附xxxW電源/機殼+電源
+        or _MODEL_BUNDLE_SPLIT_RE.search(line)  # 以「空白 + 空白」明確分隔的 +，代表兩個品項
+    )
+
     accessory_text = head_before_brackets(clean_line) or clean_line
     blob = " ".join([line] + lines)
 

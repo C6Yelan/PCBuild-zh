@@ -8,7 +8,10 @@ _LEADING_BRACKET_TAGS_RE = re.compile(r"^(?:【[^】]{1,80}】\s*)+")
 _MODEL_BUNDLE_SPLIT_RE = re.compile(r"\s*[+＋]\s*")
 
 _PCIE_RE = re.compile(r"PCI-?E|PCIE", flags=re.IGNORECASE)
-_PCIE_GEN_RE = re.compile(r"PCI-?E\s*(?:Gen\s*)?([345])(?:\.0)?", flags=re.IGNORECASE)
+_PCIE_GEN_RE = re.compile(
+    r"PCI-?E\s*Gen\s*([345])\b|PCI-?E\s*([345])\.0\b",
+    flags=re.IGNORECASE,
+)
 _GEN_RE = re.compile(r"GEN\s*([345])", flags=re.IGNORECASE)
 _LANES_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:X\s*(1|4|8|16)|(1|4|8|16)\s*X)(?![A-Za-z0-9])",
@@ -206,7 +209,7 @@ def _extract_pcie_gen(texts: list[str], host_bus_hint: str | None) -> int | None
     for text in texts:
         m = _PCIE_GEN_RE.search(text or "")
         if m:
-            return int(m.group(1))
+            return int(m.group(1) or m.group(2))
     if host_bus_hint == "pcie":
         for text in texts:
             m = _GEN_RE.search(text or "")

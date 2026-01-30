@@ -37,7 +37,7 @@ _BEARING_RULES: list[tuple[re.Pattern[str], str]] = [
 _PACK_NUM_RE = re.compile(r"(?<!\d)(\d+)\s*(?:入|顆裝|pack|Pack|PACK)(?![A-Za-z0-9])")
 _PACK_FAN_RE = re.compile(r"(?<!\d)(\d+)\s*風扇")
 
-_CONTROLLER_INCLUDED_RE = re.compile(r"[+＋/／]\s*控制器|附控制器|含控制器|含遙控|附遙控|含控制盒")
+_CONTROLLER_INCLUDED_RE = re.compile(r"[+＋/／]\s*控制器|附控制器|含控制器|含遙控|附遙控|含控制盒|附集線器|含集線器")
 _REVERSE_RE = re.compile(r"反向|reverse", flags=re.IGNORECASE)
 
 _LIMIT_RE = re.compile(r"(限組裝|限購|限搭機|客訂|限量)")
@@ -265,7 +265,9 @@ def _detect_accessory(texts: list[str]) -> tuple[bool, str | None]:
         t = text or ""
         if _CONTROLLER_REQ_RE.search(t):
             continue
-        if _FAN_WORD_RE.search(t) and _FAN_PACK_RE.search(t):
+        pack_cnt = _extract_pack_count([t])
+        fan_like = bool(_RPM_RANGE_RE.search(t) or _RPM_SINGLE_RE.search(t) or _PWM_RE.search(t) or (_extract_size_mm([t]) is not None) or ("風扇" in t))
+        if pack_cnt is not None and fan_like:
             bundle_context = True
             break
     if bundle_context:
@@ -274,8 +276,9 @@ def _detect_accessory(texts: list[str]) -> tuple[bool, str | None]:
         t = text or ""
         if _CONTROLLER_REQ_RE.search(t):
             continue
-        has_fan = bool(_FAN_WORD_RE.search(t))
-        bundle_like = has_fan and bool(_FAN_PACK_RE.search(t))
+        pack_cnt = _extract_pack_count([t])
+        fan_like = bool(_RPM_RANGE_RE.search(t) or _RPM_SINGLE_RE.search(t) or _PWM_RE.search(t) or (_extract_size_mm([t]) is not None) or ("風扇" in t))
+        bundle_like = (pack_cnt is not None) and fan_like
         for pat, kind in _ACCESSORY_RULES:
             if kind in ("controller", "hub") and bundle_like:
                 continue

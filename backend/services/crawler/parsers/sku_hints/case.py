@@ -25,7 +25,7 @@ _DIMENSIONS_RE = re.compile( # 機殼尺寸（寬x高x深）
 
 _SIDE_TG_RE = re.compile(r"(玻璃|鋼化玻璃|TG|透側)", flags=re.IGNORECASE) # 透側面板提示
 _SIDE_ACRYLIC_RE = re.compile(r"(壓克力|Acrylic)", flags=re.IGNORECASE) # 壓克力面板提示
-_SIDE_SOLID_RE = re.compile(r"(無側透|鐵側板|Solid|金屬側板|網孔)", flags=re.IGNORECASE) # 實心面板提示
+_SIDE_SOLID_RE = re.compile(r"(無側透|鐵側板|金屬側板|網孔|Solid|靜音側板|隔音側板|靜音)", flags=re.IGNORECASE) # 實心面板提示
 
 _DRIVE_BAY_RE = re.compile(r"(5\.25|3\.5|2\.5)\s*[*x×]\s*(\d+)", flags=re.IGNORECASE) # 硬碟空間數量標籤
 _DRIVE_BAY_SSD_RE = re.compile(r"(?<![A-Za-z0-9])SSD\s*[*x×]\s*(\d+)", flags=re.IGNORECASE)

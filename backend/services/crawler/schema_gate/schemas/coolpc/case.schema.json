@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-s :contentReference[oaicite:2]{index=2}2/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/case.schema.json",
+  "title": "CoolPC CASE ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "CASE" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+
+    "sku_hint": {
+      "anyOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "null" }
+      ]
+    },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand_hint", "model_hint", "is_bundle"],
+      "properties": {
+        "brand_hint": { "type": "string", "minLength": 1 },
+        "model_hint": { "type": "string", "minLength": 1 },
+
+        "mb_form_factor_support_hint": {
+          "type": "string",
+          "enum": ["Mini-ITX", "Micro-ATX", "ATX", "E-ATX"]
+        },
+
+        "gpu_max_length_mm_hint": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "cpu_cooler_max_height_mm_hint": { "type": "integer", "minimum": 0, "maximum": 2000 },
+
+        "radiator_support_mm_hint": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "enum": [120, 240, 280, 360, 420] }
+        },
+
+        "dimensions_mm_hint": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "type": "integer", "minimum": 1, "maximum": 1200 },
+            { "type": "integer", "minimum": 1, "maximum": 1200 },
+            { "type": "integer", "minimum": 1, "maximum": 1200 }
+          ],
+          "items": false
+        },
+
+        "side_panel_hint": { "type": "string", "enum": ["TG", "Acrylic", "Solid"] },
+
+        "drive_bays_hint": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "5.25": { "type": "integer", "minimum": 0 },
+            "3.5": { "type": "integer", "minimum": 0 },
+            "2.5": { "type": "integer", "minimum": 0 }
+          }
+        },
+
+        "included_fans_hint": { "type": "string", "minLength": 1 },
+        "fan_support_hint": { "type": "string", "minLength": 1 },
+        "front_io_hint": { "type": "string", "minLength": 1 },
+
+        "psu_included_hint": { "type": "boolean" },
+        "psu_watt_w_hint": { "type": "integer", "minimum": 0, "maximum": 3000 },
+
+        "limit_hint": { "type": "string", "minLength": 1 },
+
+        "is_bundle": { "type": "boolean" },
+        "is_accessory": { "type": "boolean" }
+      },
+
+      "allOf": [
+        {
+          "if": {
+            "required": ["psu_included_hint"],
+            "properties": { "psu_included_hint": { "const": true } }
+          },
+          "then": { "required": ["psu_watt_w_hint"] }
+        },
+        {
+          "if": { "required": ["psu_watt_w_hint"] },
+          "then": { "required": ["psu_included_hint"] }
+        }
+      ]
+    }
+  }
+}

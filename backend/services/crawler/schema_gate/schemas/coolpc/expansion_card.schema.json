@@ -52,7 +52,11 @@
         "chipset_hint": { "type": "string", "minLength": 1 },
 
         "low_profile_bracket_included_hint": { "type": "boolean" },
-        "internal_header_hint": { "type": "boolean" },
+        "internal_header_hint": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:主板\\s*20Pin\\s*Type-?C|20Pin\\s*Type-?C|USB\\s*19\\s*pin|USB19pin|19Pin|20Pin)$"
+        },
 
         "is_bundle": { "type": "boolean" },
         "is_accessory": { "type": "boolean" }

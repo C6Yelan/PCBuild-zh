@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Location: backend/services/crawler/schema_gate/schemas/coolpc/case_fan.schema.json",
+  "title": "CoolPC CASE_FAN ListingCandidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "price", "currency", "category", "url", "sku_hint", "extra"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1 },
+    "price": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "const": "TWD" },
+    "category": { "type": "string", "const": "CASE_FAN" },
+    "url": { "type": "string", "minLength": 1, "format": "uri" },
+    "sku_hint": { "type": "string", "minLength": 1 },
+
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+
+      "properties": {
+        "is_bundle": { "type": "boolean" },
+
+        "is_accessory": { "type": "boolean" },
+        "accessory_kind_hint": {
+          "type": "string",
+          "enum": ["hub", "controller", "cable", "splitter", "adapter", "other"]
+        },
+
+        "pack_count_hint": { "type": "integer", "minimum": 1, "maximum": 20 },
+
+        "fan_size_mm_hint": { "type": "integer", "minimum": 1, "maximum": 300 },
+        "fan_thickness_mm_hint": { "type": "integer", "minimum": 1, "maximum": 100 },
+
+        "rpm_min_hint": { "type": "integer", "minimum": 0, "maximum": 20000 },
+        "rpm_max_hint": { "type": "integer", "minimum": 0, "maximum": 20000 },
+
+        "pwm_hint": { "type": "boolean" },
+        "rgb_hint": { "type": "boolean" },
+        "controller_included_hint": { "type": "boolean" },
+
+        "bearing_hint": { "type": "string", "minLength": 1 },
+        "connector_hint": { "type": "string", "minLength": 1 },
+
+        "warranty_years": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "limit_hint": { "type": "string", "minLength": 1 }
+      },
+
+      "allOf": [
+        {
+          "if": {
+            "required": ["is_accessory"],
+            "properties": { "is_accessory": { "const": true } }
+          },
+          "then": { "required": ["accessory_kind_hint"] }
+        },
+        {
+          "if": { "required": ["accessory_kind_hint"] },
+          "then": { "required": ["is_accessory"] }
+        },
+        {
+          "if": { "required": ["rpm_min_hint"] },
+          "then": { "required": ["rpm_max_hint"] }
+        },
+        {
+          "if": { "required": ["rpm_max_hint"] },
+          "then": { "required": ["rpm_min_hint"] }
+        }
+      ]
+    }
+  }
+}

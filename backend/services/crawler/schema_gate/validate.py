@@ -33,6 +33,8 @@ _SCHEMA_ALLOWLIST: dict[tuple[str, str], str] = {
     ("coolpc", "GPU"): "schemas/coolpc/gpu.schema.json",
     ("coolpc", "CASE"): "schemas/coolpc/case.schema.json",
     ("coolpc", "PSU"): "schemas/coolpc/psu.schema.json",
+    ("coolpc", "CASE_FAN"): "schemas/coolpc/case_fan.schema.json",
+    ("coolpc", "EXPANSION_CARD"): "schemas/coolpc/expansion_card.schema.json",
 }
 
 

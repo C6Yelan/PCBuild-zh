@@ -39,12 +39,23 @@ def main() -> int:
     _write_json(out_dir / "dq_pass.json", result.passed_items)
     _write_json(out_dir / "dq_quarantine.json", result.quarantined_items)
 
+    rep = result.report
     print(
-        f"[DQ] category={result.report.category} total={result.report.total} "
-        f"passed={result.report.passed} quarantined={result.report.quarantined} "
-        f"findings={len(result.report.findings)}"
+        "category=dq event=dq_gate_result part=%s total=%d passed=%d quarantined=%d errors=%d warnings=%d infos=%d input=%s"
+        % (
+            rep.category,
+            rep.total,
+            rep.passed,
+            rep.quarantined,
+            rep.errors,
+            rep.warnings,
+            rep.infos,
+            str(in_path),
+        )
     )
-    return 0
+
+    # fail-fast：只要有 error-level findings，就回非 0（讓 pipeline/CI 能擋下來）
+    return 2 if rep.errors > 0 else 0
 
 
 if __name__ == "__main__":

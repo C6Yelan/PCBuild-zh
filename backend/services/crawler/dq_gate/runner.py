@@ -18,19 +18,25 @@ class DQFinding: # 一個資料品質規則的結果
 
 
 @dataclass(frozen=True)
-class DQReport: # 整體報告
+class DQReport: # 最終報告
     category: str
     total: int
     passed: int
     quarantined: int
-    findings: list[DQFinding] # 本批次所有規則的違規結果
+    errors: int
+    warnings: int
+    infos: int
+    findings: list[DQFinding]
 
-    def to_dict(self) -> dict[str, Any]: # 轉成 dict 方便 JSON 序列化
+    def to_dict(self) -> dict[str, Any]:
         return {
             "category": self.category,
             "total": self.total,
             "passed": self.passed,
             "quarantined": self.quarantined,
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "infos": self.infos,
             "findings": [asdict(f) for f in self.findings],
         }
 
@@ -54,6 +60,9 @@ def run_dq_gate(items: list[dict[str, Any]]) -> DQResult:
             total=0,
             passed=0,
             quarantined=0,
+            errors=0,
+            warnings=0,
+            infos=0,
             findings=[DQFinding(code="EMPTY_BATCH", level="warn", message="Empty batch")],
         )
         return DQResult(passed_items=[], quarantined_items=[], report=report)
@@ -98,7 +107,7 @@ def run_dq_gate(items: list[dict[str, Any]]) -> DQResult:
                 code="DUPLICATE_URL",
                 level="error",
                 message="duplicate url(s) found in batch; keep first occurrence, quarantine the rest",
-                metric=float(len(dup_urls)),
+                metric=float(len(dup_urls)), # 有幾個不同的重複 url
                 samples=sample,
             )
         )
@@ -131,11 +140,18 @@ def run_dq_gate(items: list[dict[str, Any]]) -> DQResult:
         else:
             passed_items.append(it)
 
+    err_cnt = sum(1 for f in findings if f.level == "error")
+    warn_cnt = sum(1 for f in findings if f.level == "warn")
+    info_cnt = sum(1 for f in findings if f.level == "info")
+
     report = DQReport(
         category=category,
         total=len(items),
         passed=len(passed_items),
         quarantined=len(quarantined_items),
+        errors=err_cnt,
+        warnings=warn_cnt,
+        infos=info_cnt,
         findings=findings,
     )
     return DQResult(passed_items=passed_items, quarantined_items=quarantined_items, report=report)

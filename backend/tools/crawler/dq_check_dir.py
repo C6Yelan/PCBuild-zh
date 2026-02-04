@@ -32,19 +32,19 @@ def _safe_part_name(s: str) -> str: # 將字串轉換成安全的檔案/目錄�
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Run T4 DQ gate for every JSON list file in a directory.")
-    ap.add_argument("--indir", required=True, help="Directory containing JSON list files (T3 pass outputs).")
-    ap.add_argument("--outroot", required=True, help="Root output dir. Each part will be written to outroot/<part>/")
-    ap.add_argument("--pattern", default="*.json", help='Glob pattern (default: "*.json").')
-    ap.add_argument("--fail-fast", action="store_true", help="Stop at first part with errors>0.")
+    ap.add_argument("--indir", required=True, help="Directory containing JSON list files (T3 pass outputs).") # 輸入目錄
+    ap.add_argument("--outroot", required=True, help="Root output dir. Each part will be written to outroot/<part>/") # 輸出目錄
+    ap.add_argument("--pattern", default="*.json", help='Glob pattern (default: "*.json").') # 檔案匹配模式
+    ap.add_argument("--fail-fast", action="store_true", help="Stop at first part with errors>0.") # 失敗即停
     args = ap.parse_args()
 
-    in_dir = Path(args.indir).resolve()
-    out_root = Path(args.outroot).resolve()
+    in_dir = Path(args.indir).resolve() # 解析並取得輸入目錄的絕對路徑
+    out_root = Path(args.outroot).resolve() # 解析並取得輸出目錄的絕對路徑
 
-    if not in_dir.is_dir():
+    if not in_dir.is_dir(): # 檢查輸入路徑是否為目錄
         raise SystemExit(f"indir is not a directory: {in_dir}")
 
-    files = sorted(in_dir.glob(args.pattern))
+    files = sorted(in_dir.glob(args.pattern)) # 用 Unix shell 類似規則找檔（*, ?, [] 等）
     if not files:
         raise SystemExit(f"no files matched pattern={args.pattern} under {in_dir}")
 
@@ -52,12 +52,12 @@ def main() -> int:
 
     for fpath in files:
         data = _read_json(fpath)
-        if not isinstance(data, list):
+        if not isinstance(data, list): # 若不是 JSON 陣列，則報錯並退出
             raise SystemExit(f"input must be a JSON list: {fpath} (got {type(data).__name__})")
 
-        result = run_dq_gate(data)
+        result = run_dq_gate(data) # 執行 DQ Gate，取得結果
         rep = result.report
-        part = _safe_part_name(rep.category)
+        part = _safe_part_name(rep.category) # 用報表 category 當資料夾名（但先做字元清理）
 
         out_dir = out_root / part
         _write_json(out_dir / "dq_report.json", rep.to_dict())
@@ -78,7 +78,7 @@ def main() -> int:
             )
         )
 
-        if rep.errors > 0:
+        if rep.errors > 0: # 有錯誤則標記並視需要退出
             any_errors = True
             if args.fail_fast:
                 return 2

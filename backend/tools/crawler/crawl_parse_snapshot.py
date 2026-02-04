@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from backend.services.crawler.sources import SourceId
 from backend.services.crawler.parsers import get_listing_parser
 from backend.services.crawler.schema_gate.validate import SchemaGateError, validate_payload_fail_fast
+from backend.services.crawler.dq_gate import run_dq_gate
 
 
 def main() -> int:
@@ -29,11 +31,35 @@ def main() -> int:
         validate_payload_fail_fast(source_id=args.source, payload=payload)
     except SchemaGateError as e:
         # fail fast：輸出報告到 stderr，並停止
-        import sys
         print(json.dumps(e.report, ensure_ascii=False, indent=2), file=sys.stderr)
         return 2
 
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    # T4: DQ gate（fail-fast on error-level findings）
+    dq = run_dq_gate(payload)
+    rep = dq.report
+
+    # 統一輸出一行結構化 log（stderr，不污染 stdout JSON）
+    print(
+        "category=dq event=dq_gate_result part=%s total=%d passed=%d quarantined=%d errors=%d warnings=%d infos=%d snapshot_dir=%s"
+        % (
+            rep.category,
+            rep.total,
+            rep.passed,
+            rep.quarantined,
+            rep.errors,
+            rep.warnings,
+            rep.infos,
+            str(snap),
+        ),
+        file=sys.stderr,
+    )
+
+    if rep.errors > 0:
+        print(json.dumps(rep.to_dict(), ensure_ascii=False, indent=2), file=sys.stderr)
+        return 2
+
+    # stdout 只輸出 dq_pass（讓你原本的 `> temp/零件.json` 直接得到可用資料）
+    print(json.dumps(dq.passed_items, ensure_ascii=False, indent=2))
     return 0
 
 

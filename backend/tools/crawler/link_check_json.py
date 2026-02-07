@@ -19,6 +19,8 @@ _TITLE_RE = re.compile(r"(?is)<title[^>]*>(?P<t>.*?)</title>") # 抓 <title ...>
 _H1_RE = re.compile(r"(?is)<h1[^>]*>(?P<t>.*?)</h1>") # 抓 <h1 ...>...</h1>；因為很多商品頁面的主標題就在 h1。
 # 偏向抓「型號/料號」token：英數 + '-'，長度>=4
 _TOKEN_RE = re.compile(r"(?i)[A-Z0-9][A-Z0-9-]{3,}") # 抓類似「型號/料號」的 token，規則是：英數開頭，長度至少 4（包含開頭），允許中間有 '-'。
+# 強 token：必含數字，允許較短（>=3）以涵蓋 X16、2TB、7200 等，提升 mismatch 檢出
+_STRONG_TOKEN_RE = re.compile(r"(?i)(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{2,}")
 _IBUY_QS_RE = re.compile(r"(?:^|&)iBuy=([^&]+)") # CoolPC evaluate.php?iBuy=... 會把商品標題用 base64 塞在 iBuy 這個 query string 參數裡面。我們用這個 regex 把它抓出來，然後解碼當作比對證據（避免 title/h1 亂碼或不存在的情況）。
 
 def _coolpc_ibuy_text(url: str) -> str:
@@ -99,9 +101,32 @@ def _tokenize(s: str) -> list[str]: # 把字串裡的「型號/料號」token �
             out.append(t)
     return out
 
+def _tokenize_strong(s: str) -> list[str]:
+    """強 token：必含數字、允許短一點（>=3），用於優先命中判定。"""
+    if not s:
+        return []
+    toks = [t.upper() for t in _STRONG_TOKEN_RE.findall(s)]
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in toks:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+def _dedup_preserve(seq: Iterable[str]) -> list[str]:
+    """簡單的去重但保序工具，給定一個字串序列，回傳一個新的 list，其中包含原序列中第一次出現的每個唯一字串。"""
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in seq:
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
 
 def _domain_allowed(url: str, allow_domains: list[str]) -> bool: 
-    # 判斷 URL 的網域是否在允許清單裡，allow_domains 是允許的網域列表。如果 allow_domains 是空的，就表示不限制網域，全部允許。
+    """判斷 URL 的網域是否在允許清單裡，allow_domains 是允許的網域列表。如果 allow_domains 是空的，就表示不限制網域，全部允許。"""
     if not allow_domains:
         return True
     host = (urlparse(url).hostname or "").lower()
@@ -199,11 +224,15 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
         ibuy_text = _coolpc_ibuy_text(final_url)
         haystack = f"{final_url} {page_title} {h1} {ibuy_text}".upper()
 
-        # 優先用 sku_hint token（你前面已經花很多力氣把 sku_hint 做準）
-        basis = "sku_hint" if sku_hint.strip() else "title"
-        tokens = _tokenize(sku_hint if basis == "sku_hint" else title)
+        # token 來源：sku_hint + title union（避免像 HDD 這種 sku_hint 太硬導致正樣本 mismatch）
+        basis = "sku_hint+title"
+        key_text = f"{sku_hint} {title}".strip()
+        strong_tokens = _tokenize_strong(key_text)
+        tokens = _dedup_preserve(strong_tokens + _tokenize(key_text))
 
-        matched = [t for t in tokens if t and t in haystack] # 命中的 token 列表。如果 token 在 haystack（final_url + page_title + h1）裡出現，就算命中。
+        # 命中策略：先看 strong token（必含數字、允許短一點），如果有 strong token 命中就優先判定 match；如果沒有 strong token 命中，再看一般 token（較寬鬆）。這樣可以提升 mismatch 的檢出率，減少誤判的風險。
+        matched_strong = [t for t in strong_tokens if t in haystack]
+        matched = matched_strong if matched_strong else [t for t in tokens if t in haystack]
 
         # 判定規則（先保守）：至少命中 1 個 token 才算 match
         # 沒命中 -> mismatch（高風險，進隔離）
@@ -219,7 +248,7 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
                 basis=basis,
                 tokens=tokens,
                 matched_tokens=matched[:10],
-                reason="token_hit>=1",
+                reason="strong_token_hit>=1" if matched_strong else "token_hit>=1",
             )
 
         return LinkCheckResult(

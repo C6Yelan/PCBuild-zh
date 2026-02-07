@@ -18,10 +18,34 @@ _TAG_RE = re.compile(r"(?is)<[^>]+>") # 非常粗略的「去 HTML tag」做法�
 _TITLE_RE = re.compile(r"(?is)<title[^>]*>(?P<t>.*?)</title>") # 抓 <title ...>...</title>，並用命名群組 (?P<t>...) 把內容取出（之後再丟去 _strip_tags() 清理）。
 _H1_RE = re.compile(r"(?is)<h1[^>]*>(?P<t>.*?)</h1>") # 抓 <h1 ...>...</h1>；因為很多商品頁面的主標題就在 h1。
 # 偏向抓「型號/料號」token：英數 + '-'，長度>=4
-_TOKEN_RE = re.compile(r"(?i)[A-Z0-9][A-Z0-9-]{3,}") # 抓類似「型號/料號」的 token，規則是：英數開頭，長度至少 4（包含開頭），允許中間有 '-'。
+_TOKEN_RE = re.compile(r"(?i)[A-Z0-9][A-Z0-9_-]{3,}") # 抓類似「型號/料號」的 token，規則是：英數開頭，長度至少 4（包含開頭），允許中間有 '-'、'_'。
 # 強 token：必含數字，允許較短（>=3）以涵蓋 X16、2TB、7200 等，提升 mismatch 檢出
-_STRONG_TOKEN_RE = re.compile(r"(?i)(?=[A-Z0-9-]*\d)[A-Z0-9][A-Z0-9-]{2,}")
+_STRONG_TOKEN_RE = re.compile(r"(?i)(?=[A-Z0-9_-]*\d)[A-Z0-9][A-Z0-9_-]{2,}")
 _IBUY_QS_RE = re.compile(r"(?:^|&)iBuy=([^&]+)") # CoolPC evaluate.php?iBuy=... 會把商品標題用 base64 塞在 iBuy 這個 query string 參數裡面。我們用這個 regex 把它抓出來，然後解碼當作比對證據（避免 title/h1 亂碼或不存在的情況）。
+_T5NEG_TOKEN_RE = re.compile(r"(?i)T5NEG(?:[_-][A-Z0-9]+)*")
+_NON_ALNUM_RE = re.compile(r"[^A-Z0-9]+")
+_WEAK_EVIDENCE_RE = re.compile(
+    r"(?i)^(?:\d+(?:TB|GB|MB|G|T|M|W|MM|CM|RPM|MHZ|GHZ|GBPS)|\d{2,5}|CL\d+|DDR\d(?:-\d+)?)$"
+)
+_MATCH_STOPLIST = {
+    "INTEL",
+    "AMD",
+    "NVIDIA",
+    "ASUS",
+    "MSI",
+    "GIGABYTE",
+    "PCIE",
+    "PCI-E",
+    "NVME",
+    "SATA",
+    "ATX",
+    "M-ATX",
+    "MATX",
+    "ARGB",
+    "RGB",
+    "CORE",
+    "ULTRA",
+}
 
 def _coolpc_ibuy_text(url: str) -> str:
     """
@@ -125,6 +149,57 @@ def _dedup_preserve(seq: Iterable[str]) -> list[str]:
     return out
 
 
+def _extract_t5neg_tokens(s: str) -> list[str]:
+    """抓出 sanity v2 注入 token（例如 T5NEG_XXXX），僅在出現時啟用 must-match 規則。"""
+    if not s:
+        return []
+    return _dedup_preserve(t.upper() for t in _T5NEG_TOKEN_RE.findall(s))
+
+
+def _is_weak_evidence_token(token: str) -> bool:
+    """容量/規格數字 token（2TB/650W/2280/CL40 等）屬於弱證據，不能單獨判 match。"""
+    return bool(_WEAK_EVIDENCE_RE.fullmatch(token))
+
+
+def _is_high_signal_token(token: str) -> bool:
+    """
+    高信號 token：長度 >= 4、含數字且含字母，並排除 stoplist/弱證據。
+    通常對應型號/料號（如 W680M-ACE、A650GLS）。
+    """
+    if len(token) < 4:
+        return False
+    if token in _MATCH_STOPLIST:
+        return False
+    if _is_weak_evidence_token(token):
+        return False
+    has_digit = any(ch.isdigit() for ch in token)
+    has_alpha = any("A" <= ch <= "Z" for ch in token)
+    return has_digit and has_alpha
+
+
+def _normalize_token(token: str) -> str:
+    """把 token 正規化為純英數，用於處理 '-'/'_' 等符號差異。"""
+    return _NON_ALNUM_RE.sub("", token.upper())
+
+
+def _collect_evidence_tokens(haystack: str) -> list[str]:
+    """對 haystack 也做 tokenization，改用 token set 交集做命中判定。"""
+    return _dedup_preserve(_tokenize_strong(haystack) + _tokenize(haystack))
+
+
+def _token_hits_evidence(
+    token: str,
+    evidence_set: set[str],
+    evidence_norm_set: set[str],
+) -> bool:
+    if token in evidence_set:
+        return True
+    norm = _normalize_token(token)
+    if len(norm) >= 4 and norm in evidence_norm_set:
+        return True
+    return False
+
+
 def _domain_allowed(url: str, allow_domains: list[str]) -> bool: 
     """判斷 URL 的網域是否在允許清單裡，allow_domains 是允許的網域列表。如果 allow_domains 是空的，就表示不限制網域，全部允許。"""
     if not allow_domains:
@@ -145,6 +220,10 @@ class LinkCheckResult:
     basis: str
     tokens: list[str]
     matched_tokens: list[str]
+    filtered_tokens: list[str]
+    stopword_hits: list[str]
+    must_match_tokens: list[str]
+    missing_must_match_tokens: list[str]
     reason: str
 
 
@@ -197,6 +276,10 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
             basis="",
             tokens=[],
             matched_tokens=[],
+            filtered_tokens=[],
+            stopword_hits=[],
+            must_match_tokens=[],
+            missing_must_match_tokens=[],
             reason="missing_url",
         )
 
@@ -212,6 +295,10 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
             basis="",
             tokens=[],
             matched_tokens=[],
+            filtered_tokens=[],
+            stopword_hits=[],
+            must_match_tokens=[],
+            missing_must_match_tokens=[],
             reason="domain_not_allowed",
         )
 
@@ -227,16 +314,56 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
         # token 來源：sku_hint + title union（避免像 HDD 這種 sku_hint 太硬導致正樣本 mismatch）
         basis = "sku_hint+title"
         key_text = f"{sku_hint} {title}".strip()
+        must_match_tokens = _extract_t5neg_tokens(key_text)
         strong_tokens = _tokenize_strong(key_text)
-        tokens = _dedup_preserve(strong_tokens + _tokenize(key_text))
+        tokens = _dedup_preserve(must_match_tokens + strong_tokens + _tokenize(key_text))
+        evidence_tokens = _collect_evidence_tokens(haystack)
+        evidence_set = set(evidence_tokens)
+        evidence_norm_set = {_normalize_token(t) for t in evidence_tokens if _normalize_token(t)}
+        matched_tokens = [
+            t for t in tokens if _token_hits_evidence(t, evidence_set, evidence_norm_set)
+        ]
+        stopword_hits = [t for t in matched_tokens if t in _MATCH_STOPLIST]
+        filtered_tokens = [
+            t for t in matched_tokens if t not in _MATCH_STOPLIST and not _is_weak_evidence_token(t)
+        ]
+        weak_support_hits = [
+            t for t in matched_tokens if t not in _MATCH_STOPLIST and _is_weak_evidence_token(t)
+        ]
+        high_signal_hits = [t for t in filtered_tokens if _is_high_signal_token(t)]
+        missing_must_match_tokens = [
+            t for t in must_match_tokens if not _token_hits_evidence(t, evidence_set, evidence_norm_set)
+        ]
 
-        # 命中策略：先看 strong token（必含數字、允許短一點），如果有 strong token 命中就優先判定 match；如果沒有 strong token 命中，再看一般 token（較寬鬆）。這樣可以提升 mismatch 的檢出率，減少誤判的風險。
-        matched_strong = [t for t in strong_tokens if t in haystack]
-        matched = matched_strong if matched_strong else [t for t in tokens if t in haystack]
+        # sanity v2 專用：只有出現 T5NEG token 時，才啟用 must-match 規則。
+        if missing_must_match_tokens:
+            return LinkCheckResult(
+                status="mismatch",
+                http_status=http_status,
+                url=url,
+                final_url=final_url,
+                redirect_chain=chain,
+                page_title=page_title,
+                h1=h1,
+                basis=basis,
+                tokens=tokens,
+                matched_tokens=matched_tokens[:10],
+                filtered_tokens=filtered_tokens[:10],
+                stopword_hits=stopword_hits[:10],
+                must_match_tokens=must_match_tokens[:10],
+                missing_must_match_tokens=missing_must_match_tokens[:10],
+                reason="missing_must_match_token",
+            )
 
-        # 判定規則（先保守）：至少命中 1 個 token 才算 match
-        # 沒命中 -> mismatch（高風險，進隔離）
-        if tokens and matched:
+        # 一般判定：
+        # 1) 至少命中 1 個高信號 token（長度 >=4 且含數字、非 stoplist/弱證據）
+        # 2) 否則至少命中 2 個非 stoplist 的中等 token
+        # 3) 為避免誤殺，允許 1 個中等 token + 1 個弱 token 的組合（弱 token 仍不能單獨成立）
+        if tokens and (
+            high_signal_hits
+            or len(filtered_tokens) >= 2
+            or (len(filtered_tokens) >= 1 and len(weak_support_hits) >= 1)
+        ):
             return LinkCheckResult(
                 status="match",
                 http_status=http_status,
@@ -247,8 +374,18 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
                 h1=h1,
                 basis=basis,
                 tokens=tokens,
-                matched_tokens=matched[:10],
-                reason="strong_token_hit>=1" if matched_strong else "token_hit>=1",
+                matched_tokens=matched_tokens[:10],
+                filtered_tokens=filtered_tokens[:10],
+                stopword_hits=stopword_hits[:10],
+                must_match_tokens=must_match_tokens[:10],
+                missing_must_match_tokens=[],
+                reason=(
+                    "high_signal_token_hit>=1"
+                    if high_signal_hits
+                    else "filtered_token_hit>=2"
+                    if len(filtered_tokens) >= 2
+                    else "filtered_token_hit>=1_and_weak_support>=1"
+                ),
             )
 
         return LinkCheckResult(
@@ -261,8 +398,12 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
             h1=h1,
             basis=basis,
             tokens=tokens,
-            matched_tokens=[],
-            reason="no_token_hit",
+            matched_tokens=matched_tokens[:10],
+            filtered_tokens=filtered_tokens[:10],
+            stopword_hits=stopword_hits[:10],
+            must_match_tokens=must_match_tokens[:10],
+            missing_must_match_tokens=[],
+            reason="insufficient_filtered_token_hit",
         )
 
     except Exception as e:
@@ -277,6 +418,10 @@ def _check_one( # 單筆連結檢查：欄位抽取 → 網域/缺值檢查 → 
             basis="",
             tokens=[],
             matched_tokens=[],
+            filtered_tokens=[],
+            stopword_hits=[],
+            must_match_tokens=[],
+            missing_must_match_tokens=[],
             reason=f"fetch_error:{type(e).__name__}",
         )
 
@@ -334,6 +479,10 @@ def main(argv: list[str] | None = None) -> int: # 主程式：CLI 參數 → 讀
                 "basis": res.basis,
                 "tokens": res.tokens,
                 "matched_tokens": res.matched_tokens,
+                "filtered_tokens": res.filtered_tokens,
+                "stopword_hits": res.stopword_hits,
+                "must_match_tokens": res.must_match_tokens,
+                "missing_must_match_tokens": res.missing_must_match_tokens,
                 "reason": res.reason,
                 "category": it.get("category"),
                 "title": it.get("title"),

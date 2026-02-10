@@ -21,6 +21,8 @@ _RE_CL = re.compile(r"(?<![A-Z0-9])CL\s*(\d{1,3})(?![A-Z0-9])", flags=re.UNICODE
 _RE_NUM_4_5 = re.compile(r"(?<![A-Z0-9])(\d{4,5})(?![A-Z0-9])", flags=re.UNICODE)
 
 _RE_SPEC_LIKE = re.compile(r"^(?:DDR[345]|D[345])(?:L)?(?:-\d{3,5})?$", flags=re.UNICODE)
+_RE_CJK_HEAD = re.compile(r"^[\u4e00-\u9fff]{2,8}", flags=re.UNICODE)
+_RE_CJK_TOKEN = re.compile(r"[\u4e00-\u9fff]{2,8}", flags=re.UNICODE)
 
 _NOISE_MARKERS = (
     "~組裝價~",
@@ -47,6 +49,18 @@ def _strip_noise(s: str) -> str:
     for w in _NOISE_MARKERS:
         out = out.replace(w, " ")
     return out
+
+
+def _cjk_head_token(s: str) -> str | None:
+    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
+    s = _strip_noise(s).lstrip()
+    m = _RE_CJK_HEAD.match(s)
+    if not m:
+        return None
+    tok = m.group(0)
+    if not tok:
+        return None
+    return tok
 
 
 def _normalize_for_phrase(s: str) -> str:
@@ -111,6 +125,10 @@ def _extract_tokens(text: str) -> list[str]:
     for m in _RE_NUM_4_5.finditer(phrase):
         tokens.add(m.group(1))
 
+    for t in _RE_CJK_TOKEN.findall(phrase):
+        if t:
+            tokens.add(t)
+
     return sorted(tokens)
 
 
@@ -145,9 +163,13 @@ def _pick_model_phrase(listing: ListingInput) -> tuple[str, str]:
         return listing.sku_hint, "sku_hint(sku)"
 
     parts: list[str] = []
-    mk = listing.extra.get("maker_hint")
-    if isinstance(mk, str) and mk.strip():
-        parts.append(mk.strip())
+    cjk_mk = _cjk_head_token(listing.sku_hint) or _cjk_head_token(listing.title)
+    if cjk_mk:
+        parts.append(cjk_mk)
+    else:
+        mk = listing.extra.get("maker_hint")
+        if isinstance(mk, str) and mk.strip():
+            parts.append(mk.strip())
 
     # A tiny series allowlist helps when maker is present but the page omits it.
     title_tokens = set(_extract_tokens(listing.title))
@@ -184,6 +206,10 @@ def _pick_model_phrase(listing: ListingInput) -> tuple[str, str]:
 
 def _extract_identity_tokens(listing: ListingInput, listing_tokens: list[str]) -> set[str]:
     out: set[str] = {t for t in listing_tokens if _is_sku_token(t)}
+
+    cjk_mk = _cjk_head_token(listing.sku_hint) or _cjk_head_token(listing.title)
+    if cjk_mk:
+        out.add(cjk_mk)
 
     mk = listing.extra.get("maker_hint")
     if isinstance(mk, str) and mk.strip():
@@ -315,4 +341,3 @@ class RamStrategy:
             ],
         }
         return MatchDecision(status="uncertain", score=None, reason_code="TOKEN_OVERLAP_INCONCLUSIVE", evidence=evidence)
-

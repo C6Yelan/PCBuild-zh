@@ -5,6 +5,37 @@ from backend.services.crawler.link_consistency_gate.types import ListingInput, P
 
 
 class TestRamStrategy(unittest.TestCase):
+    def test_match_cjk_brand_with_english_maker_hint(self) -> None:
+        listing = ListingInput(
+            source="coolpc",
+            category="RAM",
+            title="金士頓 單條16GB DDR5-5600(CL46) FURY Beast (獸獵者)",
+            url="https://example.invalid/evaluate.php?iBuy=...",
+            sku_hint="金士頓 單條16 GB DDR 5-5600/CL 46",
+            extra={
+                "maker_hint": "KINGSTON",
+                "ddr_gen_hint": "DDR5",
+                "speed_mts_hint": 5600,
+                "capacity_gb_hint": 16,
+                "kit_dimms_hint": 1,
+                "cl_hint": 46,
+            },
+        )
+        signals = PageSignals(
+            final_url="https://example.invalid/item",
+            http_status=200,
+            page_title=None,
+            page_h1=None,
+            canonical_url=None,
+            text_hint="金士頓 單條16GB DDR5-5600/CL46",
+        )
+
+        decision = RamStrategy().decide(listing, signals)
+        self.assertEqual(decision.status, "match")
+        for k in ("listing_tokens", "page_tokens", "matched_tokens", "notes"):
+            self.assertIn(k, decision.evidence)
+            self.assertIsInstance(decision.evidence[k], list)
+
     def test_match_phrase_hit_with_sku_hint(self) -> None:
         listing = ListingInput(
             source="coolpc",
@@ -104,4 +135,3 @@ class TestRamStrategy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

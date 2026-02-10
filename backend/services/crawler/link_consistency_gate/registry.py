@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .strategies.base import NotImplementedStrategy, Strategy
 from .strategies.cpu import CpuStrategy
+from .strategies.mb import MbStrategy
 
 
 REGISTRY: dict[str, Strategy] = {} # NotImplementedStrategy 作為預設回應
@@ -11,6 +12,7 @@ _DEFAULT_STRATEGY: Strategy = NotImplementedStrategy() # 預設策略，當沒�
 
 # Explicit registry only; no category-specific branching here.
 REGISTRY["CPU"] = CpuStrategy()
+REGISTRY["MB"] = MbStrategy()
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例

@@ -6,6 +6,7 @@ from .strategies.base import NotImplementedStrategy, Strategy
 from .strategies.cpu import CpuStrategy
 from .strategies.mb import MbStrategy
 from .strategies.ram import RamStrategy
+from .strategies.ssd import SsdStrategy
 
 
 REGISTRY: dict[str, Strategy] = {} # NotImplementedStrategy 作為預設回應
@@ -15,6 +16,7 @@ _DEFAULT_STRATEGY: Strategy = NotImplementedStrategy() # 預設策略，當沒�
 REGISTRY["CPU"] = CpuStrategy()
 REGISTRY["MB"] = MbStrategy()
 REGISTRY["RAM"] = RamStrategy()
+REGISTRY["SSD"] = SsdStrategy()
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例

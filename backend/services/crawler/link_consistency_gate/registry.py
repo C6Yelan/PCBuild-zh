@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .strategies.base import NotImplementedStrategy, Strategy
+from .strategies.case import CaseStrategy
 from .strategies.cooler import CoolerStrategy
 from .strategies.cpu import CpuStrategy
 from .strategies.gpu import GpuStrategy
@@ -26,6 +27,7 @@ REGISTRY["COOLER"] = CoolerStrategy()
 REGISTRY["LIQUID_COOLING"] = LiquidCoolingStrategy()
 REGISTRY["GPU"] = GpuStrategy()
 REGISTRY["VGA"] = GpuStrategy()
+REGISTRY["CASE"] = CaseStrategy()
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例

@@ -18,7 +18,6 @@ _RE_TITLE_TRUNC = re.compile(r"[\(（【\[]", flags=re.UNICODE)
 _RE_TITLE_SLASH = re.compile(r"[／/]", flags=re.UNICODE)
 _RE_ASCII_START = re.compile(r"[A-Z0-9]", flags=re.UNICODE)
 _RE_HAS_CJK = re.compile(r"[\u4e00-\u9fff]", flags=re.UNICODE)
-_RE_ONLY_CJK_SEP_PREFIX = re.compile(r"^[\u4e00-\u9fff\s\-_/]+$", flags=re.UNICODE)
 _RE_WEAK_POWER = re.compile(r"^[0-9]{2,4}W$", flags=re.UNICODE)
 
 _STOPWORDS = {
@@ -104,7 +103,8 @@ def _title_ascii_tail(title_head: str) -> str:
 
     idx = match.start()
     prefix = segment[:idx]
-    if idx > 0 and _RE_ONLY_CJK_SEP_PREFIX.fullmatch(prefix) is not None:
+    # Allow CJK prefix mixed with common separators/punctuation, as long as it has no ASCII.
+    if idx > 0 and _RE_HAS_CJK.search(prefix) is not None and _RE_ASCII_START.search(prefix.upper()) is None:
         return segment[idx:].strip()
     return ""
 
@@ -122,7 +122,10 @@ def _pick_model_phrase(listing: ListingInput) -> tuple[str, str, bool]:
         title_ascii_tail = _title_ascii_tail(title_head)
         if title_ascii_tail:
             return title_ascii_tail, "title_ascii_tail", True
-        return title_head, "title_head", True
+        if title_head:
+            return title_head, "title_head", True
+        # Last resort: keep weak sku_hint only when no better title source exists.
+        return sku, "sku_hint", True
 
     return _title_head(listing.title), "title_first_line", False
 
@@ -138,7 +141,7 @@ def _prefer_alnum_subphrase(raw: str) -> str:
 
     idx = match.start()
     prefix = text[:idx]
-    if idx > 0 and _RE_HAS_CJK.search(prefix) and _RE_ONLY_CJK_SEP_PREFIX.fullmatch(prefix) is not None:
+    if idx > 0 and _RE_HAS_CJK.search(prefix) is not None and _RE_ASCII_START.search(prefix.upper()) is None:
         tail = text[idx:].strip()
         if tail:
             return tail
@@ -232,6 +235,21 @@ class PsuStrategy:
         base_notes = [f"model_source={model_source}"]
         if ignored_weak_sku_hint:
             base_notes.append("ignored_weak_sku_hint")
+        if model_source == "sku_hint":
+            title_head = _title_head(listing.title)
+            if title_head and _normalize_for_phrase(title_head) != _normalize_for_phrase(raw_phrase):
+                title_candidates = _build_model_candidates(title_head)
+                merged_candidates: list[str] = []
+                seen_candidates: set[str] = set()
+                for cand in [*candidates, *title_candidates]:
+                    norm_cand = _normalize_for_phrase(cand)
+                    if not norm_cand or norm_cand in seen_candidates:
+                        continue
+                    seen_candidates.add(norm_cand)
+                    merged_candidates.append(cand)
+                if merged_candidates != candidates:
+                    candidates = merged_candidates
+                    base_notes.append("added_title_head_candidates")
 
         listing_tokens = _tokenize(" ".join(candidates))
 

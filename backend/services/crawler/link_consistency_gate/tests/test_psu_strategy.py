@@ -127,6 +127,33 @@ class TestPsuStrategy(unittest.TestCase):
         self._assert_evidence_shape(decision.evidence)
         self.assertIn("ignored_weak_sku_hint", decision.evidence["notes"])
 
+    def test_phrase_match_when_sku_hint_missing_intermediate_token(self) -> None:
+        listing = ListingInput(
+            source="coolpc",
+            category="PSU",
+            title="酷碼 X Silent Max Platinum 1300W /白金/全模組/數位靜音電源/ATX3.1(PCIe 5.0)/15年",
+            url="https://example.invalid/evaluate.php?iBuy=...",
+            sku_hint="酷碼 X Silent Max 1300W",
+            extra={},
+        )
+        signals = PageSignals(
+            final_url="https://example.invalid/item",
+            http_status=200,
+            page_title=None,
+            page_h1=None,
+            canonical_url=None,
+            text_hint="X Silent Max Platinum 1300W ATX3.1 PCIe 5.0 全模組",
+        )
+
+        decision = PsuStrategy().decide(listing, signals)
+        self.assertEqual(decision.status, "match")
+        self.assertEqual(decision.reason_code, "MODEL_PHRASE_FOUND")
+        self._assert_evidence_shape(decision.evidence)
+        self.assertIn("model_source=sku_hint", decision.evidence["notes"])
+        self.assertIn("added_title_head_candidates", decision.evidence["notes"])
+        self.assertIn("phrase_match", decision.evidence["notes"])
+        self.assertTrue(any(n.startswith("candidate_used=") for n in decision.evidence["notes"]))
+
     def test_match_when_lowercase_wattage_sku_hint_should_not_use_sku_source(self) -> None:
         listing = ListingInput(
             source="coolpc",
@@ -153,6 +180,8 @@ class TestPsuStrategy(unittest.TestCase):
         model_source_notes = [n for n in decision.evidence["notes"] if n.startswith("model_source=")]
         self.assertTrue(model_source_notes)
         self.assertNotIn("model_source=sku_hint", model_source_notes)
+        self.assertGreater(len(decision.evidence["listing_tokens"]), 1)
+        self.assertNotEqual(decision.evidence["listing_tokens"], ["1300W"])
 
 
 if __name__ == "__main__":

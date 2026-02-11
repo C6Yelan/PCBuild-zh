@@ -25,8 +25,28 @@ _RE_ID_NVIDIA = re.compile(
     r"(?<![A-Z0-9])(?:GEFORCE\s*)?(RTX|GTX)\s*([0-9]{3,4})(?:\s*(TI))?(?:\s*(SUPER))?(?![A-Z0-9])",
     flags=re.UNICODE,
 )
+_RE_ID_NVIDIA_GT = re.compile(
+    r"(?<![A-Z0-9])GT(?!X)\s*([0-9]{3,4})(?![A-Z0-9])",
+    flags=re.UNICODE,
+)
+_RE_ID_NVIDIA_NSKU = re.compile(
+    r"(?<![A-Z0-9])N\s*([0-9]{3,4})(?![A-Z0-9])",
+    flags=re.UNICODE,
+)
 _RE_ID_AMD = re.compile(
     r"(?<![A-Z0-9])(?:RADEON\s*)?RX\s*([0-9]{3,4})(?:\s*(XTX|XT))?(?![A-Z0-9])",
+    flags=re.UNICODE,
+)
+_RE_ID_AMD_R_SERIES = re.compile(
+    r"(?<![A-Z0-9])(?:RADEON\s*)?R\s*([579])\s*([0-9]{3})(?![A-Z0-9])",
+    flags=re.UNICODE,
+)
+_RE_ID_AMD_SKU_R_SERIES = re.compile(
+    r"(?<![A-Z0-9])[A-Z]{1,4}R\s*([579])\s*([0-9]{3})(?![A-Z0-9])",
+    flags=re.UNICODE,
+)
+_RE_ID_AMD_AI_PRO = re.compile(
+    r"(?<![A-Z0-9])(?:RADEON\s*)?(?:AI\s*PRO\s*)?R\s*([0-9]{4})(?![A-Z0-9])",
     flags=re.UNICODE,
 )
 _RE_ID_INTEL = re.compile(
@@ -98,7 +118,14 @@ def _extract_gpu_identities(text: str) -> list[str]:
             parts.append("TI")
         if sup:
             parts.append("SUPER")
-        out.add(" ".join(parts))
+        out.add("".join(parts))
+
+    for m in _RE_ID_NVIDIA_GT.finditer(norm):
+        out.add(f"GT{m.group(1)}")
+
+    for m in _RE_ID_NVIDIA_NSKU.finditer(norm):
+        # Legacy vendor SKU like N210/N710/N730 maps to GT legacy naming.
+        out.add(f"GT{m.group(1)}")
 
     for m in _RE_ID_AMD.finditer(norm):
         number = m.group(1)
@@ -106,12 +133,21 @@ def _extract_gpu_identities(text: str) -> list[str]:
         parts = ["RX", number]
         if suffix:
             parts.append(suffix)
-        out.add(" ".join(parts))
+        out.add("".join(parts))
+
+    for m in _RE_ID_AMD_R_SERIES.finditer(norm):
+        out.add(f"R{m.group(1)}{m.group(2)}")
+
+    for m in _RE_ID_AMD_SKU_R_SERIES.finditer(norm):
+        out.add(f"R{m.group(1)}{m.group(2)}")
+
+    for m in _RE_ID_AMD_AI_PRO.finditer(norm):
+        out.add(f"R{m.group(1)}")
 
     for m in _RE_ID_INTEL.finditer(norm):
         letter = m.group(1)
         number = m.group(2)
-        out.add(f"ARC {letter}{number}")
+        out.add(f"ARC{letter}{number}")
 
     return sorted(out)
 

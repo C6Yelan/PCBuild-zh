@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .strategies.base import NotImplementedStrategy, Strategy
 from .strategies.case import CaseStrategy
+from .strategies.case_fan import CaseFanStrategy
 from .strategies.cooler import CoolerStrategy
 from .strategies.cpu import CpuStrategy
 from .strategies.gpu import GpuStrategy
@@ -29,6 +30,7 @@ REGISTRY["LIQUID_COOLING"] = LiquidCoolingStrategy()
 REGISTRY["GPU"] = GpuStrategy()
 REGISTRY["VGA"] = GpuStrategy()
 REGISTRY["CASE"] = CaseStrategy()
+REGISTRY["CASE_FAN"] = CaseFanStrategy()
 _psu = PsuStrategy()
 REGISTRY["POWER"] = _psu
 REGISTRY["PSU"] = _psu

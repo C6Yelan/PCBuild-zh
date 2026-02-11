@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .strategies.base import NotImplementedStrategy, Strategy
+from .strategies.cooler import CoolerStrategy
 from .strategies.cpu import CpuStrategy
 from .strategies.hdd import HddStrategy
 from .strategies.mb import MbStrategy
@@ -19,6 +20,7 @@ REGISTRY["HDD"] = HddStrategy()
 REGISTRY["MB"] = MbStrategy()
 REGISTRY["RAM"] = RamStrategy()
 REGISTRY["SSD"] = SsdStrategy()
+REGISTRY["COOLER"] = CoolerStrategy()
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例

@@ -7,6 +7,7 @@ from .strategies.case import CaseStrategy
 from .strategies.case_fan import CaseFanStrategy
 from .strategies.cooler import CoolerStrategy
 from .strategies.cpu import CpuStrategy
+from .strategies.expansion_card import ExpansionCardStrategy
 from .strategies.gpu import GpuStrategy
 from .strategies.hdd import HddStrategy
 from .strategies.liquid_cooling import LiquidCoolingStrategy
@@ -31,6 +32,7 @@ REGISTRY["GPU"] = GpuStrategy()
 REGISTRY["VGA"] = GpuStrategy()
 REGISTRY["CASE"] = CaseStrategy()
 REGISTRY["CASE_FAN"] = CaseFanStrategy()
+REGISTRY["EXPANSION_CARD"] = ExpansionCardStrategy()
 _psu = PsuStrategy()
 REGISTRY["POWER"] = _psu
 REGISTRY["PSU"] = _psu

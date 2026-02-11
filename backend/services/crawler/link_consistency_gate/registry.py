@@ -10,6 +10,7 @@ from .strategies.gpu import GpuStrategy
 from .strategies.hdd import HddStrategy
 from .strategies.liquid_cooling import LiquidCoolingStrategy
 from .strategies.mb import MbStrategy
+from .strategies.psu import PsuStrategy
 from .strategies.ram import RamStrategy
 from .strategies.ssd import SsdStrategy
 
@@ -28,6 +29,9 @@ REGISTRY["LIQUID_COOLING"] = LiquidCoolingStrategy()
 REGISTRY["GPU"] = GpuStrategy()
 REGISTRY["VGA"] = GpuStrategy()
 REGISTRY["CASE"] = CaseStrategy()
+_psu = PsuStrategy()
+REGISTRY["POWER"] = _psu
+REGISTRY["PSU"] = _psu
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例

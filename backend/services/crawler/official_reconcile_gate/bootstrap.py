@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from .adapters.manual_url import ManualUrlAdapter
+from .matchers.cpu import CpuMatcher
 from .matchers.generic import GenericMatcher
 from .registry import (
     get_category_matcher,
@@ -19,3 +20,6 @@ def register_builtin_plugins() -> None:
 
     if get_category_matcher("GENERIC") is None:
         register_category_matcher(GenericMatcher())
+
+    if get_category_matcher("CPU") is None:
+        register_category_matcher(CpuMatcher())

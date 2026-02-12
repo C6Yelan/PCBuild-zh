@@ -12,6 +12,11 @@ from backend.services.crawler.official_reconcile_gate.types import ListingInput
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = _parse_args(argv)
+    from backend.services.crawler.official_reconcile_gate.bootstrap import (
+        register_builtin_plugins,
+    )
+
+    register_builtin_plugins()
 
     try:
         raw_items = _load_items(args.input)

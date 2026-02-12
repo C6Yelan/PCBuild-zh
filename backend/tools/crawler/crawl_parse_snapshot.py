@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 import sys
@@ -13,6 +14,7 @@ from backend.services.crawler.sources import SourceId
 from backend.services.crawler.parsers import get_listing_parser
 from backend.services.crawler.schema_gate.validate import SchemaGateError, validate_payload_fail_fast
 from backend.services.crawler.dq_gate import run_dq_gate
+from backend.tools.crawler.link_consistency_check_json import main as run_link_consistency_check_json
 
 
 def _write_json_atomic(path: Path, obj: Any) -> None:
@@ -37,6 +39,53 @@ def _write_json_atomic(path: Path, obj: Any) -> None:
             pass
 
 
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as f:
+        for lineno, line in enumerate(f, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"invalid JSONL at line {lineno}: {e.msg}") from e
+            if not isinstance(row, dict):
+                raise ValueError(f"expected object at line {lineno}, got {type(row).__name__}")
+            rows.append(row)
+    return rows
+
+
+def _build_t5_summary(reports: list[dict[str, Any]]) -> dict[str, Any]:
+    status_counts = Counter(str(rep.get("status", "")) for rep in reports)
+    reason_counts = Counter(str(rep.get("reason_code", "")) for rep in reports)
+    non_match = sum(1 for rep in reports if rep.get("status") != "match")
+    return {
+        "total": len(reports),
+        "non_match": non_match,
+        "status_counts": dict(sorted(status_counts.items())),
+        "reason_counts": dict(sorted(reason_counts.items())),
+    }
+
+
+def _coerce_t5_input_item(item: Any, *, source: str) -> dict[str, Any]:
+    if isinstance(item, dict):
+        out = dict(item)
+    elif hasattr(item, "model_dump") and callable(getattr(item, "model_dump")):
+        dumped = item.model_dump()
+        if not isinstance(dumped, dict):
+            raise ValueError(f"T5 item model_dump() must return dict, got {type(dumped).__name__}")
+        out = dict(dumped)
+    elif hasattr(item, "__dict__"):
+        out = dict(vars(item))
+    else:
+        raise ValueError(f"T5 item must be dict-like, got {type(item).__name__}")
+
+    if "source" not in out:
+        out["source"] = source
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True, choices=[s.value for s in SourceId])
@@ -46,6 +95,13 @@ def main() -> int:
         default=None,
         help="(optional) 落檔 DQ 產物：dq_report.json / dq_pass.json / dq_quarantine.json",
     )
+    ap.add_argument("--t5-outdir", default=None, help="(optional) 啟用 T5 並將輸出落檔到此資料夾")
+    ap.add_argument("--t5-limit", default=0, type=int, help="(optional) 只檢查前 N 筆，N<=0 代表全量")
+    ap.add_argument("--t5-min-interval-ms", default=1500, type=int)
+    ap.add_argument("--t5-timeout-s", default=10, type=float)
+    ap.add_argument("--t5-max-redirects", default=5, type=int)
+    ap.add_argument("--t5-max-bytes", default=4194304, type=int)
+    ap.add_argument("--t5-block-pattern", action="append", default=[])
     args = ap.parse_args()
 
     snap = Path(args.snapshot_dir).resolve()
@@ -94,6 +150,92 @@ def main() -> int:
     if rep.errors > 0:
         print(json.dumps(rep.to_dict(), ensure_ascii=False, indent=2), file=sys.stderr)
         return 2
+
+    # Optional T5 gate: only runs when t5_outdir is explicitly provided.
+    if args.t5_outdir:
+        outdir = Path(args.t5_outdir).resolve()
+        outdir.mkdir(parents=True, exist_ok=True)
+
+        dq_ok_items = dq.passed_items
+        if args.t5_limit and args.t5_limit > 0:
+            t5_items = dq_ok_items[: args.t5_limit]
+        else:
+            t5_items = dq_ok_items
+
+        t5_input_path = outdir / "t5.input.json"
+        t5_report_path = outdir / "t5.link_report.jsonl"
+        t5_summary_path = outdir / "t5.summary.json"
+        t5_passed_path = outdir / "t5.passed.json"
+        t5_quarantine_path = outdir / "t5.quarantine.json"
+
+        # link_consistency_check_json 會逐筆解析 required field "source"，因此這裡需補齊每筆 source。
+        try:
+            t5_input_items = [_coerce_t5_input_item(item, source=str(args.source)) for item in t5_items]
+        except ValueError as e:
+            print(f"T5 input error: {e}", file=sys.stderr)
+            return 2
+
+        _write_json_atomic(t5_input_path, t5_input_items)
+
+        t5_argv = [
+            "--input",
+            str(t5_input_path),
+            "--output",
+            str(t5_report_path),
+            "--min-interval-ms",
+            str(args.t5_min_interval_ms),
+            "--timeout-s",
+            str(args.t5_timeout_s),
+            "--max-redirects",
+            str(args.t5_max_redirects),
+            "--max-bytes",
+            str(args.t5_max_bytes),
+        ]
+        for p in args.t5_block_pattern:
+            t5_argv.extend(["--block-pattern", p])
+
+        t5_rc = run_link_consistency_check_json(t5_argv)
+        if t5_rc != 0:
+            return 2
+
+        try:
+            reports = _read_jsonl(t5_report_path)
+        except (OSError, ValueError) as e:
+            print(f"T5 output error: {e}", file=sys.stderr)
+            return 2
+
+        if len(reports) != len(t5_items):
+            print(
+                "T5 output error: report/input length mismatch report=%d input=%d"
+                % (len(reports), len(t5_items)),
+                file=sys.stderr,
+            )
+            return 2
+
+        t5_passed: list[dict[str, Any]] = []
+        t5_quarantine: list[dict[str, Any]] = []
+        for item, report in zip(t5_items, reports):
+            if report.get("status") == "match":
+                t5_passed.append(item)
+            else:
+                t5_quarantine.append(item)
+
+        summary = _build_t5_summary(reports)
+        _write_json_atomic(t5_summary_path, summary)
+        _write_json_atomic(t5_passed_path, t5_passed)
+        _write_json_atomic(t5_quarantine_path, t5_quarantine)
+
+        print(
+            "T5 status_counts=%s reason_counts=%s outdir=%s"
+            % (summary["status_counts"], summary["reason_counts"], str(outdir)),
+            file=sys.stderr,
+        )
+
+        # Keep stdout as match-only items even when gate fails, so consumers never receive non-match rows.
+        print(json.dumps(t5_passed, ensure_ascii=False, indent=2))
+        if summary["non_match"] > 0:
+            return 2
+        return 0
 
     # stdout：只輸出 pass（讓你原本的 `> temp/零件.json` 照舊可用）
     print(json.dumps(dq.passed_items, ensure_ascii=False, indent=2))

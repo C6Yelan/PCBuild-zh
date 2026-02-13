@@ -8,6 +8,7 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
+    from backend.services.crawler.official_reconcile_gate.policy import PatchPolicy
     from backend.services.crawler.official_reconcile_gate.types import RetailRecord
 
 
@@ -17,6 +18,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     try:
         rows, input_format = _load_input_rows(args.input)
+        policy, policy_allowlist = _build_patch_policy(args.allow_path or [])
     except (OSError, ValueError) as e:
         print(f"Input error: {e}", file=sys.stderr)
         return 2
@@ -36,6 +38,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             timeout_seconds=float(args.timeout_s),
             user_agent=args.user_agent,
             max_redirects=int(args.max_redirects),
+            policy=policy,
         ) as engine:
             for obj, where in selected:
                 listing = _parse_listing(obj, where=where)
@@ -50,6 +53,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "diff_count": result.row.diff_count,
                         "diff_entries": [asdict(d) for d in result.diffs],
                         "patch_count": result.row.patch_count,
+                        "policy_allowlist": policy_allowlist,
                         "error": result.row.error,
                         "audit": asdict(result.audit),
                     }
@@ -83,7 +87,36 @@ def _parse_args(argv: Optional[list[str]]) -> argparse.Namespace:
     p.add_argument("--timeout-s", type=float, default=5.0, help="HTTP timeout seconds (default: 5)")
     p.add_argument("--max-redirects", type=int, default=5, help="HTTP max redirects")
     p.add_argument("--user-agent", default=None, help="Override crawler User-Agent")
+    p.add_argument(
+        "--allow-path",
+        action="append",
+        default=[],
+        help='Allow patch path rule in form "CATEGORY:/json/pointer"; repeatable',
+    )
     return p.parse_args(argv)
+
+
+def _build_patch_policy(values: list[str]) -> tuple["PatchPolicy", dict[str, list[str]]]:
+    from backend.services.crawler.official_reconcile_gate.policy import PatchPolicy
+
+    allow: dict[str, set[str]] = {}
+    for raw in values:
+        if ":" not in raw:
+            raise ValueError(f"invalid --allow-path {raw!r}: expected CATEGORY:/json/pointer")
+        category_raw, path_raw = raw.split(":", 1)
+        category = category_raw.strip().upper()
+        path = path_raw.strip()
+
+        if not category:
+            raise ValueError(f"invalid --allow-path {raw!r}: empty category")
+        if not path.startswith("/"):
+            raise ValueError(f"invalid --allow-path {raw!r}: path must start with '/'")
+
+        allow.setdefault(category, set()).add(path)
+
+    policy_map = {cat: frozenset(paths) for cat, paths in allow.items()}
+    normalized = {cat: sorted(paths) for cat, paths in sorted(allow.items())}
+    return PatchPolicy(allowed_paths_by_category=policy_map), normalized
 
 
 def _load_input_rows(path: str) -> tuple[list[tuple[dict[str, Any], str]], str]:

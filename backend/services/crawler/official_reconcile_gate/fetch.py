@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -62,28 +63,48 @@ class OfficialFetcher:
         if self._client is None:
             raise FetchError("httpx is required for fetch operations")
 
-        parsed = _validate_url(url)
-        _guard_ssrf_host(parsed.hostname or "")
+        current_url = url
+        redirects = 0
 
-        try:
-            resp = self._client.get(url)
-        except httpx.HTTPError as e:
-            raise FetchError(str(e)) from e
+        while True:
+            _guard_ssrf_url(current_url)
 
-        return FetchedResponse(
-            url=url,
-            final_url=str(resp.url),
-            status_code=resp.status_code,
-            fetched_at=datetime.now(timezone.utc).isoformat(),
-            headers={k.lower(): v for k, v in resp.headers.items()},
-            body=resp.content,
-        )
+            try:
+                resp = self._client.get(current_url, follow_redirects=False)
+            except httpx.HTTPError as e:
+                raise FetchError(str(e)) from e
+
+            location = resp.headers.get("location")
+            if _is_redirect_response(resp.status_code) and location:
+                if redirects >= self._max_redirects:
+                    raise FetchError("too many redirects")
+
+                try:
+                    next_url = str(httpx.URL(current_url).join(location))
+                except Exception as e:
+                    raise FetchError(f"invalid redirect location: {location!r}") from e
+
+                _guard_ssrf_url(next_url)
+                current_url = next_url
+                redirects += 1
+                continue
+
+            final_url = str(resp.url) if str(resp.url) else current_url
+            _guard_ssrf_url(final_url)
+            return FetchedResponse(
+                url=url,
+                final_url=final_url,
+                status_code=resp.status_code,
+                fetched_at=datetime.now(timezone.utc).isoformat(),
+                headers={k.lower(): v for k, v in resp.headers.items()},
+                body=resp.content,
+            )
 
     def _build_client(self):
         if httpx is None:
             return None
         return httpx.Client(
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=httpx.Timeout(self._timeout_seconds),
             max_redirects=self._max_redirects,
             headers={"User-Agent": self._user_agent},
@@ -91,6 +112,11 @@ class OfficialFetcher:
 
 
 _ALLOWED_SCHEMES = ("http", "https")
+_REDIRECT_STATUS_CODES = frozenset((301, 302, 303, 307, 308))
+
+
+def _is_redirect_response(status_code: int) -> bool:
+    return status_code in _REDIRECT_STATUS_CODES
 
 
 def _validate_url(url: str):
@@ -105,8 +131,13 @@ def _validate_url(url: str):
     return parsed
 
 
+def _guard_ssrf_url(url: str) -> None:
+    parsed = _validate_url(url)
+    _guard_ssrf_host(parsed.hostname or "")
+
+
 def _guard_ssrf_host(hostname: str) -> None:
-    host = (hostname or "").strip().lower()
+    host = _normalize_hostname(hostname)
     if not host:
         raise FetchError("URL missing hostname")
 
@@ -116,10 +147,45 @@ def _guard_ssrf_host(hostname: str) -> None:
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
+        _guard_ssrf_dns(host)
         return
 
     if _ip_blocked(ip):
         raise SSRFBlockedError(f"blocked IP address: {ip}")
+
+
+def _normalize_hostname(hostname: str) -> str:
+    return (hostname or "").strip().lower().rstrip(".")
+
+
+def _to_idna_ascii(host: str) -> str:
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError as e:
+        raise FetchError(f"invalid hostname: {host!r}") from e
+
+
+def _guard_ssrf_dns(host: str) -> None:
+    ascii_host = _to_idna_ascii(host)
+    try:
+        infos = socket.getaddrinfo(ascii_host, None, type=socket.SOCK_STREAM)
+    except OSError as e:
+        raise FetchError(f"DNS lookup failed for host {host!r}: {e}") from e
+
+    if not infos:
+        raise FetchError(f"DNS lookup returned no addresses for host {host!r}")
+
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            continue
+        ip_text = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_text)
+        except ValueError:
+            continue
+        if _ip_blocked(ip):
+            raise SSRFBlockedError(f"blocked resolved IP address: {ip} (host={host!r})")
 
 
 def _ip_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

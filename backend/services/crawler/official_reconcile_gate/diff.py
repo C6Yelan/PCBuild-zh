@@ -42,6 +42,8 @@ def _walk(retail: Any, official: Any, *, path: str, out: list[DiffEntry]) -> Non
             path=path or "/",
             retail_value=None if retail is _MISSING else retail,
             official_value=None if official is _MISSING else official,
+            retail_missing=retail is _MISSING,
+            official_missing=official is _MISSING,
             severity=_infer_severity(path or "/"),
         )
     )

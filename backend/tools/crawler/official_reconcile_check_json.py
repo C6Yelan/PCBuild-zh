@@ -48,6 +48,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "status": result.row.status,
                         "official_url": result.row.official_url,
                         "diff_count": result.row.diff_count,
+                        "diff_entries": [asdict(d) for d in result.diffs],
                         "patch_count": result.row.patch_count,
                         "error": result.row.error,
                         "audit": asdict(result.audit),

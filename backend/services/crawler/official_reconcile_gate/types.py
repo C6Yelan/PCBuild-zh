@@ -59,6 +59,8 @@ class DiffEntry:
     path: str
     retail_value: Any
     official_value: Any
+    retail_missing: bool
+    official_missing: bool
     severity: DiffSeverity
 
 

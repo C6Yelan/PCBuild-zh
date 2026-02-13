@@ -30,9 +30,9 @@ def apply_patch_ops(record: dict[str, Any], ops: list[PatchOp]) -> dict[str, Any
 
 
 def _pick_op(d: DiffEntry) -> str:
-    if d.retail_value is None and d.official_value is not None:
+    if d.retail_missing and not d.official_missing:
         return "add"
-    if d.retail_value is not None and d.official_value is None:
+    if not d.retail_missing and d.official_missing:
         return "remove"
     return "replace"
 

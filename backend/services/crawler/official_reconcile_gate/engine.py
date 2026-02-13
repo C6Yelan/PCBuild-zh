@@ -233,7 +233,6 @@ def _build_generic_diffs(record: RetailRecord, *, official_url: str, official_do
     retail_view = {
         "title": record.title,
         "official_url": official_url,
-        "content_type": None,
     }
     official_view = {
         "title": official_doc.title,

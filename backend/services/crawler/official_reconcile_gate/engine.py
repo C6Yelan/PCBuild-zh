@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from .fetch import FetchTextError
 from .registry import get_category_matcher, get_source_adapter
 from .types import (
     DecisionAction,
@@ -96,7 +95,6 @@ def reconcile_one(item: ListingInput, official_sources: list[str]) -> T6Result:
 
         decisions: list[MatchDecisionWithOfficial] = []
         errors: list[dict[str, object]] = []
-        robots_blocked: list[dict[str, object]] = []
 
         for adapter in adapters:
             try:
@@ -116,25 +114,6 @@ def reconcile_one(item: ListingInput, official_sources: list[str]) -> T6Result:
                     score = matcher.score(item, candidate, signals)
                     decision = matcher.decide(item, candidate, signals, score)
                     decisions.append(decision)
-                except FetchTextError as exc:
-                    if exc.error_type == "robots_disallow":
-                        robots_blocked.append(
-                            {
-                                "official_source": adapter.official_source,
-                                "candidate_url": candidate.get("candidate_url", ""),
-                                "error_type": exc.error_type,
-                                "message": str(exc),
-                            }
-                        )
-                        continue
-                    errors.append(
-                        {
-                            "type": "CandidateFetchError",
-                            "fetch_error_type": exc.error_type,
-                            "message": f"{adapter.official_source}: {exc}",
-                            "candidate_url": candidate.get("candidate_url", ""),
-                        }
-                    )
                 except Exception as exc:
                     errors.append(
                         {
@@ -145,19 +124,6 @@ def reconcile_one(item: ListingInput, official_sources: list[str]) -> T6Result:
                     )
 
         if not decisions:
-            if not errors and robots_blocked:
-                return _make_result(
-                    match=_make_match(
-                        status="unmatched",
-                        confidence=0.0,
-                        reason_code="ROBOTS_DISALLOW",
-                        evidence={"robots_blocked": robots_blocked},
-                    ),
-                    decision_action="skip",
-                    decision_reason="all candidates blocked by robots.txt",
-                    error=None,
-                )
-
             error_payload: dict[str, object] | None = None
             decision_action: DecisionAction = "keep_retail"
             decision_reason = "no candidate decision produced"

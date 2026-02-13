@@ -24,26 +24,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"input error: {exc}", file=sys.stderr)
         return 2
 
-    if args.coolpc_cpu_eachview:
-        from backend.services.crawler.official_reconcile_gate.coolpc_cpu_eachview import (
-            attach_official_urls_from_eachview,
-        )
-
-        attach_counters = attach_official_urls_from_eachview(
-            raw_items, eachview_path=args.coolpc_cpu_eachview
-        )
-        print(
-            (
-                "cpu_eachview_attach "
-                f"attached={attach_counters.get('attached', 0)} "
-                f"total_cpu={attach_counters.get('total_cpu', 0)} "
-                f"already_present={attach_counters.get('already_present', 0)} "
-                f"no_ibuy={attach_counters.get('no_ibuy', 0)} "
-                f"no_match={attach_counters.get('no_match', 0)}"
-            ),
-            file=sys.stderr,
-        )
-
     items: list[ListingInput] = [cast(ListingInput, item) for item in raw_items]
     official_sources: list[str] = list(args.official_source or [])
     results, counters = reconcile_many(items, official_sources)
@@ -87,7 +67,6 @@ def _parse_args(argv: Optional[list[str]]) -> argparse.Namespace:
     parser.add_argument("--input", required=True)
     parser.add_argument("--report", required=True)
     parser.add_argument("--official-source", action="append", default=[])
-    parser.add_argument("--coolpc-cpu-eachview")
     return parser.parse_args(argv)
 
 

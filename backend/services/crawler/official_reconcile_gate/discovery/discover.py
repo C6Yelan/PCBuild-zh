@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
@@ -21,7 +21,7 @@ from backend.services.crawler.official_reconcile_gate.planning.registry import (
 from backend.services.crawler.official_reconcile_gate.planning.types import OfficialRegistry
 
 from .sitemap import SitemapParseError, decode_sitemap_bytes, parse_sitemap
-from .types import DiscoveryEvidence, DiscoveryResult, SitemapCandidate
+from .types import DiscoveryEvidence, DiscoveryPlanReport, DiscoveryResult, SitemapCandidate
 
 _REDIRECT_CODES = {301, 302, 303, 307, 308}
 _SITEMAP_ENTRY_PATHS = (
@@ -51,6 +51,19 @@ class _PlanInput:
     query_terms: list[str]
     allowed_domains: list[str]
     sitemap_urls: list[str]
+
+
+@dataclass
+class _PlanDiscoveryState:
+    entrypoints_tried: list[dict[str, Any]] = field(default_factory=list)
+    errors: list[dict[str, Any]] = field(default_factory=list)
+    attempted_urls: set[str] = field(default_factory=set)
+    fetched_sitemaps: int = 0
+    parsed_urlsets: int = 0
+    parsed_indexes: int = 0
+    candidates_emitted: int = 0
+    registry_used: bool = False
+    default_used: bool = False
 
 
 class _SitemapFetchError(RuntimeError):
@@ -99,95 +112,96 @@ def discover_candidates_from_plans(
             plan = _normalize_plan(raw_plan, idx=idx, registry=registry)
             if plan is None:
                 result.skipped_plans += 1
+                _append_skipped_plan_report(result, raw_plan=raw_plan, idx=idx)
                 continue
 
             result.ok_plans += 1
             scored_rows: list[_ScoredRow] = []
-            parsed_any = False
+            plan_state = _PlanDiscoveryState()
             allowed_hosts = {d.lower() for d in plan.allowed_domains if d}
-            entry_urls, used_seeds = _resolve_entry_urls_for_plan(plan)
-            if used_seeds:
+            registry_entry_urls = _dedupe_urls(plan.sitemap_urls)
+            default_entry_urls = _dedupe_urls(_build_default_entry_urls(plan.allowed_domains))
+
+            if registry_entry_urls:
+                plan_state.registry_used = True
                 result.seeds_used_count += 1
-            else:
-                result.default_entrypoints_used_count += 1
+                _try_entrypoints(
+                    result=result,
+                    plan_state=plan_state,
+                    scored_rows=scored_rows,
+                    client=client,
+                    allowed_hosts=allowed_hosts,
+                    entry_urls=registry_entry_urls,
+                    source_label="registry",
+                    max_sitemaps_per_domain=max_sitemaps_per_domain,
+                    query_terms=plan.query_terms,
+                    topk=topk,
+                    min_score=min_score,
+                    timeout_seconds=timeout_seconds,
+                    max_bytes=max_bytes,
+                    max_redirects=max_redirects,
+                )
 
-            for entry_url in entry_urls:
-                try:
-                    entry_kind, entry_values, request_count = _fetch_and_parse_sitemap(
-                        client=client,
-                        sitemap_url=entry_url,
-                        allowed_hosts=allowed_hosts,
-                        timeout_seconds=timeout_seconds,
-                        max_bytes=max_bytes,
-                        max_redirects=max_redirects,
+                should_fallback_to_default = (
+                    plan_state.parsed_urlsets == 0
+                    and plan_state.parsed_indexes == 0
+                    and not scored_rows
+                )
+                if should_fallback_to_default:
+                    fallback_entry_urls = _filter_unattempted_urls(
+                        default_entry_urls,
+                        attempted=plan_state.attempted_urls,
                     )
-                    result.fetched_sitemaps += request_count
-                except _SitemapFetchError as exc:
-                    result.fetched_sitemaps += exc.request_count
-                    result.add_error(exc.reason)
-                    continue
-                except SitemapParseError as exc:
-                    result.add_error(_map_parse_error_reason(exc))
-                    continue
-
-                if entry_kind == "urlset":
-                    parsed_any = True
-                    result.parsed_urlsets += 1
-                    _append_scored_rows(
-                        scored_rows,
-                        urls=entry_values,
-                        query_terms=plan.query_terms,
-                        discovery_source=entry_url,
-                        topk=topk,
-                        min_score=min_score,
-                    )
-                    break
-
-                parsed_any = True
-                result.parsed_indexes += 1
-                child_urls = entry_values[:max_sitemaps_per_domain]
-                for child_sitemap_url in child_urls:
-                    try:
-                        child_kind, child_values, child_request_count = _fetch_and_parse_sitemap(
+                    if fallback_entry_urls:
+                        plan_state.default_used = True
+                        result.default_entrypoints_used_count += 1
+                        _try_entrypoints(
+                            result=result,
+                            plan_state=plan_state,
+                            scored_rows=scored_rows,
                             client=client,
-                            sitemap_url=child_sitemap_url,
                             allowed_hosts=allowed_hosts,
+                            entry_urls=fallback_entry_urls,
+                            source_label="default",
+                            max_sitemaps_per_domain=max_sitemaps_per_domain,
+                            query_terms=plan.query_terms,
+                            topk=topk,
+                            min_score=min_score,
                             timeout_seconds=timeout_seconds,
                             max_bytes=max_bytes,
                             max_redirects=max_redirects,
                         )
-                        result.fetched_sitemaps += child_request_count
-                    except _SitemapFetchError as exc:
-                        result.fetched_sitemaps += exc.request_count
-                        result.add_error(exc.reason)
-                        continue
-                    except SitemapParseError as exc:
-                        result.add_error(_map_parse_error_reason(exc))
-                        continue
+            else:
+                if default_entry_urls:
+                    plan_state.default_used = True
+                    result.default_entrypoints_used_count += 1
+                _try_entrypoints(
+                    result=result,
+                    plan_state=plan_state,
+                    scored_rows=scored_rows,
+                    client=client,
+                    allowed_hosts=allowed_hosts,
+                    entry_urls=default_entry_urls,
+                    source_label="default",
+                    max_sitemaps_per_domain=max_sitemaps_per_domain,
+                    query_terms=plan.query_terms,
+                    topk=topk,
+                    min_score=min_score,
+                    timeout_seconds=timeout_seconds,
+                    max_bytes=max_bytes,
+                    max_redirects=max_redirects,
+                )
 
-                    if child_kind == "urlset":
-                        result.parsed_urlsets += 1
-                        _append_scored_rows(
-                            scored_rows,
-                            urls=child_values,
-                            query_terms=plan.query_terms,
-                            discovery_source=child_sitemap_url,
-                            topk=topk,
-                            min_score=min_score,
-                        )
-                        continue
-
-                    result.parsed_indexes += 1
-                    result.add_error("nested_index_ignored")
-                break
-
-            if not parsed_any:
+            if plan_state.parsed_urlsets == 0 and plan_state.parsed_indexes == 0:
                 result.add_error("no_sitemap_found")
+                _append_plan_report(result, plan, plan_state)
                 continue
 
             top_rows = _select_top_rows(scored_rows, topk=topk)
+            plan_state.candidates_emitted = len(top_rows)
             if not top_rows:
                 result.plans_no_hits += 1
+                _append_plan_report(result, plan, plan_state)
                 continue
             result.plans_with_hits += 1
             for rank, row in enumerate(top_rows):
@@ -211,6 +225,7 @@ def discover_candidates_from_plans(
                         evidence=evidence,
                     )
                 )
+            _append_plan_report(result, plan, plan_state)
     finally:
         _close_fetch_client(client)
 
@@ -231,13 +246,309 @@ def _close_fetch_client(client: Any) -> None:
         close_fn()
 
 
-def _resolve_entry_urls_for_plan(plan: _PlanInput) -> tuple[list[str], bool]:
-    if plan.sitemap_urls:
-        return (_dedupe_urls(plan.sitemap_urls), True)
+def _build_default_entry_urls(allowed_domains: list[str]) -> list[str]:
     urls: list[str] = []
-    for domain in plan.allowed_domains:
+    for domain in allowed_domains:
         urls.extend(_build_sitemap_entrypoints(domain.lower()))
-    return (_dedupe_urls(urls), False)
+    return urls
+
+
+def _filter_unattempted_urls(urls: list[str], *, attempted: set[str]) -> list[str]:
+    out: list[str] = []
+    for url in urls:
+        lowered = url.strip().lower()
+        if not lowered or lowered in attempted:
+            continue
+        out.append(url)
+    return out
+
+
+def _try_entrypoints(
+    *,
+    result: DiscoveryResult,
+    plan_state: _PlanDiscoveryState,
+    scored_rows: list[_ScoredRow],
+    client: Any,
+    allowed_hosts: set[str],
+    entry_urls: list[str],
+    source_label: str,
+    max_sitemaps_per_domain: int,
+    query_terms: list[str],
+    topk: int,
+    min_score: int,
+    timeout_seconds: float,
+    max_bytes: int,
+    max_redirects: int,
+) -> None:
+    for entry_url in entry_urls:
+        normalized = entry_url.strip().lower()
+        if not normalized:
+            continue
+        if normalized in plan_state.attempted_urls:
+            continue
+        plan_state.attempted_urls.add(normalized)
+
+        try:
+            entry_kind, entry_values, request_count = _fetch_and_parse_sitemap(
+                client=client,
+                sitemap_url=entry_url,
+                allowed_hosts=allowed_hosts,
+                timeout_seconds=timeout_seconds,
+                max_bytes=max_bytes,
+                max_redirects=max_redirects,
+            )
+            result.fetched_sitemaps += request_count
+            plan_state.fetched_sitemaps += request_count
+        except _SitemapFetchError as exc:
+            result.fetched_sitemaps += exc.request_count
+            plan_state.fetched_sitemaps += exc.request_count
+            result.add_error(exc.reason)
+            _append_fetch_error(plan_state, source_label=source_label, url=entry_url, exc=exc)
+            continue
+        except SitemapParseError as exc:
+            mapped_reason = _map_parse_error_reason(exc)
+            result.add_error(mapped_reason)
+            _append_parse_error(plan_state, source_label=source_label, url=entry_url, exc=exc, mapped_reason=mapped_reason)
+            continue
+
+        if entry_kind == "urlset":
+            plan_state.parsed_urlsets += 1
+            result.parsed_urlsets += 1
+            plan_state.entrypoints_tried.append(
+                {
+                    "source": source_label,
+                    "url": entry_url,
+                    "kind": "urlset",
+                    "status": "ok",
+                }
+            )
+            _append_scored_rows(
+                scored_rows,
+                urls=entry_values,
+                query_terms=query_terms,
+                discovery_source=entry_url,
+                topk=topk,
+                min_score=min_score,
+            )
+            break
+
+        plan_state.parsed_indexes += 1
+        result.parsed_indexes += 1
+        plan_state.entrypoints_tried.append(
+            {
+                "source": source_label,
+                "url": entry_url,
+                "kind": "index",
+                "status": "ok",
+                "child_count": len(entry_values),
+            }
+        )
+        child_urls = entry_values[:max_sitemaps_per_domain]
+        for child_sitemap_url in child_urls:
+            child_norm = child_sitemap_url.strip().lower()
+            if not child_norm:
+                continue
+            if child_norm in plan_state.attempted_urls:
+                continue
+            plan_state.attempted_urls.add(child_norm)
+            try:
+                child_kind, child_values, child_request_count = _fetch_and_parse_sitemap(
+                    client=client,
+                    sitemap_url=child_sitemap_url,
+                    allowed_hosts=allowed_hosts,
+                    timeout_seconds=timeout_seconds,
+                    max_bytes=max_bytes,
+                    max_redirects=max_redirects,
+                )
+                result.fetched_sitemaps += child_request_count
+                plan_state.fetched_sitemaps += child_request_count
+            except _SitemapFetchError as exc:
+                result.fetched_sitemaps += exc.request_count
+                plan_state.fetched_sitemaps += exc.request_count
+                result.add_error(exc.reason)
+                _append_fetch_error(plan_state, source_label=source_label, url=child_sitemap_url, exc=exc)
+                continue
+            except SitemapParseError as exc:
+                mapped_reason = _map_parse_error_reason(exc)
+                result.add_error(mapped_reason)
+                _append_parse_error(
+                    plan_state,
+                    source_label=source_label,
+                    url=child_sitemap_url,
+                    exc=exc,
+                    mapped_reason=mapped_reason,
+                )
+                continue
+
+            if child_kind == "urlset":
+                plan_state.parsed_urlsets += 1
+                result.parsed_urlsets += 1
+                plan_state.entrypoints_tried.append(
+                    {
+                        "source": source_label,
+                        "url": child_sitemap_url,
+                        "kind": "urlset",
+                        "status": "ok",
+                        "via": entry_url,
+                    }
+                )
+                _append_scored_rows(
+                    scored_rows,
+                    urls=child_values,
+                    query_terms=query_terms,
+                    discovery_source=child_sitemap_url,
+                    topk=topk,
+                    min_score=min_score,
+                )
+                continue
+
+            plan_state.parsed_indexes += 1
+            result.parsed_indexes += 1
+            result.add_error("nested_index_ignored")
+            plan_state.entrypoints_tried.append(
+                {
+                    "source": source_label,
+                    "url": child_sitemap_url,
+                    "kind": "index",
+                    "status": "nested_index_ignored",
+                    "via": entry_url,
+                }
+            )
+            plan_state.errors.append(
+                {
+                    "reason": "nested_index_ignored",
+                    "url": child_sitemap_url,
+                    "source": source_label,
+                }
+            )
+        break
+
+
+def _append_fetch_error(
+    plan_state: _PlanDiscoveryState,
+    *,
+    source_label: str,
+    url: str,
+    exc: _SitemapFetchError,
+) -> None:
+    status_code: int | None = None
+    if exc.reason == "http_status":
+        try:
+            status_code = int(exc.detail)
+        except ValueError:
+            status_code = None
+
+    attempt = {
+        "source": source_label,
+        "url": url,
+        "kind": "entrypoint",
+        "status": "error",
+        "reason": exc.reason,
+    }
+    if status_code is not None:
+        attempt["status_code"] = status_code
+    if exc.detail:
+        attempt["detail"] = exc.detail
+    plan_state.entrypoints_tried.append(attempt)
+
+    error_obj = {
+        "reason": exc.reason,
+        "url": url,
+        "source": source_label,
+    }
+    if status_code is not None:
+        error_obj["status_code"] = status_code
+    if exc.detail:
+        error_obj["detail"] = exc.detail
+    plan_state.errors.append(error_obj)
+
+
+def _append_parse_error(
+    plan_state: _PlanDiscoveryState,
+    *,
+    source_label: str,
+    url: str,
+    exc: SitemapParseError,
+    mapped_reason: str,
+) -> None:
+    plan_state.entrypoints_tried.append(
+        {
+            "source": source_label,
+            "url": url,
+            "kind": "entrypoint",
+            "status": "error",
+            "reason": mapped_reason,
+            "detail": exc.detail,
+        }
+    )
+    plan_state.errors.append(
+        {
+            "reason": mapped_reason,
+            "url": url,
+            "source": source_label,
+            "detail": exc.detail,
+        }
+    )
+
+
+def _append_plan_report(result: DiscoveryResult, plan: _PlanInput, plan_state: _PlanDiscoveryState) -> None:
+    result.plan_reports.append(
+        DiscoveryPlanReport(
+            plan_index=plan.plan_index,
+            brand_key=plan.brand_key,
+            category=plan.category,
+            decision="ok",
+            allowed_domains=list(plan.allowed_domains),
+            registry_used=plan_state.registry_used,
+            default_used=plan_state.default_used,
+            entrypoints_tried=list(plan_state.entrypoints_tried),
+            fetched_sitemaps=plan_state.fetched_sitemaps,
+            parsed_urlsets=plan_state.parsed_urlsets,
+            parsed_indexes=plan_state.parsed_indexes,
+            candidates_emitted=plan_state.candidates_emitted,
+            errors=list(plan_state.errors),
+        )
+    )
+
+
+def _append_skipped_plan_report(result: DiscoveryResult, *, raw_plan: Any, idx: int) -> None:
+    if isinstance(raw_plan, dict):
+        decision_value = raw_plan.get("decision")
+        decision = decision_value.strip() if isinstance(decision_value, str) and decision_value.strip() else None
+        brand_key_value = raw_plan.get("brand_key")
+        brand_key = brand_key_value.strip() if isinstance(brand_key_value, str) and brand_key_value.strip() else None
+        category_value = raw_plan.get("category")
+        category = category_value.strip() if isinstance(category_value, str) else ""
+        allowed_raw = raw_plan.get("allowed_domains")
+        if isinstance(allowed_raw, list):
+            allowed_domains = [str(item).strip() for item in allowed_raw if isinstance(item, str) and item.strip()]
+        else:
+            allowed_domains = []
+        errors = [{"reason": "plan_skipped", "detail": decision or "invalid_plan"}]
+    else:
+        decision = None
+        brand_key = None
+        category = ""
+        allowed_domains = []
+        errors = [{"reason": "plan_skipped", "detail": "invalid_plan"}]
+
+    result.plan_reports.append(
+        DiscoveryPlanReport(
+            plan_index=idx,
+            brand_key=brand_key,
+            category=category,
+            decision=decision,
+            allowed_domains=allowed_domains,
+            registry_used=False,
+            default_used=False,
+            entrypoints_tried=[],
+            fetched_sitemaps=0,
+            parsed_urlsets=0,
+            parsed_indexes=0,
+            candidates_emitted=0,
+            errors=errors,
+        )
+    )
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:

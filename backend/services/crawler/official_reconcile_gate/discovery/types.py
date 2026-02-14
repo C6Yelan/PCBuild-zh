@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 DiscoveryMethod = Literal["sitemap"]
 
@@ -29,6 +29,23 @@ class SitemapCandidate:
 
 
 @dataclass
+class DiscoveryPlanReport:
+    plan_index: int
+    brand_key: str | None
+    category: str
+    decision: str | None = None
+    allowed_domains: list[str] = field(default_factory=list)
+    registry_used: bool = False
+    default_used: bool = False
+    entrypoints_tried: list[dict[str, Any]] = field(default_factory=list)
+    fetched_sitemaps: int = 0
+    parsed_urlsets: int = 0
+    parsed_indexes: int = 0
+    candidates_emitted: int = 0
+    errors: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class DiscoveryResult:
     total_plans: int = 0
     ok_plans: int = 0
@@ -44,6 +61,7 @@ class DiscoveryResult:
     errors_count: int = 0
     error_reasons: dict[str, int] = field(default_factory=dict)
     candidates: list[SitemapCandidate] = field(default_factory=list)
+    plan_reports: list[DiscoveryPlanReport] = field(default_factory=list)
 
     def add_error(self, reason: str) -> None:
         self.errors_count += 1

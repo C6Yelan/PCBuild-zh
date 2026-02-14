@@ -32,6 +32,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             max_redirects=int(args.max_redirects),
         )
         _write_candidates_jsonl(args.output, result.candidates)
+        if args.plan_report:
+            _write_plan_report(args.plan_report, result.plan_reports)
         _print_stats(result)
     except (ValueError, OSError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -60,6 +62,7 @@ def _parse_args(argv: Optional[list[str]]) -> argparse.Namespace:
     p.add_argument("--timeout-seconds", type=float, default=10.0)
     p.add_argument("--max-bytes", type=int, default=5_242_880)
     p.add_argument("--max-redirects", type=int, default=5)
+    p.add_argument("--plan-report", help="optional per-plan diagnostics JSON output path")
     return p.parse_args(argv)
 
 
@@ -75,6 +78,13 @@ def _write_candidates_jsonl(path: str, candidates: list[Any]) -> None:
     with open(path, "w", encoding="utf-8") as f:
         for candidate in candidates:
             f.write(json.dumps(asdict(candidate), ensure_ascii=False) + "\n")
+
+
+def _write_plan_report(path: str, plan_reports: list[Any]) -> None:
+    payload = [asdict(report) for report in plan_reports]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.write("\n")
 
 
 def _print_stats(result: Any) -> None:

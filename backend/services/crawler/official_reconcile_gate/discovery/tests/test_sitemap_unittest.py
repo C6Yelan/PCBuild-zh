@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
-from backend.services.crawler.official_reconcile_gate.discovery.discover import score_candidate_urls
+from backend.services.crawler.official_reconcile_gate.discovery import discover as discover_mod
+from backend.services.crawler.official_reconcile_gate.discovery.discover import discover_candidates_from_plans, score_candidate_urls
 from backend.services.crawler.official_reconcile_gate.discovery.sitemap import SitemapParseError, parse_sitemap
+from backend.services.crawler.official_reconcile_gate.planning.types import BrandRegistryEntry, OfficialRegistry
 
 
 class TestSitemapParserAndScoring(unittest.TestCase):
@@ -81,6 +84,83 @@ class TestSitemapParserAndScoring(unittest.TestCase):
         self.assertEqual(ranked[0][0], "https://seasonic.com/products/focus-gx/")
         self.assertEqual(ranked[0][1], 1)
         self.assertEqual(ranked[0][2], ["focus"])
+
+    def test_registry_entrypoint_failure_fallbacks_to_default_entrypoints(self) -> None:
+        plans = [
+            {
+                "retail_url": "https://example.invalid/psu/1",
+                "source": "coolpc",
+                "category": "PSU",
+                "title": "Seasonic FOCUS GX-750",
+                "sku_hint": "FOCUS GX-750",
+                "brand_key": "seasonic",
+                "brand_source": "title_or_sku_hint+registry_alias",
+                "brand_raw": "seasonic",
+                "allowed_domains": ["example.com"],
+                "query_terms": ["FOCUS GX-750"],
+                "decision": "ok",
+                "decision_notes": "ok",
+            }
+        ]
+        registry = OfficialRegistry(
+            version=1,
+            brands=[
+                BrandRegistryEntry(
+                    brand_key="seasonic",
+                    brand_aliases=["Seasonic"],
+                    allowed_domains=["example.com"],
+                    sitemap_urls=["https://example.com/custom-seed.xml"],
+                )
+            ],
+            alias_map={"SEASONIC": "seasonic"},
+        )
+
+        def fake_fetch_and_parse_sitemap(
+            *,
+            client,
+            sitemap_url: str,
+            allowed_hosts: set[str],
+            timeout_seconds: float,
+            max_bytes: int,
+            max_redirects: int,
+        ) -> tuple[str, list[str], int]:
+            if sitemap_url == "https://example.com/custom-seed.xml":
+                raise discover_mod._SitemapFetchError("http_status", "404", request_count=1)
+            if sitemap_url == "https://example.com/sitemap_index.xml":
+                return ("index", ["https://example.com/products.xml"], 1)
+            if sitemap_url == "https://example.com/products.xml":
+                return ("urlset", ["https://example.com/products/focus-gx-750"], 1)
+            raise discover_mod._SitemapFetchError("http_status", "404", request_count=1)
+
+        with mock.patch.object(discover_mod, "_build_fetch_client", return_value=object()), mock.patch.object(
+            discover_mod, "_close_fetch_client", return_value=None
+        ), mock.patch.object(discover_mod, "_fetch_and_parse_sitemap", side_effect=fake_fetch_and_parse_sitemap):
+            result = discover_candidates_from_plans(
+                plans,
+                registry=registry,
+                max_sitemaps_per_domain=10,
+                topk=5,
+                min_score=0,
+                timeout_seconds=1.0,
+                max_bytes=1024,
+                max_redirects=1,
+            )
+
+        self.assertGreaterEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].plan_index, 0)
+        self.assertEqual(result.default_entrypoints_used_count, 1)
+        self.assertEqual(result.seeds_used_count, 1)
+
+        report = result.plan_reports[0]
+        self.assertEqual(report.plan_index, 0)
+        self.assertTrue(report.registry_used)
+        self.assertTrue(report.default_used)
+        self.assertGreaterEqual(report.parsed_indexes, 1)
+        self.assertGreaterEqual(report.parsed_urlsets, 1)
+        self.assertGreaterEqual(report.candidates_emitted, 1)
+        self.assertTrue(any(item.get("url") == "https://example.com/custom-seed.xml" for item in report.entrypoints_tried))
+        self.assertTrue(any(item.get("url") == "https://example.com/sitemap_index.xml" for item in report.entrypoints_tried))
+        self.assertTrue(any(err.get("reason") == "http_status" for err in report.errors))
 
 
 if __name__ == "__main__":

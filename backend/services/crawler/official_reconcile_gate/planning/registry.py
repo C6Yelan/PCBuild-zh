@@ -30,6 +30,15 @@ def get_allowed_domains(registry: OfficialRegistry, brand_key: str | None) -> li
     return []
 
 
+def get_sitemap_urls(registry: OfficialRegistry, brand_key: str | None) -> list[str]:
+    if not brand_key:
+        return []
+    for entry in registry.brands:
+        if entry.brand_key == brand_key:
+            return list(entry.sitemap_urls)
+    return []
+
+
 def load_official_registry(path: str | Path) -> OfficialRegistry:
     p = Path(path)
     with p.open("r", encoding="utf-8") as f:
@@ -69,10 +78,16 @@ def load_official_registry(path: str | Path) -> OfficialRegistry:
             raise ValueError(f"{where}.allowed_domains must be list")
         allowed_domains = [d.strip() for d in domains_obj if isinstance(d, str) and d.strip()]
 
+        sitemap_urls_obj = row.get("sitemap_urls", [])
+        if not isinstance(sitemap_urls_obj, list):
+            raise ValueError(f"{where}.sitemap_urls must be list")
+        sitemap_urls = [u.strip() for u in sitemap_urls_obj if isinstance(u, str) and u.strip()]
+
         entry = BrandRegistryEntry(
             brand_key=brand_key,
             brand_aliases=brand_aliases,
             allowed_domains=allowed_domains,
+            sitemap_urls=sitemap_urls,
         )
         entries.append(entry)
 

@@ -35,6 +35,7 @@ class BrandRegistryEntry:
     brand_key: str
     brand_aliases: list[str] = field(default_factory=list)
     allowed_domains: list[str] = field(default_factory=list)
+    sitemap_urls: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

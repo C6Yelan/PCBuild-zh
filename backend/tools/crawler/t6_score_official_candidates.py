@@ -34,6 +34,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         plans = _load_json_array(args.plans)
         candidates = list(_iter_json_rows(args.gated_candidates))
         evidence_rows = list(_iter_json_rows(args.evidence))
+        plan_failure_reason_by_plan_index = _load_plan_failure_reason_map(args.plan_failure_map)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -76,6 +77,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                     stats["errors_count"] += 1
                     decision = _internal_error_decision(plan, idx=idx)
                     ranked = []
+                decision = _apply_plan_failure_reason(
+                    decision,
+                    idx=idx,
+                    reason_by_plan_index=plan_failure_reason_by_plan_index,
+                )
 
                 _accumulate_decision_stats(stats, decision)
                 decision_f.write(json.dumps(asdict(decision), ensure_ascii=False) + "\n")
@@ -119,6 +125,7 @@ def _parse_args(argv: Optional[list[str]]) -> argparse.Namespace:
     p.add_argument("--ranked-output")
     p.add_argument("--topk", type=int, default=5)
     p.add_argument("--min-accept-score", type=int, default=3)
+    p.add_argument("--plan-failure-map", help="optional JSON map from plan_index to no-candidate reason")
     return p.parse_args(argv)
 
 
@@ -128,6 +135,28 @@ def _load_json_array(path: str) -> list[Any]:
     if not isinstance(payload, list):
         raise ValueError("plans must be a JSON array")
     return payload
+
+
+def _load_plan_failure_reason_map(path: str | None) -> dict[int, str]:
+    if not path:
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("plan-failure-map must be a JSON object")
+    out: dict[int, str] = {}
+    for raw_key, raw_value in payload.items():
+        if not isinstance(raw_value, str):
+            continue
+        text = raw_value.strip()
+        if not text:
+            continue
+        try:
+            key = int(str(raw_key))
+        except ValueError:
+            continue
+        out[key] = text
+    return out
 
 
 def _iter_json_rows(path: str) -> Iterator[dict[str, Any]]:
@@ -286,6 +315,38 @@ def _internal_error_decision(plan: dict[str, Any], *, idx: int) -> DecisionRecor
         confidence=0,
         top1_score=None,
         top_k_summary=[],
+    )
+
+
+def _apply_plan_failure_reason(
+    decision: DecisionRecord,
+    *,
+    idx: int,
+    reason_by_plan_index: dict[int, str],
+) -> DecisionRecord:
+    if decision.decision != "no_candidates":
+        return decision
+    if decision.decision_reason != "no robots_allowed candidates":
+        return decision
+
+    reason = reason_by_plan_index.get(decision.plan_index)
+    if reason is None:
+        reason = reason_by_plan_index.get(idx)
+    if not reason:
+        return decision
+
+    return DecisionRecord(
+        plan_index=decision.plan_index,
+        retail_url=decision.retail_url,
+        source=decision.source,
+        category=decision.category,
+        brand_key=decision.brand_key,
+        decision=decision.decision,
+        decision_reason=f"no_candidates: {reason}",
+        chosen_official_url=decision.chosen_official_url,
+        confidence=decision.confidence,
+        top1_score=decision.top1_score,
+        top_k_summary=list(decision.top_k_summary),
     )
 
 

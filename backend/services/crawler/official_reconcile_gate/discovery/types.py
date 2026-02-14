@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 DiscoveryMethod = Literal["sitemap"]
+DiscoveryErrorReason = Literal["blocked", "http_status", "request_error", "no_sitemap_found"]
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,6 @@ class DiscoveryResult:
     candidates: list[SitemapCandidate] = field(default_factory=list)
     plan_reports: list[DiscoveryPlanReport] = field(default_factory=list)
 
-    def add_error(self, reason: str) -> None:
+    def add_error(self, reason: DiscoveryErrorReason | str) -> None:
         self.errors_count += 1
         self.error_reasons[reason] = self.error_reasons.get(reason, 0) + 1

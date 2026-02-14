@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -25,6 +26,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     gated_candidates_path = run_dir / "gated_candidates.jsonl"
     evidence_path = run_dir / "evidence.jsonl"
     decisions_path = run_dir / "decisions.jsonl"
+    plan_report_path = run_dir / "discovery_plan_report.json"
+    plan_failure_map_path = run_dir / "plan_failure_reasons.json"
 
     stages = _build_stages(
         python_executable=sys.executable,
@@ -35,6 +38,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         gated_candidates_path=gated_candidates_path,
         evidence_path=evidence_path,
         decisions_path=decisions_path,
+        plan_report_path=plan_report_path,
+        plan_failure_map_path=plan_failure_map_path,
         topk=args.topk,
         min_accept_score=args.min_accept_score,
         timeout_seconds=args.timeout_seconds,
@@ -56,6 +61,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 file=sys.stderr,
             )
             return completed.returncode or 1
+        if stage.name == "Phase B":
+            plan_failure_map = _build_plan_failure_reason_by_plan_index(plan_report_path)
+            _write_plan_failure_reason_map(plan_failure_map_path, plan_failure_map)
 
     print(f"pipeline_completed run_dir={run_dir}", file=sys.stderr)
     return 0
@@ -127,6 +135,8 @@ def _build_stages(
     gated_candidates_path: Path,
     evidence_path: Path,
     decisions_path: Path,
+    plan_report_path: Path,
+    plan_failure_map_path: Path,
     topk: int,
     min_accept_score: int,
     timeout_seconds: float,
@@ -164,6 +174,8 @@ def _build_stages(
                 str(topk),
                 "--timeout-seconds",
                 str(timeout_seconds),
+                "--plan-report",
+                str(plan_report_path),
             ],
         ),
         _PipelineStage(
@@ -218,6 +230,8 @@ def _build_stages(
                 str(topk),
                 "--min-accept-score",
                 str(min_accept_score),
+                "--plan-failure-map",
+                str(plan_failure_map_path),
             ],
         ),
     ]
@@ -225,6 +239,78 @@ def _build_stages(
 
 def _print_stage_command(stage: _PipelineStage) -> None:
     print(f"[{stage.name}] {shlex.join(stage.cmd)}", file=sys.stderr)
+
+
+def _build_plan_failure_reason_by_plan_index(plan_report_path: Path) -> dict[str, str]:
+    if not plan_report_path.exists():
+        return {}
+    try:
+        payload = json.loads(plan_report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, list):
+        return {}
+
+    out: dict[str, str] = {}
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        plan_index = row.get("plan_index")
+        if not isinstance(plan_index, int):
+            continue
+        reason = _derive_plan_failure_reason(row)
+        if reason:
+            out[str(plan_index)] = reason
+    return out
+
+
+def _derive_plan_failure_reason(plan_report_row: dict[str, object]) -> str | None:
+    candidates_emitted = plan_report_row.get("candidates_emitted")
+    if isinstance(candidates_emitted, int) and candidates_emitted > 0:
+        return None
+
+    parsed_urlsets = plan_report_row.get("parsed_urlsets")
+    parsed_indexes = plan_report_row.get("parsed_indexes")
+    parsed_urlsets_int = parsed_urlsets if isinstance(parsed_urlsets, int) else 0
+    parsed_indexes_int = parsed_indexes if isinstance(parsed_indexes, int) else 0
+
+    errors = plan_report_row.get("errors")
+    error_rows = errors if isinstance(errors, list) else []
+    normalized_errors: list[dict[str, str]] = []
+    for item in error_rows:
+        if not isinstance(item, dict):
+            continue
+        reason_val = item.get("reason")
+        detail_val = item.get("detail")
+        reason = str(reason_val).strip() if isinstance(reason_val, str) else ""
+        detail = str(detail_val).strip() if isinstance(detail_val, str) else ""
+        if reason:
+            normalized_errors.append({"reason": reason, "detail": detail})
+
+    for item in normalized_errors:
+        if item["reason"] == "blocked":
+            detail = item["detail"] or "blocked"
+            return f"discovery_blocked/{detail}"
+    for item in normalized_errors:
+        if item["reason"] == "no_sitemap_found":
+            return "no_sitemap_found"
+    for item in normalized_errors:
+        if item["reason"] == "plan_skipped":
+            detail = item["detail"] or "unknown"
+            return f"plan_skipped/{detail}"
+    if parsed_urlsets_int == 0 and parsed_indexes_int == 0:
+        return "no_sitemap_found"
+    if normalized_errors:
+        first = normalized_errors[0]
+        if first["detail"]:
+            return f"{first['reason']}/{first['detail']}"
+        return first["reason"]
+    return None
+
+
+def _write_plan_failure_reason_map(path: Path, mapping: dict[str, str]) -> None:
+    payload = mapping if mapping else {}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

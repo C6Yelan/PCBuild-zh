@@ -4,7 +4,7 @@ import ipaddress
 import re
 import socket
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -67,17 +67,59 @@ class _PlanDiscoveryState:
 
 
 class _SitemapFetchError(RuntimeError):
-    def __init__(self, reason: str, detail: str = "", request_count: int = 0) -> None:
+    def __init__(
+        self,
+        reason: str,
+        detail: str = "",
+        request_count: int = 0,
+        response_headers: Mapping[str, str] | None = None,
+    ) -> None:
         message = reason if not detail else f"{reason}: {detail}"
         super().__init__(message)
         self.reason = reason
         self.detail = detail
         self.request_count = request_count
+        self.response_headers = _normalize_headers(response_headers)
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
         return None
+
+
+def classify_discovery_error(
+    status_code: int | None,
+    headers: Mapping[str, str] | None,
+) -> tuple[str, str]:
+    normalized_headers = _normalize_headers(headers)
+    if status_code == 403 and _is_cloudflare_block(headers=normalized_headers):
+        return ("blocked", "cloudflare_403")
+    if status_code is None:
+        return ("http_status", "")
+    return ("http_status", str(status_code))
+
+
+def _normalize_headers(headers: Mapping[str, str] | None) -> dict[str, str]:
+    if headers is None:
+        return {}
+    out: dict[str, str] = {}
+    for key, value in headers.items():
+        key_text = str(key).strip().lower()
+        if not key_text:
+            continue
+        out[key_text] = str(value).strip()
+    return out
+
+
+def _is_cloudflare_block(*, headers: Mapping[str, str]) -> bool:
+    server = headers.get("server", "")
+    if "cloudflare" in server.lower():
+        return True
+    for key in headers:
+        key_lc = key.lower()
+        if key_lc in {"cf-ray", "cf-cache-status"} or key_lc.startswith("cf-"):
+            return True
+    return False
 
 
 def discover_candidates_from_plans(
@@ -302,8 +344,16 @@ def _try_entrypoints(
         except _SitemapFetchError as exc:
             result.fetched_sitemaps += exc.request_count
             plan_state.fetched_sitemaps += exc.request_count
-            result.add_error(exc.reason)
-            _append_fetch_error(plan_state, source_label=source_label, url=entry_url, exc=exc)
+            mapped_reason, mapped_detail, status_code = _classify_fetch_error(exc)
+            result.add_error(mapped_reason)
+            _append_fetch_error(
+                plan_state,
+                source_label=source_label,
+                url=entry_url,
+                reason=mapped_reason,
+                detail=mapped_detail,
+                status_code=status_code,
+            )
             continue
         except SitemapParseError as exc:
             mapped_reason = _map_parse_error_reason(exc)
@@ -365,8 +415,16 @@ def _try_entrypoints(
             except _SitemapFetchError as exc:
                 result.fetched_sitemaps += exc.request_count
                 plan_state.fetched_sitemaps += exc.request_count
-                result.add_error(exc.reason)
-                _append_fetch_error(plan_state, source_label=source_label, url=child_sitemap_url, exc=exc)
+                mapped_reason, mapped_detail, status_code = _classify_fetch_error(exc)
+                result.add_error(mapped_reason)
+                _append_fetch_error(
+                    plan_state,
+                    source_label=source_label,
+                    url=child_sitemap_url,
+                    reason=mapped_reason,
+                    detail=mapped_detail,
+                    status_code=status_code,
+                )
                 continue
             except SitemapParseError as exc:
                 mapped_reason = _map_parse_error_reason(exc)
@@ -424,42 +482,51 @@ def _try_entrypoints(
         break
 
 
-def _append_fetch_error(
-    plan_state: _PlanDiscoveryState,
-    *,
-    source_label: str,
-    url: str,
-    exc: _SitemapFetchError,
-) -> None:
+def _classify_fetch_error(exc: _SitemapFetchError) -> tuple[str, str, int | None]:
     status_code: int | None = None
     if exc.reason == "http_status":
         try:
             status_code = int(exc.detail)
         except ValueError:
             status_code = None
+        reason, detail = classify_discovery_error(status_code, exc.response_headers)
+        if reason == "http_status":
+            return (reason, exc.detail, status_code)
+        return (reason, detail, status_code)
+    return (exc.reason, exc.detail, status_code)
 
+
+def _append_fetch_error(
+    plan_state: _PlanDiscoveryState,
+    *,
+    source_label: str,
+    url: str,
+    reason: str,
+    detail: str,
+    status_code: int | None,
+) -> None:
     attempt = {
         "source": source_label,
         "url": url,
         "kind": "entrypoint",
         "status": "error",
-        "reason": exc.reason,
+        "reason": reason,
     }
     if status_code is not None:
         attempt["status_code"] = status_code
-    if exc.detail:
-        attempt["detail"] = exc.detail
+    if detail:
+        attempt["detail"] = detail
     plan_state.entrypoints_tried.append(attempt)
 
     error_obj = {
-        "reason": exc.reason,
+        "reason": reason,
         "url": url,
         "source": source_label,
     }
     if status_code is not None:
         error_obj["status_code"] = status_code
-    if exc.detail:
-        error_obj["detail"] = exc.detail
+    if detail:
+        error_obj["detail"] = detail
     plan_state.errors.append(error_obj)
 
 
@@ -732,6 +799,7 @@ def _fetch_sitemap_bytes(
                         "http_status",
                         str(response.status_code),
                         request_count=request_count,
+                        response_headers=response.headers,
                     )
                 payload = _read_response_bytes(response, max_bytes=max_bytes, request_count=request_count)
                 return (
@@ -787,6 +855,7 @@ def _fetch_sitemap_bytes_stdlib(
                         "http_status",
                         str(status_code),
                         request_count=request_count,
+                        response_headers=response.headers,
                     )
                 payload = _read_urllib_response_bytes(
                     response,
@@ -812,7 +881,12 @@ def _fetch_sitemap_bytes_stdlib(
                     ) from exc
                 current_url = urljoin(current_url, location)
                 continue
-            raise _SitemapFetchError("http_status", str(exc.code), request_count=request_count) from exc
+            raise _SitemapFetchError(
+                "http_status",
+                str(exc.code),
+                request_count=request_count,
+                response_headers=exc.headers,
+            ) from exc
         except socket.timeout as exc:
             raise _SitemapFetchError("timeout", str(exc), request_count=request_count) from exc
         except TimeoutError as exc:

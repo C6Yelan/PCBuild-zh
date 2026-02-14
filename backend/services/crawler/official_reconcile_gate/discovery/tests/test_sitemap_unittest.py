@@ -4,7 +4,11 @@ import unittest
 from unittest import mock
 
 from backend.services.crawler.official_reconcile_gate.discovery import discover as discover_mod
-from backend.services.crawler.official_reconcile_gate.discovery.discover import discover_candidates_from_plans, score_candidate_urls
+from backend.services.crawler.official_reconcile_gate.discovery.discover import (
+    classify_discovery_error,
+    discover_candidates_from_plans,
+    score_candidate_urls,
+)
 from backend.services.crawler.official_reconcile_gate.discovery.sitemap import SitemapParseError, parse_sitemap
 from backend.services.crawler.official_reconcile_gate.planning.types import BrandRegistryEntry, OfficialRegistry
 
@@ -84,6 +88,22 @@ class TestSitemapParserAndScoring(unittest.TestCase):
         self.assertEqual(ranked[0][0], "https://seasonic.com/products/focus-gx/")
         self.assertEqual(ranked[0][1], 1)
         self.assertEqual(ranked[0][2], ["focus"])
+
+    def test_classify_discovery_error_cloudflare_403_blocked(self) -> None:
+        reason, detail = classify_discovery_error(
+            403,
+            {"server": "cloudflare", "cf-ray": "xxx"},
+        )
+        self.assertEqual(reason, "blocked")
+        self.assertEqual(detail, "cloudflare_403")
+
+    def test_classify_discovery_error_plain_403_stays_http_status(self) -> None:
+        reason, detail = classify_discovery_error(
+            403,
+            {"server": "nginx"},
+        )
+        self.assertEqual(reason, "http_status")
+        self.assertEqual(detail, "403")
 
     def test_registry_entrypoint_failure_fallbacks_to_default_entrypoints(self) -> None:
         plans = [

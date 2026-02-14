@@ -46,6 +46,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "to_fetch": 0,
         "skipped_robots": 0,
         "fetched_ok": 0,
+        "fetched_truncated": 0,
         "fetched_http_error": 0,
         "fetched_unreachable": 0,
         "blocked_count": {},
@@ -227,12 +228,19 @@ def _optional_str(value: Any) -> str | None:
 
 def _accumulate_fetch_stats(stats: dict[str, Any], result: FetchResult) -> None:
     stats["bytes_read_total"] += int(result.bytes_read)
-    if result.fetch_status == "fetched":
+    http_status_code = result.http_status_code if isinstance(result.http_status_code, int) else None
+    is_truncated_success = result.fetch_status == "too_large" and http_status_code in (200, 206)
+
+    if result.fetch_status == "fetched" or is_truncated_success:
         stats["fetched_ok"] += 1
-    elif result.fetch_status in ("http_error", "too_large"):
+    if result.fetch_status == "too_large":
+        stats["fetched_truncated"] += 1
+
+    if result.fetch_status == "http_error" or (http_status_code is not None and http_status_code >= 400):
         stats["fetched_http_error"] += 1
     elif result.fetch_status in ("unreachable", "invalid_url"):
         stats["fetched_unreachable"] += 1
+
     if result.block_reason:
         block_count = stats["blocked_count"]
         block_count[result.block_reason] = block_count.get(result.block_reason, 0) + 1
@@ -266,7 +274,7 @@ def _print_stats(stats: dict[str, Any]) -> None:
         file=sys.stderr,
     )
     print(
-        f"fetched_ok={stats['fetched_ok']} fetched_http_error={stats['fetched_http_error']} fetched_unreachable={stats['fetched_unreachable']}",
+        f"fetched_ok={stats['fetched_ok']} fetched_truncated={stats['fetched_truncated']} fetched_http_error={stats['fetched_http_error']} fetched_unreachable={stats['fetched_unreachable']}",
         file=sys.stderr,
     )
     block_count = stats["blocked_count"]

@@ -8,10 +8,12 @@
         "華碩"
       ],
       "allowed_domains": [
-        "www.asus.com",
-        "asus.com"
+        "asus.com",
+        "rog.asus.com",
+        "www.asus.com"
       ],
       "sitemap_urls": [
+        "https://rog.asus.com/sitemap.xml",
         "https://www.asus.com/sitemap.xml"
       ]
     },
@@ -21,7 +23,9 @@
         "MSI",
         "微星"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "www.msi.com"
+      ]
     },
     {
       "brand_key": "gigabyte",
@@ -73,7 +77,9 @@
         "FSP",
         "全漢"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "www.fsp-group.com"
+      ]
     },
     {
       "brand_key": "superflower",
@@ -82,7 +88,9 @@
         "SUPER FLOWER",
         "振華"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "www.super-flower.com.tw"
+      ]
     },
     {
       "brand_key": "coolermaster",
@@ -91,7 +99,9 @@
         "COOLER MASTER",
         "酷碼"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "www.coolermaster.com"
+      ]
     },
     {
       "brand_key": "silverstone",
@@ -99,7 +109,9 @@
         "SILVERSTONE",
         "銀欣"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "www.silverstonetek.com"
+      ]
     },
     {
       "brand_key": "thermalright",
@@ -153,7 +165,9 @@
         "COUGAR",
         "美洲獅"
       ],
-      "allowed_domains": []
+      "allowed_domains": [
+        "cougargaming.com"
+      ]
     },
     {
       "brand_key": "enermax",

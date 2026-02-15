@@ -20,8 +20,10 @@ from backend.services.crawler.official_reconcile_gate.planning.registry import (
 )
 from backend.services.crawler.official_reconcile_gate.planning.types import OfficialRegistry
 
+from .candidate_filters import is_candidate_allowed_for_plan
 from .sitemap import SitemapParseError, decode_sitemap_bytes, parse_sitemap
 from .types import DiscoveryEvidence, DiscoveryPlanReport, DiscoveryResult, SitemapCandidate
+from .url_normalize import normalize_official_url
 
 _REDIRECT_CODES = {301, 302, 303, 307, 308}
 _SITEMAP_ENTRY_PATHS = (
@@ -30,7 +32,10 @@ _SITEMAP_ENTRY_PATHS = (
     "/sitemap-index.xml",
     "/sitemap/sitemap.xml",
 )
+SITEMAP_FETCH_MAX_BYTES = 2 * 1024 * 1024
+_BLOCKED_HTTP_STATUSES = {401, 403, 429}
 _TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+", flags=re.UNICODE)
+_LOC_TAG_RE = re.compile(r"<\s*loc\s*>\s*(.*?)\s*<\s*/\s*loc\s*>", flags=re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,7 @@ class _PlanDiscoveryState:
     candidates_emitted: int = 0
     registry_used: bool = False
     default_used: bool = False
+    blocked_http_status: int | None = None
 
 
 class _SitemapFetchError(RuntimeError):
@@ -180,9 +186,12 @@ def discover_candidates_from_plans(
                     topk=topk,
                     min_score=min_score,
                     timeout_seconds=timeout_seconds,
-                    max_bytes=max_bytes,
+                    max_bytes=SITEMAP_FETCH_MAX_BYTES,
                     max_redirects=max_redirects,
                 )
+                if plan_state.blocked_http_status is not None:
+                    _append_plan_report(result, plan, plan_state)
+                    continue
 
                 should_fallback_to_default = (
                     plan_state.parsed_urlsets == 0
@@ -210,9 +219,12 @@ def discover_candidates_from_plans(
                             topk=topk,
                             min_score=min_score,
                             timeout_seconds=timeout_seconds,
-                            max_bytes=max_bytes,
+                            max_bytes=SITEMAP_FETCH_MAX_BYTES,
                             max_redirects=max_redirects,
                         )
+                        if plan_state.blocked_http_status is not None:
+                            _append_plan_report(result, plan, plan_state)
+                            continue
             else:
                 if default_entry_urls:
                     plan_state.default_used = True
@@ -230,9 +242,49 @@ def discover_candidates_from_plans(
                     topk=topk,
                     min_score=min_score,
                     timeout_seconds=timeout_seconds,
-                    max_bytes=max_bytes,
+                    max_bytes=SITEMAP_FETCH_MAX_BYTES,
                     max_redirects=max_redirects,
                 )
+                if plan_state.blocked_http_status is not None:
+                    _append_plan_report(result, plan, plan_state)
+                    continue
+
+            if plan_state.parsed_urlsets == 0 and plan_state.parsed_indexes == 0 and plan_state.blocked_http_status is None:
+                robots_entry_urls = _fetch_robots_sitemap_entry_urls(
+                    result=result,
+                    client=client,
+                    plan_state=plan_state,
+                    allowed_hosts=allowed_hosts,
+                    allowed_domains=plan.allowed_domains,
+                    timeout_seconds=timeout_seconds,
+                    max_bytes=SITEMAP_FETCH_MAX_BYTES,
+                    max_redirects=max_redirects,
+                )
+                robots_entry_urls = _filter_unattempted_urls(
+                    _dedupe_urls(robots_entry_urls),
+                    attempted=plan_state.attempted_urls,
+                )
+                if robots_entry_urls:
+                    _try_entrypoints(
+                        result=result,
+                        plan_state=plan_state,
+                        scored_rows=scored_rows,
+                        client=client,
+                        allowed_hosts=allowed_hosts,
+                        entry_urls=robots_entry_urls,
+                        source_label="robots",
+                        max_sitemaps_per_domain=max_sitemaps_per_domain,
+                        query_terms=plan.query_terms,
+                        topk=topk,
+                        min_score=min_score,
+                        timeout_seconds=timeout_seconds,
+                        max_bytes=SITEMAP_FETCH_MAX_BYTES,
+                        max_redirects=max_redirects,
+                    )
+
+            if plan_state.blocked_http_status is not None:
+                _append_plan_report(result, plan, plan_state)
+                continue
 
             if plan_state.parsed_urlsets == 0 and plan_state.parsed_indexes == 0:
                 result.add_error("no_sitemap_found")
@@ -240,19 +292,23 @@ def discover_candidates_from_plans(
                 continue
 
             top_rows = _select_top_rows(scored_rows, topk=topk)
-            plan_state.candidates_emitted = len(top_rows)
             if not top_rows:
+                plan_state.candidates_emitted = 0
                 result.plans_no_hits += 1
                 _append_plan_report(result, plan, plan_state)
                 continue
-            result.plans_with_hits += 1
-            for rank, row in enumerate(top_rows):
+
+            emitted_count = 0
+            for row in top_rows:
+                normalized_official_url = normalize_official_url(row.url)
+                if not is_candidate_allowed_for_plan(plan.category, plan.brand_key, normalized_official_url):
+                    continue
                 evidence = DiscoveryEvidence(
                     discovery_method="sitemap",
                     discovery_source=row.discovery_source,
                     query_terms=list(plan.query_terms),
                     matched_tokens=list(row.matched_tokens),
-                    candidate_rank=rank,
+                    candidate_rank=emitted_count,
                     notes=f"matched_tokens={row.matched_tokens}, score={row.score}",
                 )
                 result.candidates.append(
@@ -262,11 +318,20 @@ def discover_candidates_from_plans(
                         source=plan.source,
                         category=plan.category,
                         brand_key=plan.brand_key,
-                        official_url=row.url,
+                        official_url=normalized_official_url,
                         score=row.score,
                         evidence=evidence,
                     )
                 )
+                emitted_count += 1
+
+            plan_state.candidates_emitted = emitted_count
+            if emitted_count == 0:
+                result.plans_no_hits += 1
+                _append_plan_report(result, plan, plan_state)
+                continue
+
+            result.plans_with_hits += 1
             _append_plan_report(result, plan, plan_state)
     finally:
         _close_fetch_client(client)
@@ -295,6 +360,31 @@ def _build_default_entry_urls(allowed_domains: list[str]) -> list[str]:
     return urls
 
 
+def parse_robots_sitemaps(text: str) -> list[str]:
+    if not isinstance(text, str):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.strip().lower() != "sitemap":
+            continue
+        url = value.strip()
+        if not url:
+            continue
+        lowered = url.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        out.append(url)
+    return out
+
+
 def _filter_unattempted_urls(urls: list[str], *, attempted: set[str]) -> list[str]:
     out: list[str] = []
     for url in urls:
@@ -303,6 +393,174 @@ def _filter_unattempted_urls(urls: list[str], *, attempted: set[str]) -> list[st
             continue
         out.append(url)
     return out
+
+
+def _fetch_robots_sitemap_entry_urls(
+    *,
+    result: DiscoveryResult,
+    client: Any,
+    plan_state: _PlanDiscoveryState,
+    allowed_hosts: set[str],
+    allowed_domains: list[str],
+    timeout_seconds: float,
+    max_bytes: int,
+    max_redirects: int,
+) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for domain in allowed_domains:
+        normalized_domain = domain.strip().lower()
+        if not normalized_domain:
+            continue
+        robots_url = f"https://{normalized_domain}/robots.txt"
+        try:
+            text, request_count = _fetch_robots_txt(
+                client=client,
+                robots_url=robots_url,
+                allowed_hosts=allowed_hosts,
+                timeout_seconds=timeout_seconds,
+                max_bytes=max_bytes,
+                max_redirects=max_redirects,
+            )
+            plan_state.fetched_sitemaps += request_count
+        except _SitemapFetchError as exc:
+            plan_state.fetched_sitemaps += exc.request_count
+            mapped_reason, mapped_detail, status_code = _classify_fetch_error(exc)
+            result.add_error(mapped_reason)
+            _append_fetch_error(
+                plan_state,
+                source_label="robots",
+                url=robots_url,
+                reason=mapped_reason,
+                detail=mapped_detail,
+                status_code=status_code,
+            )
+            if mapped_reason == "blocked_http_status":
+                plan_state.blocked_http_status = status_code
+                break
+            continue
+
+        sitemap_urls = parse_robots_sitemaps(text)
+        plan_state.entrypoints_tried.append(
+            {
+                "source": "robots",
+                "url": robots_url,
+                "kind": "robots",
+                "status": "ok",
+                "sitemap_count": len(sitemap_urls),
+            }
+        )
+        for sitemap_url in sitemap_urls:
+            lowered = sitemap_url.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            out.append(sitemap_url)
+    return out
+
+
+def _fetch_robots_txt(
+    *,
+    client: Any,
+    robots_url: str,
+    allowed_hosts: set[str],
+    timeout_seconds: float,
+    max_bytes: int,
+    max_redirects: int,
+) -> tuple[str, int]:
+    current_url = robots_url
+    request_count = 0
+    range_header_value = f"bytes=0-{max_bytes - 1}"
+
+    if httpx is None:
+        opener = client
+        for _ in range(max_redirects + 1):
+            validation_error = _validate_robots_url(current_url, allowed_hosts)
+            if validation_error is not None:
+                raise _SitemapFetchError(validation_error, current_url, request_count=request_count)
+
+            request = Request(current_url, method="GET", headers={"Range": range_header_value})
+            try:
+                with opener.open(request, timeout=timeout_seconds) as response:
+                    request_count += 1
+                    status_code = getattr(response, "status", response.getcode())
+                    if status_code in _REDIRECT_CODES:
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise _SitemapFetchError(
+                                "redirect_without_location",
+                                current_url,
+                                request_count=request_count,
+                            )
+                        current_url = urljoin(current_url, location)
+                        continue
+                    if status_code != 200:
+                        raise _SitemapFetchError(
+                            "http_status",
+                            str(status_code),
+                            request_count=request_count,
+                            response_headers=response.headers,
+                        )
+                    payload, _ = _read_urllib_response_bytes(response, max_bytes=max_bytes)
+                    return payload.decode("utf-8", errors="ignore"), request_count
+            except HTTPError as exc:
+                request_count += 1
+                if exc.code in _REDIRECT_CODES:
+                    location = exc.headers.get("Location", "") if exc.headers else ""
+                    if not location:
+                        raise _SitemapFetchError(
+                            "redirect_without_location",
+                            current_url,
+                            request_count=request_count,
+                        ) from exc
+                    current_url = urljoin(current_url, location)
+                    continue
+                raise _SitemapFetchError(
+                    "http_status",
+                    str(exc.code),
+                    request_count=request_count,
+                    response_headers=exc.headers,
+                ) from exc
+            except socket.timeout as exc:
+                raise _SitemapFetchError("timeout", str(exc), request_count=request_count) from exc
+            except TimeoutError as exc:
+                raise _SitemapFetchError("timeout", str(exc), request_count=request_count) from exc
+            except URLError as exc:
+                raise _SitemapFetchError("request_error", str(exc.reason), request_count=request_count) from exc
+        raise _SitemapFetchError("too_many_redirects", robots_url, request_count=request_count)
+
+    for _ in range(max_redirects + 1):
+        validation_error = _validate_robots_url(current_url, allowed_hosts)
+        if validation_error is not None:
+            raise _SitemapFetchError(validation_error, current_url, request_count=request_count)
+
+        try:
+            with client.stream("GET", current_url, headers={"Range": range_header_value}) as response:
+                request_count += 1
+                if response.status_code in _REDIRECT_CODES:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise _SitemapFetchError(
+                            "redirect_without_location",
+                            current_url,
+                            request_count=request_count,
+                        )
+                    current_url = urljoin(current_url, location)
+                    continue
+                if response.status_code != 200:
+                    raise _SitemapFetchError(
+                        "http_status",
+                        str(response.status_code),
+                        request_count=request_count,
+                        response_headers=response.headers,
+                    )
+                payload, _ = _read_response_bytes(response, max_bytes=max_bytes)
+                return payload.decode("utf-8", errors="ignore"), request_count
+        except httpx.TimeoutException as exc:
+            raise _SitemapFetchError("timeout", str(exc), request_count=request_count) from exc
+        except httpx.RequestError as exc:
+            raise _SitemapFetchError("request_error", str(exc), request_count=request_count) from exc
+    raise _SitemapFetchError("too_many_redirects", robots_url, request_count=request_count)
 
 
 def _try_entrypoints(
@@ -323,6 +581,8 @@ def _try_entrypoints(
     max_redirects: int,
 ) -> None:
     for entry_url in entry_urls:
+        if plan_state.blocked_http_status is not None:
+            return
         normalized = entry_url.strip().lower()
         if not normalized:
             continue
@@ -354,6 +614,9 @@ def _try_entrypoints(
                 detail=mapped_detail,
                 status_code=status_code,
             )
+            if mapped_reason == "blocked_http_status":
+                plan_state.blocked_http_status = status_code
+                return
             continue
         except SitemapParseError as exc:
             mapped_reason = _map_parse_error_reason(exc)
@@ -425,6 +688,9 @@ def _try_entrypoints(
                     detail=mapped_detail,
                     status_code=status_code,
                 )
+                if mapped_reason == "blocked_http_status":
+                    plan_state.blocked_http_status = status_code
+                    return
                 continue
             except SitemapParseError as exc:
                 mapped_reason = _map_parse_error_reason(exc)
@@ -489,6 +755,8 @@ def _classify_fetch_error(exc: _SitemapFetchError) -> tuple[str, str, int | None
             status_code = int(exc.detail)
         except ValueError:
             status_code = None
+        if status_code in _BLOCKED_HTTP_STATUSES:
+            return ("blocked_http_status", str(status_code), status_code)
         reason, detail = classify_discovery_error(status_code, exc.response_headers)
         if reason == "http_status":
             return (reason, exc.detail, status_code)
@@ -559,12 +827,13 @@ def _append_parse_error(
 
 
 def _append_plan_report(result: DiscoveryResult, plan: _PlanInput, plan_state: _PlanDiscoveryState) -> None:
+    decision = "quarantine" if plan_state.blocked_http_status is not None else "ok"
     result.plan_reports.append(
         DiscoveryPlanReport(
             plan_index=plan.plan_index,
             brand_key=plan.brand_key,
             category=plan.category,
-            decision="ok",
+            decision=decision,
             allowed_domains=list(plan.allowed_domains),
             registry_used=plan_state.registry_used,
             default_used=plan_state.default_used,
@@ -736,7 +1005,8 @@ def _fetch_and_parse_sitemap(
     max_bytes: int,
     max_redirects: int,
 ) -> tuple[str, list[str], int]:
-    final_url, payload, content_type, content_encoding, request_count = _fetch_sitemap_bytes(
+    max_bytes = SITEMAP_FETCH_MAX_BYTES
+    final_url, payload, content_type, content_encoding, request_count, truncated = _fetch_sitemap_bytes(
         client=client,
         sitemap_url=sitemap_url,
         allowed_hosts=allowed_hosts,
@@ -744,14 +1014,27 @@ def _fetch_and_parse_sitemap(
         max_bytes=max_bytes,
         max_redirects=max_redirects,
     )
-    decoded = decode_sitemap_bytes(
-        payload,
-        url=final_url,
-        content_type=content_type,
-        content_encoding=content_encoding,
-    )
-    kind, values = parse_sitemap(decoded)
-    return kind, values, request_count
+    decoded: bytes
+    try:
+        decoded = decode_sitemap_bytes(
+            payload,
+            url=final_url,
+            content_type=content_type,
+            content_encoding=content_encoding,
+        )
+    except SitemapParseError:
+        if not truncated:
+            raise
+        decoded = bytes(payload)
+
+    if not truncated:
+        kind, values = parse_sitemap(decoded)
+        return kind, values, request_count
+
+    kind, values = _extract_loc_urls_from_truncated_sitemap(decoded)
+    if values:
+        return kind, values, request_count
+    raise _SitemapFetchError("too_large", str(max_bytes), request_count=request_count)
 
 
 def _fetch_sitemap_bytes(
@@ -762,7 +1045,7 @@ def _fetch_sitemap_bytes(
     timeout_seconds: float,
     max_bytes: int,
     max_redirects: int,
-) -> tuple[str, bytes, str, str, int]:
+) -> tuple[str, bytes, str, str, int, bool]:
     current_url = sitemap_url
     request_count = 0
 
@@ -776,13 +1059,15 @@ def _fetch_sitemap_bytes(
             max_redirects=max_redirects,
         )
 
+    range_header_value = f"bytes=0-{max_bytes - 1}"
+
     for _ in range(max_redirects + 1):
         validation_error = _validate_sitemap_url(current_url, allowed_hosts)
         if validation_error is not None:
             raise _SitemapFetchError(validation_error, current_url, request_count=request_count)
 
         try:
-            with client.stream("GET", current_url) as response:
+            with client.stream("GET", current_url, headers={"Range": range_header_value}) as response:
                 request_count += 1
                 if response.status_code in _REDIRECT_CODES:
                     location = response.headers.get("location")
@@ -794,20 +1079,21 @@ def _fetch_sitemap_bytes(
                         )
                     current_url = urljoin(current_url, location)
                     continue
-                if response.status_code != 200:
+                if response.status_code not in {200, 206}:
                     raise _SitemapFetchError(
                         "http_status",
                         str(response.status_code),
                         request_count=request_count,
                         response_headers=response.headers,
                     )
-                payload = _read_response_bytes(response, max_bytes=max_bytes, request_count=request_count)
+                payload, truncated = _read_response_bytes(response, max_bytes=max_bytes)
                 return (
                     current_url,
                     payload,
                     response.headers.get("content-type", ""),
                     response.headers.get("content-encoding", ""),
                     request_count,
+                    truncated,
                 )
         except httpx.TimeoutException as exc:
             raise _SitemapFetchError("timeout", str(exc), request_count=request_count) from exc
@@ -825,17 +1111,18 @@ def _fetch_sitemap_bytes_stdlib(
     timeout_seconds: float,
     max_bytes: int,
     max_redirects: int,
-) -> tuple[str, bytes, str, str, int]:
+) -> tuple[str, bytes, str, str, int, bool]:
     current_url = sitemap_url
     request_count = 0
     opener = client
+    range_header_value = f"bytes=0-{max_bytes - 1}"
 
     for _ in range(max_redirects + 1):
         validation_error = _validate_sitemap_url(current_url, allowed_hosts)
         if validation_error is not None:
             raise _SitemapFetchError(validation_error, current_url, request_count=request_count)
 
-        request = Request(current_url, method="GET")
+        request = Request(current_url, method="GET", headers={"Range": range_header_value})
         try:
             with opener.open(request, timeout=timeout_seconds) as response:
                 request_count += 1
@@ -850,17 +1137,16 @@ def _fetch_sitemap_bytes_stdlib(
                         )
                     current_url = urljoin(current_url, location)
                     continue
-                if status_code != 200:
+                if status_code not in {200, 206}:
                     raise _SitemapFetchError(
                         "http_status",
                         str(status_code),
                         request_count=request_count,
                         response_headers=response.headers,
                     )
-                payload = _read_urllib_response_bytes(
+                payload, truncated = _read_urllib_response_bytes(
                     response,
                     max_bytes=max_bytes,
-                    request_count=request_count,
                 )
                 return (
                     current_url,
@@ -868,6 +1154,7 @@ def _fetch_sitemap_bytes_stdlib(
                     response.headers.get("Content-Type", ""),
                     response.headers.get("Content-Encoding", ""),
                     request_count,
+                    truncated,
                 )
         except HTTPError as exc:
             request_count += 1
@@ -897,25 +1184,96 @@ def _fetch_sitemap_bytes_stdlib(
     raise _SitemapFetchError("too_many_redirects", sitemap_url, request_count=request_count)
 
 
-def _read_response_bytes(response: httpx.Response, *, max_bytes: int, request_count: int) -> bytes:
+def _read_response_bytes(response: httpx.Response, *, max_bytes: int) -> tuple[bytes, bool]:
     out = bytearray()
+    truncated = False
     for chunk in response.iter_bytes():
-        out.extend(chunk)
-        if len(out) > max_bytes:
-            raise _SitemapFetchError("too_large", str(max_bytes), request_count=request_count)
-    return bytes(out)
+        if not chunk:
+            continue
+        remaining = max_bytes - len(out)
+        if remaining <= 0:
+            truncated = True
+            break
+        if len(chunk) <= remaining:
+            out.extend(chunk)
+            continue
+        out.extend(chunk[:remaining])
+        truncated = True
+        break
+    return bytes(out), truncated
 
 
-def _read_urllib_response_bytes(response: Any, *, max_bytes: int, request_count: int) -> bytes:
+def _read_urllib_response_bytes(response: Any, *, max_bytes: int) -> tuple[bytes, bool]:
     out = bytearray()
+    truncated = False
     while True:
         chunk = response.read(65536)
         if not chunk:
             break
-        out.extend(chunk)
-        if len(out) > max_bytes:
-            raise _SitemapFetchError("too_large", str(max_bytes), request_count=request_count)
-    return bytes(out)
+        remaining = max_bytes - len(out)
+        if remaining <= 0:
+            truncated = True
+            break
+        if len(chunk) <= remaining:
+            out.extend(chunk)
+            continue
+        out.extend(chunk[:remaining])
+        truncated = True
+        break
+    return bytes(out), truncated
+
+
+def _extract_loc_urls_from_truncated_sitemap(payload: bytes) -> tuple[str, list[str]]:
+    text = payload.decode("utf-8", errors="ignore")
+    kind = "index" if "<sitemapindex" in text.lower() else "urlset"
+    urls: list[str] = []
+    seen: set[str] = set()
+    for match in _LOC_TAG_RE.findall(text):
+        candidate = (match or "").strip()
+        if not candidate:
+            continue
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        urls.append(candidate)
+    return kind, urls
+
+
+def _validate_robots_url(url: str, allowed_hosts: set[str]) -> str | None:
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() != "https":
+        return "invalid_scheme"
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return "missing_host"
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return "localhost_disallowed"
+
+    try:
+        parsed_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        parsed_ip = None
+
+    if parsed_ip is not None:
+        if (
+            parsed_ip.is_private
+            or parsed_ip.is_loopback
+            or parsed_ip.is_link_local
+            or parsed_ip.is_multicast
+            or parsed_ip.is_unspecified
+        ):
+            return "private_ip_disallowed"
+        return "ip_literal_disallowed"
+
+    if hostname not in allowed_hosts:
+        return "host_not_allowlisted"
+
+    path = parsed.path or "/"
+    if not path.lower().endswith("/robots.txt"):
+        return "invalid_robots_path"
+    return None
 
 
 def _validate_sitemap_url(url: str, allowed_hosts: set[str]) -> str | None:

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from backend.tools.crawler.t6_export_run_reports import export_run_reports
+
 
 @dataclass(frozen=True)
 class _PipelineStage:
@@ -61,10 +63,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                 file=sys.stderr,
             )
             return completed.returncode or 1
+        if stage.name == "Phase A":
+            _print_skip_plans_report_hint(run_dir)
         if stage.name == "Phase B":
             plan_failure_map = _build_plan_failure_reason_by_plan_index(plan_report_path)
             _write_plan_failure_reason_map(plan_failure_map_path, plan_failure_map)
 
+    export_run_reports(run_dir)
     print(f"pipeline_completed run_dir={run_dir}", file=sys.stderr)
     return 0
 
@@ -239,6 +244,35 @@ def _build_stages(
 
 def _print_stage_command(stage: _PipelineStage) -> None:
     print(f"[{stage.name}] {shlex.join(stage.cmd)}", file=sys.stderr)
+
+
+def _print_skip_plans_report_hint(run_dir: Path) -> None:
+    report_path = run_dir / "skip_plans_report.json"
+    if not report_path.exists():
+        return
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(payload, dict):
+        return
+
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return
+
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    needs_registry = summary.get("needs_registry")
+    quarantine = summary.get("quarantine")
+    needs_registry_count = needs_registry if isinstance(needs_registry, int) else 0
+    quarantine_count = quarantine if isinstance(quarantine, int) else 0
+
+    print(
+        f"[Phase A] skip_plans_report={report_path} needs_registry={needs_registry_count} quarantine={quarantine_count}",
+        file=sys.stderr,
+    )
 
 
 def _build_plan_failure_reason_by_plan_index(plan_report_path: Path) -> dict[str, str]:

@@ -110,6 +110,7 @@ def score_candidate(
         reasons=reasons,
         matched_tokens=matched_tokens,
         title_token_hits=title_token_hits,
+        page_title=title_text,
         block_reason=block_reason,
         content_type=content_type,
     )

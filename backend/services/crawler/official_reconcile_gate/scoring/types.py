@@ -19,6 +19,7 @@ class ScoreBreakdown:
     reasons: list[str] = field(default_factory=list)
     matched_tokens: list[str] = field(default_factory=list)
     title_token_hits: list[str] = field(default_factory=list)
+    page_title: str = ""
     block_reason: str | None = None
     content_type: str | None = None
 
@@ -27,6 +28,7 @@ class ScoreBreakdown:
 class DecisionRecord:
     plan_index: int
     retail_url: str
+    retail_title: str
     source: str
     category: str
     brand_key: str | None
@@ -35,4 +37,5 @@ class DecisionRecord:
     chosen_official_url: str | None
     confidence: int
     top1_score: int | None
+    matched_tokens: list[str] = field(default_factory=list)
     top_k_summary: list[dict[str, Any]] = field(default_factory=list)

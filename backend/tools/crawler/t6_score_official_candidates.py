@@ -306,6 +306,7 @@ def _internal_error_decision(plan: dict[str, Any], *, idx: int) -> DecisionRecor
     return DecisionRecord(
         plan_index=plan_index,
         retail_url=_to_text(_first_value(plan, _FIELD_MAP["plan_retail_url"])),
+        retail_title=_to_text(plan.get("title")),
         source=_to_text(plan.get("source")),
         category=_to_text(plan.get("category")),
         brand_key=_to_optional_text(plan.get("brand_key")),
@@ -314,6 +315,7 @@ def _internal_error_decision(plan: dict[str, Any], *, idx: int) -> DecisionRecor
         chosen_official_url=None,
         confidence=0,
         top1_score=None,
+        matched_tokens=[],
         top_k_summary=[],
     )
 
@@ -338,6 +340,7 @@ def _apply_plan_failure_reason(
     return DecisionRecord(
         plan_index=decision.plan_index,
         retail_url=decision.retail_url,
+        retail_title=decision.retail_title,
         source=decision.source,
         category=decision.category,
         brand_key=decision.brand_key,
@@ -346,6 +349,7 @@ def _apply_plan_failure_reason(
         chosen_official_url=decision.chosen_official_url,
         confidence=decision.confidence,
         top1_score=decision.top1_score,
+        matched_tokens=list(decision.matched_tokens),
         top_k_summary=list(decision.top_k_summary),
     )
 

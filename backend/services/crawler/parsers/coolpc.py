@@ -62,6 +62,15 @@ _COOLPC_IGRP_CATEGORY: dict[str, str] = {
     # 之後要擴充再加：機殼 IGrp=14、電源 IGrp=15、風扇/配件 IGrp=16 ...
 }
 
+_ALLOWED_COOLER_KINDS = {
+    "cpu_air",
+    "ssd_heatsink",
+    "thermal_pad",
+    "thermal_paste",
+    "notebook_cooler",
+}
+
+
 def _compact_extra(extra: dict | None) -> dict | None:
     if not extra:
         return extra
@@ -158,6 +167,12 @@ class CoolpcListingParser:
                 hints = extract_listing_hints(category, raw_title, None)
                 if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
                     continue
+                if category == "COOLER":
+                    ck = (hints.extra or {}).get("cooler_kind_hint")
+                    if ck not in _ALLOWED_COOLER_KINDS:
+                        continue
+                    if "【提醒】" in raw_title or (price == 1 and "提醒" in raw_title):
+                        continue
                 items.append(
                     ListingCandidate(
                         title=raw_title,
@@ -201,6 +216,12 @@ class CoolpcListingParser:
                 continue
             if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
                 continue
+            if category == "COOLER":
+                ck = (hints.extra or {}).get("cooler_kind_hint")
+                if ck not in _ALLOWED_COOLER_KINDS:
+                    continue
+                if "【提醒】" in raw_title or (price == 1 and "提醒" in raw_title):
+                    continue
 
             items.append(
                 ListingCandidate(
@@ -245,6 +266,12 @@ class CoolpcListingParser:
                 continue
             if category == "LIQUID_COOLING" and hints.extra and hints.extra.get("is_accessory"):
                 continue
+            if category == "COOLER":
+                ck = (hints.extra or {}).get("cooler_kind_hint")
+                if ck not in _ALLOWED_COOLER_KINDS:
+                    continue
+                if "【提醒】" in raw_title or (price == 1 and "提醒" in raw_title):
+                    continue
             
             # 這些類別必須有 evaluate.php?iBuy= 的單品 URL；純文字 fallback 只能給分類頁 page_url，直接跳過
             if category in ("SSD", "HDD", "COOLER", "LIQUID_COOLING"):

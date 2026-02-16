@@ -1,0 +1,1 @@
+# backend/services/catalog/__init__.py

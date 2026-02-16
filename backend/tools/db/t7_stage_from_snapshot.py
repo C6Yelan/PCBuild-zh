@@ -8,9 +8,11 @@ import io
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
+from hashlib import sha256
 
 from sqlalchemy.orm import Session
 
@@ -56,6 +58,19 @@ def _run_crawl_and_capture(argv: list[str]) -> tuple[int, str, str]:
 def _load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _file_meta(path: Path, *, base_dir: Path) -> dict[str, Any]:
+    data = path.read_bytes()
+    rel = str(path.relative_to(base_dir))
+    st = path.stat()
+    return {
+        "relpath": rel,                    # 相對於 artifact_dir
+        "sha256": sha256(data).hexdigest(),
+        "bytes": int(st.st_size),
+        "mtime": int(st.st_mtime),
+    }
+
 
 
 def main() -> int:
@@ -120,12 +135,15 @@ def main() -> int:
     # Gate 摘要：從 dq_report / t5.summary 讀進來（若存在）
     dq_report_path = dq_outdir / "dq_report.json"
     dq_report = _load_json(dq_report_path) if dq_report_path.exists() else None
+    dq_meta = _file_meta(dq_report_path, base_dir=base_outdir) if dq_report_path.exists() else None
 
     t5_summary = None
+    t5_meta = None
     if t5_outdir is not None:
         t5_summary_path = t5_outdir / "t5.summary.json"
         if t5_summary_path.exists():
             t5_summary = _load_json(t5_summary_path)
+            t5_meta = _file_meta(t5_summary_path, base_dir=base_outdir)
 
     # ORM 入庫：同一個交易（run + items + gate_results）
     with SessionLocal() as db:
@@ -147,7 +165,12 @@ def main() -> int:
                     item_key=item_key,
                     gate_name="t4_dq",
                     status="pass",
-                    detail_json=(dq_report if isinstance(dq_report, dict) else None),
+                    detail_json={
+                        "artifact_dir": str(base_outdir),
+                        "snapshot_dir": str(Path(args.snapshot_dir).name),
+                        "dq_report": dq_meta,
+                        "dq_report_keys": list(dq_report.keys()) if isinstance(dq_report, dict) else None,
+                    },
                 )
                 gate_inserted += ins
                 gate_updated += upd

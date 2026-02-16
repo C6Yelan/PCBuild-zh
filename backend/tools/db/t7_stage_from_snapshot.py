@@ -190,7 +190,12 @@ def main() -> int:
                         item_key=item_key,
                         gate_name="t5_link",
                         status=t5_status,
-                        detail_json=(t5_summary if isinstance(t5_summary, dict) else None),
+                        detail_json={
+                            "artifact_dir": str(base_outdir),
+                            "snapshot_dir": str(Path(args.snapshot_dir).name),
+                            "t5_summary": t5_meta,
+                            "t5_summary_keys": list(t5_summary.keys()) if isinstance(t5_summary, dict) else None,
+                        },
                     )
                     gate_inserted += ins2
                     gate_updated += upd2

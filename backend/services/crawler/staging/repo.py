@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgItem
+from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgItem, CrawlerStgGateResult
 
 
 def create_ingest_run(
@@ -81,6 +81,43 @@ def upsert_stg_items(
 
     db.flush()
     return inserted, updated
+
+
+def upsert_stg_gate_result(
+    db: Session,
+    *,
+    run_id: UUID,
+    item_key: str,
+    gate_name: str,
+    status: str,
+    detail_json: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    """
+    Upsert 一筆 gate result（PK: run_id + item_key + gate_name）
+    回傳 (inserted, updated)
+    """
+    if status not in ("pass", "fail"):
+        raise ValueError("status 只能是 'pass' 或 'fail'")
+
+    pk = (run_id, item_key, gate_name)
+    row = db.get(CrawlerStgGateResult, pk)  # composite PK 可用 tuple 傳入
+    if row is None:
+        db.add(
+            CrawlerStgGateResult(
+                run_id=run_id,
+                item_key=item_key,
+                gate_name=gate_name,
+                status=status,
+                detail_json=detail_json,
+            )
+        )
+        db.flush()
+        return (1, 0)
+
+    row.status = status
+    row.detail_json = detail_json
+    db.flush()
+    return (0, 1)
 
 
 def _validate_item(it: dict[str, Any]) -> None:

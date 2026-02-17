@@ -128,6 +128,7 @@ def upsert_stg_gate_result(
     if status == "fail":
         log_loki_event(
             _PCBUILD_PIPELINE_LOGGER,
+            level=logging.ERROR,
             event="gate_result",
             source=_get_source(db, run_id),
             stage="staging",

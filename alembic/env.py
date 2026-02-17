@@ -16,6 +16,8 @@ if config.config_file_name is not None:
 # 匯入模型，提供 autogenerate 所需 metadata
 # 重要：backend/models/__init__.py 會匯入 Base 與各模型，metadata 才完整
 from backend.models import Base  # noqa: E402
+import backend.models  # noqa: F401
+
 
 target_metadata = Base.metadata
 

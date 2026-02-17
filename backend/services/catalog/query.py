@@ -12,6 +12,7 @@ from backend.models.catalog import (
     CatalogProductSpec,
     CatalogSpecKey,
 )
+from backend.models.crawler_publication import CrawlerPublicationPointer
 
 
 def list_products_with_latest_price(
@@ -22,26 +23,22 @@ def list_products_with_latest_price(
     limit: int = 20,
     offset: int = 0,
     include_specs: bool = False,
+    env: str = "prod",
 ) -> list[dict[str, Any]]:
     """
-    讀取 catalog_product，並用 LATERAL 取每個 product 的最新價格（price_snapshot.captured_at 最大者）。
-    可選擇 include_specs 以聚合成 specs dict（key -> value_text）。
+    讀取 catalog_product，並以「已發佈版本」為唯一讀取口徑：
+    - 先取得 crawler_publication_pointer(env) 指向的 run_id（current release）
+    - 僅回傳 last_seen_run_id == current run_id 的商品
+    - 價格以 catalog_price_snapshot (product_id, run_id) 直接 join（每個 run 對每個 product 只會有一筆）
     """
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
 
-    # LATERAL：對每個 CatalogProduct 做一次「最新價格」子查詢
-    lp = (
-        sa.select(
-            CatalogPriceSnapshot.price.label("price"),
-            CatalogPriceSnapshot.currency.label("currency"),
-            CatalogPriceSnapshot.captured_at.label("captured_at"),
-        )
-        .where(CatalogPriceSnapshot.product_id == CatalogProduct.product_id)
-        .order_by(CatalogPriceSnapshot.captured_at.desc())
-        .limit(1)
-        .lateral("lp")
-    )
+    ptr = db.get(CrawlerPublicationPointer, env)
+    if ptr is None:
+        raise RuntimeError(f"crawler_publication_pointer not found for env={env!r}; please publish first")
+
+    current_run_id = ptr.run_id
 
     stmt = (
         sa.select(
@@ -51,12 +48,20 @@ def list_products_with_latest_price(
             CatalogProduct.url,
             CatalogProduct.sku_hint,
             CatalogProduct.updated_at,
-            lp.c.price,
-            lp.c.currency,
-            lp.c.captured_at,
+            CatalogPriceSnapshot.price.label("price"),
+            CatalogPriceSnapshot.currency.label("currency"),
+            CatalogPriceSnapshot.captured_at.label("captured_at"),
         )
         .select_from(CatalogProduct)
-        .join(lp, sa.true(), isouter=True)
+        .join(
+            CatalogPriceSnapshot,
+            sa.and_(
+                CatalogPriceSnapshot.product_id == CatalogProduct.product_id,
+                CatalogPriceSnapshot.run_id == current_run_id,
+            ),
+            isouter=True,
+        )
+        .where(CatalogProduct.last_seen_run_id == current_run_id)
         .order_by(CatalogProduct.updated_at.desc(), CatalogProduct.product_id)
         .limit(limit)
         .offset(offset)
@@ -94,9 +99,7 @@ def list_products_with_latest_price(
         .subquery()
     )
 
-    specs_map = dict(
-        db.execute(sa.select(specs_sq.c.product_id, specs_sq.c.specs)).all()
-    )
+    specs_map = dict(db.execute(sa.select(specs_sq.c.product_id, specs_sq.c.specs)).all())
 
     out: list[dict[str, Any]] = []
     for r in rows:

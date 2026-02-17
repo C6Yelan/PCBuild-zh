@@ -125,7 +125,10 @@ def upsert_stg_gate_result(
         raise ValueError("status 只能是 'pass' 或 'fail'")
 
     pk = (run_id, item_key, gate_name)
-    if status == "fail":
+    row = db.get(CrawlerStgGateResult, pk)  # composite PK 可用 tuple 傳入
+    prev_status = (row.status if row is not None else None)
+
+    if status == "fail" and prev_status != "fail":
         log_loki_event(
             _PCBUILD_PIPELINE_LOGGER,
             level=logging.ERROR,
@@ -139,7 +142,6 @@ def upsert_stg_gate_result(
             status=status,
             detail_json=detail_json,
         )
-    row = db.get(CrawlerStgGateResult, pk)  # composite PK 可用 tuple 傳入
     if row is None:
         db.add(
             CrawlerStgGateResult(

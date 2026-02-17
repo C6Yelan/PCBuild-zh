@@ -107,6 +107,7 @@ def main() -> int:
     if not env:
         raise SystemExit("env cannot be empty")
 
+    src = "unknown"
     db = SessionLocal()
     try:
         # Session.begin() 作為 context manager：確保交易一致性（commit/rollback）:contentReference[oaicite:1]{index=1}
@@ -200,6 +201,20 @@ def main() -> int:
 
         print(json.dumps({"ok": True, "published": True, "env": env, "run_id": str(run_id)}, ensure_ascii=False))
         return 0
+    except (Exception, SystemExit) as e:
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            level=logging.ERROR,
+            event="t9_publish_failed",
+            source=src,
+            stage="publish",
+            env=env,
+            run_id=str(run_id),
+            dry_run=bool(args.dry_run),
+            error=str(e),
+            exc_type=type(e).__name__,
+        )
+        raise
     finally:
         db.close()
 

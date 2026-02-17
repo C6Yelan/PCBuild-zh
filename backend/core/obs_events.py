@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -61,3 +62,13 @@ def log_loki_event(
 
     msg = " ".join(f"{k}={_lf(v)}" for k, v in parts)
     logger.log(level, msg)
+    # 在 docker compose exec 跑工具時，stdout 不一定會進 PID1 的 docker logs。
+    # 若設了環境變數，額外把同一行寫到 /proc/1/fd/1，確保 Loki 收得到。
+    if os.getenv("PCBUILD_LOG_TO_PID1", "").lower() in ("1", "true", "yes", "on"):
+        pid1_line = f"level={logging.getLevelName(level)} logger={logger.name} {msg}"
+        try:
+            with open("/proc/1/fd/1", "a", encoding="utf-8") as f:
+                f.write(pid1_line + "\n")
+        except Exception:
+            # 不要讓觀測機制影響主流程
+            pass

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -9,8 +10,11 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from backend.db import SessionLocal
+from backend.core.obs_events import log_loki_event
 from backend.models.crawler_publication import CrawlerPublication, CrawlerPublicationPointer
 from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgGateResult, CrawlerStgItem
+
+_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def _select_pass_item_keys(db: Session, *, run_id: UUID) -> sa.Select:
@@ -110,6 +114,17 @@ def main() -> int:
             run = db.get(CrawlerIngestRun, run_id)
             if run is None:
                 raise SystemExit(f"run_id not found: {run_id}")
+            src = str(run.source)
+
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                event="t9_publish_started",
+                source=src,
+                stage="publish",
+                env=env,
+                run_id=str(run_id),
+                dry_run=bool(args.dry_run),
+            )
 
             gate_stats = _calc_gate_stats(db, run_id=run_id)
             item_stats = _calc_item_stats(db, run_id=run_id)
@@ -127,6 +142,23 @@ def main() -> int:
             }
 
             if args.dry_run:
+                log_loki_event(
+                    _PIPELINE_LOGGER,
+                    event="t9_publish_finished",
+                    source=src,
+                    stage="publish",
+                    env=env,
+                    run_id=str(run_id),
+                    dry_run=True,
+                    published=False,
+                    gate_total=gate_stats["gate_total"],
+                    gate_pass=gate_stats["gate_pass"],
+                    gate_fail=gate_stats["gate_fail"],
+                    item_total=item_stats["item_total"],
+                    item_pass=item_stats["item_pass"],
+                    item_fail=item_stats["item_fail"],
+                    item_no_gate=item_stats["item_no_gate"],
+                )
                 print(json.dumps({"ok": True, "dry_run": True, "env": env, "stats": stats}, ensure_ascii=False))
                 return 0
 
@@ -147,6 +179,24 @@ def main() -> int:
             else:
                 ptr.run_id = run_id
                 ptr.updated_at = now
+
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t9_publish_finished",
+            source=src,
+            stage="publish",
+            env=env,
+            run_id=str(run_id),
+            dry_run=False,
+            published=True,
+            gate_total=stats["gate_total"],
+            gate_pass=stats["gate_pass"],
+            gate_fail=stats["gate_fail"],
+            item_total=stats["item_total"],
+            item_pass=stats["item_pass"],
+            item_fail=stats["item_fail"],
+            item_no_gate=stats["item_no_gate"],
+        )
 
         print(json.dumps({"ok": True, "published": True, "env": env, "run_id": str(run_id)}, ensure_ascii=False))
         return 0

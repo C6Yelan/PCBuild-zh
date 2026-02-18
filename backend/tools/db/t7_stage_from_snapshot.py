@@ -6,9 +6,11 @@ import contextlib
 import hashlib
 import io
 import json
+import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -17,12 +19,15 @@ from hashlib import sha256
 from sqlalchemy.orm import Session
 
 from backend.db import SessionLocal
+from backend.core.obs_events import log_loki_event
 from backend.services.crawler.staging.repo import (
     create_ingest_run,
     upsert_stg_items,
     upsert_stg_gate_result,
 )
 from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
+
+_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def _make_item_key(source: str, it: dict[str, Any]) -> str:
@@ -92,6 +97,26 @@ def main() -> int:
     args = ap.parse_args()
 
     run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
+    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+
+    # run metadata: started
+    log_loki_event(
+        _PIPELINE_LOGGER,
+        event="t7_stage_started",
+        source=str(args.source),
+        stage="stage",
+        run_id=str(run_id),
+        app_git_sha=app_git_sha,
+        snapshot_dir=str(args.snapshot_dir),
+        snapshot_name=str(Path(args.snapshot_dir).name),
+        enable_t5=bool(args.enable_t5),
+        t5_limit=int(args.t5_limit),
+        t5_min_interval_ms=int(args.t5_min_interval_ms),
+        t5_timeout_s=float(args.t5_timeout_s),
+        t5_max_redirects=int(args.t5_max_redirects),
+        t5_max_bytes=int(args.t5_max_bytes),
+        started_at=datetime.now(timezone.utc).isoformat(),
+    )
 
     # 依你偏好：所有產物放 temp 下
     base_outdir = Path("temp") / "t7" / str(run_id)
@@ -127,6 +152,25 @@ def main() -> int:
         items = parsed
 
     if not items:
+        # run metadata: finished (no items / fail-fast)
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            level=logging.WARNING,
+            event="t7_stage_finished",
+            source=str(args.source),
+            stage="stage",
+            run_id=str(run_id),
+            app_git_sha=(os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown",
+            status="no_items",
+            crawl_rc=int(rc),
+            item_total=0,
+            item_inserted=0,
+            item_updated=0,
+            gate_inserted=0,
+            gate_updated=0,
+            artifact_dir=str(base_outdir),
+            ended_at=datetime.now(timezone.utc).isoformat(),
+        )
         # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
         # 將 stderr 原封不動印出，方便你追查
         sys.stderr.write(stderr_txt)
@@ -199,6 +243,26 @@ def main() -> int:
                     )
                     gate_inserted += ins2
                     gate_updated += upd2
+
+    # run metadata: finished (has items staged)
+    status = "succeeded" if int(rc) == 0 else "completed_with_warnings"
+    log_loki_event(
+        _PIPELINE_LOGGER,
+        event="t7_stage_finished",
+        source=str(args.source),
+        stage="stage",
+        run_id=str(run_id),
+        app_git_sha=(os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown",
+        status=status,
+        crawl_rc=int(rc),
+        item_total=int(len(items)),
+        item_inserted=int(inserted),
+        item_updated=int(updated),
+        gate_inserted=int(gate_inserted),
+        gate_updated=int(gate_updated),
+        artifact_dir=str(base_outdir),
+        ended_at=datetime.now(timezone.utc).isoformat(),
+    )
 
     print(
         json.dumps(

@@ -105,6 +105,7 @@ def main() -> int:
     src = str(args.source)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
     artifact_dir = None
+    t0 = time.monotonic()
 
     # run metadata: started
     log_loki_event(
@@ -175,6 +176,7 @@ def main() -> int:
                 status="no_items",
                 crawl_rc=int(rc),
                 artifact_dir=artifact_dir,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
                 ended_at=datetime.now(timezone.utc).isoformat(),
             )
             # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
@@ -268,6 +270,7 @@ def main() -> int:
             gate_inserted=int(gate_inserted),
             gate_updated=int(gate_updated),
             artifact_dir=artifact_dir,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -302,6 +305,7 @@ def main() -> int:
             artifact_dir=artifact_dir,
             error=str(e),
             exc_type=type(e).__name__,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise

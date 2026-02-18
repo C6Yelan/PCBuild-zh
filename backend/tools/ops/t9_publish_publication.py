@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -110,6 +111,7 @@ def main() -> int:
 
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    t0 = time.monotonic()
 
     src = "unknown"
     db = SessionLocal()
@@ -166,6 +168,7 @@ def main() -> int:
                     item_pass=item_stats["item_pass"],
                     item_fail=item_stats["item_fail"],
                     item_no_gate=item_stats["item_no_gate"],
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
                     ended_at=datetime.now(timezone.utc).isoformat(),
                 )
                 print(json.dumps({"ok": True, "dry_run": True, "env": env, "stats": stats}, ensure_ascii=False))
@@ -206,6 +209,7 @@ def main() -> int:
             item_pass=stats["item_pass"],
             item_fail=stats["item_fail"],
             item_no_gate=stats["item_no_gate"],
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -224,6 +228,7 @@ def main() -> int:
             app_git_sha=app_git_sha,
             error=str(e),
             exc_type=type(e).__name__,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise

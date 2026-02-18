@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -29,6 +30,7 @@ def main() -> int:
     run_id = UUID(args.run_id)
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    t0 = time.monotonic()
 
     src = "unknown"
     before: str | None = None
@@ -70,6 +72,7 @@ def main() -> int:
                     before_run_id=before,
                     after_run_id=str(run_id),
                     app_git_sha=app_git_sha,
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
                     ended_at=datetime.now(timezone.utc).isoformat(),
                 )
                 print(
@@ -109,6 +112,7 @@ def main() -> int:
             after_run_id=str(run_id),
             pointer_action=pointer_action,
             app_git_sha=app_git_sha,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -128,6 +132,7 @@ def main() -> int:
             app_git_sha=app_git_sha,
             error=str(e),
             exc_type=type(e).__name__,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise

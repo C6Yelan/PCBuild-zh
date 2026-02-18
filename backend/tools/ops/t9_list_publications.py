@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -45,6 +46,7 @@ def main() -> int:
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
     env_value = (args.env or "").strip() or None
     env_filter = env_value or "all"
+    t0 = time.monotonic()
 
     db = SessionLocal()
     try:
@@ -108,6 +110,7 @@ def main() -> int:
             with_stats_json=bool(args.with_stats_json),
             pointer_count=len(pointers),
             publication_count=len(out_pubs),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -132,6 +135,7 @@ def main() -> int:
             with_stats_json=bool(args.with_stats_json),
             error=str(e),
             exc_type=type(e).__name__,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise

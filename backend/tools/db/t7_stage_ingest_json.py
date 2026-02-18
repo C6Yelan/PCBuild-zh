@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -106,6 +107,7 @@ def main() -> int:
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
     item_total: int | None = None
     gate_total: int | None = None
+    t0 = time.monotonic()
 
     try:
         items, gate_results = _load_payload(args.input)
@@ -180,6 +182,7 @@ def main() -> int:
             item_updated=int(updated),
             gate_inserted=int(gate_inserted),
             gate_updated=int(gate_updated),
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -212,6 +215,7 @@ def main() -> int:
             gate_total=gate_total,
             error=str(e),
             exc_type=type(e).__name__,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise

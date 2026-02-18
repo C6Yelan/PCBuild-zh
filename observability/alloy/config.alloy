@@ -1,0 +1,97 @@
+discovery.docker "docker" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.docker.targets
+
+  // 1) 只保留 pcbuild-* 容器
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/pcbuild-.*"
+  }
+
+  // 2) container_name: 去掉前導 "/" -> pcbuild-fastapi
+  rule {
+    action        = "replace"
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+    replacement   = "$1"
+  }
+
+  // 3) service_name: 優先用 docker compose service（fastapi / loki / grafana / alloy...）
+  rule {
+    action        = "replace"
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(.+)"
+    target_label  = "service_name"
+    replacement   = "$1"
+  }
+
+  // 4) fallback：如果 service_name 仍是空的，就用 container_name
+  //    （避免 Loki 端變 unknown_service）
+  rule {
+    action        = "replace"
+    source_labels = ["service_name", "container_name"]
+    separator     = ";"
+    regex         = "^;(.*)$"
+    target_label  = "service_name"
+    replacement   = "$1"
+  }
+}
+
+loki.source.docker "docker" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.docker_pipeline.receiver]
+}
+
+loki.process "docker_pipeline" {
+  // 只針對 fastapi 的「缺少 session cookie」事件降噪
+  // selector 支援 LogQL stream selector + line filter（|= / |~）。:contentReference[oaicite:3]{index=3}
+  stage.match {
+    selector = `{service_name="fastapi"} |= "event=authn_missing_session_cookie"`
+
+    // 每秒最多 1 行，允許瞬間 burst 3；超量直接 drop（不 backpressure）
+    stage.limit {
+      rate  = 1
+      burst = 3
+      drop  = true
+    }
+  }
+
+  forward_to = [loki.process.pcbuild.receiver]
+}
+
+loki.process "pcbuild" {
+  forward_to = [loki.write.default.receiver]
+
+  // 解析 logfmt：從整行抓 category/event/level/logger（與其他 key=value）
+  stage.logfmt {
+    mapping = {
+      "category" = "",
+      "event"    = "",
+      "level"    = "",
+      "logger"   = "",
+    }
+  }
+
+  // 只把「低基數」欄位升成 label（避免高基數造成 Loki 壓力）
+  stage.labels {
+    values = {
+      category = "",
+      event    = "",
+      level    = "",
+      logger   = "",
+    }
+  }
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+

@@ -1,13 +1,29 @@
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+# secrets
 .env
 .env.*
+*.key
+*.pem
+*credentials*.json
+
+# runtime data
+data/
+temp/
+_crawler_raw/
 *.log
 logs/
 .vscode/
 .idea/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.py[cod]
 temp
 _crawler_raw
+
+# node (如果未來有)
+node_modules/
+
 .codex

@@ -1,0 +1,197 @@
+apiVersion: 1
+groups:
+    - orgId: 1
+      name: T9 Alert
+      folder: T9 Alert
+      interval: 2m
+      rules:
+        - uid: cfdjfij3hgs8wf
+          title: T9 Publish Failed Alert
+          condition: C
+          data:
+            - refId: A
+              queryType: instant
+              relativeTimeRange:
+                from: 600
+                to: 0
+              datasourceUid: dfamjdp6umyv4e
+              model:
+                editorMode: code
+                expr: |-
+                    sum(
+                      count_over_time(
+                        {container_name="pcbuild-fastapi", logger="pcbuild.pipeline"}
+                        | logfmt
+                        | event="t9_publish_failed"
+                        | env="prod"
+                        | dry_run!="true"
+                        [5m]
+                      )
+                    )
+                    or on() label_replace(vector(0), "gate_name", "__none__", "", "")
+                instant: true
+                intervalMs: 1000
+                maxDataPoints: 43200
+                queryType: instant
+                refId: A
+            - refId: C
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 0
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: OK
+          for: 2m
+          annotations:
+            description: Detects event=t9_publish_failed in Loki logs.
+            summary: T9 publish failed in prod (last 5m)
+          isPaused: false
+          notification_settings:
+            receiver: T9 Alert
+        - uid: afdjjcvrev75sd
+          title: T9 No Successful Publish (24h)
+          condition: C
+          data:
+            - refId: A
+              queryType: instant
+              relativeTimeRange:
+                from: 90000
+                to: 0
+              datasourceUid: dfamjdp6umyv4e
+              model:
+                editorMode: code
+                expr: |
+                    (
+                      sum(
+                        count_over_time(
+                          {container_name="pcbuild-fastapi", logger="pcbuild.pipeline"}
+                          |= "event=t9_publish_finished"
+                          |= "env=prod"
+                          |= "published=true"
+                        [24h])
+                      )
+                    ) or on() vector(0)
+                instant: true
+                intervalMs: 1000
+                maxDataPoints: 43200
+                queryType: instant
+                refId: A
+            - refId: C
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 1
+                        type: lt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: OK
+          for: 2m
+          annotations:
+            description: No T9 Published in 24 hours
+            summary: No T9 Published in 24 hours
+          isPaused: false
+          notification_settings:
+            receiver: T9 Alert
+        - uid: afdjkn3yl0ge8e
+          title: DQ / Gate Fail Alert
+          condition: C
+          data:
+            - refId: A
+              queryType: instant
+              relativeTimeRange:
+                from: 1800
+                to: 0
+              datasourceUid: dfamjdp6umyv4e
+              model:
+                editorMode: code
+                expr: |
+                    (
+                      sum by (gate_name) (
+                        count_over_time(
+                          {container_name="pcbuild-fastapi", logger="pcbuild.pipeline"}
+                          | logfmt
+                          | category="pipeline"
+                          | event="gate_result"
+                          | env="prod"
+                          | status="fail"
+                        [30m])
+                      )
+                    )
+                    or on() label_replace(vector(0), "gate_name", "__none__", "", "")
+                instant: true
+                intervalMs: 1000
+                maxDataPoints: 43200
+                queryType: instant
+                refId: A
+            - refId: C
+              datasourceUid: __expr__
+              model:
+                conditions:
+                    - evaluator:
+                        params:
+                            - 5
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params:
+                            - C
+                      reducer:
+                        params: []
+                        type: last
+                      type: query
+                datasource:
+                    type: __expr__
+                    uid: __expr__
+                expression: A
+                intervalMs: 1000
+                maxDataPoints: 43200
+                refId: C
+                type: threshold
+          noDataState: NoData
+          execErrState: OK
+          for: 2m
+          annotations:
+            description: DQ / Gate failed more than five times in 30 minutes
+            summary: DQ / Gate failed more than five times in 30 minutes
+          isPaused: false
+          notification_settings:
+            receiver: T9 Alert

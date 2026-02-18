@@ -97,13 +97,14 @@ def main() -> int:
     args = ap.parse_args()
 
     run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
+    src = str(args.source)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
 
     # run metadata: started
     log_loki_event(
         _PIPELINE_LOGGER,
         event="t7_stage_started",
-        source=str(args.source),
+        source=src,
         stage="stage",
         run_id=str(run_id),
         app_git_sha=app_git_sha,
@@ -141,146 +142,162 @@ def main() -> int:
         for p in args.t5_block_pattern:
             crawl_argv += ["--t5-block-pattern", p]
 
-    rc, stdout_txt, stderr_txt = _run_crawl_and_capture(crawl_argv)
+    try:
+        rc, stdout_txt, stderr_txt = _run_crawl_and_capture(crawl_argv)
 
-    # crawl_parse_snapshot 設計：stdout 永遠只會是「通過的 items」
-    items = []
-    if stdout_txt.strip():
-        parsed = json.loads(stdout_txt)
-        if not isinstance(parsed, list):
-            raise SystemExit("crawl_parse_snapshot stdout 不是 list JSON，無法入庫")
-        items = parsed
+        # crawl_parse_snapshot 設計：stdout 永遠只會是「通過的 items」
+        items = []
+        if stdout_txt.strip():
+            parsed = json.loads(stdout_txt)
+            if not isinstance(parsed, list):
+                raise SystemExit("crawl_parse_snapshot stdout 不是 list JSON，無法入庫")
+            items = parsed
 
-    if not items:
-        # run metadata: finished (no items / fail-fast)
-        log_loki_event(
-            _PIPELINE_LOGGER,
-            level=logging.WARNING,
-            event="t7_stage_finished",
-            source=str(args.source),
-            stage="stage",
-            run_id=str(run_id),
-            app_git_sha=(os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown",
-            status="no_items",
-            crawl_rc=int(rc),
-            item_total=0,
-            item_inserted=0,
-            item_updated=0,
-            gate_inserted=0,
-            gate_updated=0,
-            artifact_dir=str(base_outdir),
-            ended_at=datetime.now(timezone.utc).isoformat(),
-        )
-        # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
-        # 將 stderr 原封不動印出，方便你追查
-        sys.stderr.write(stderr_txt)
-        return rc if rc != 0 else 2
+        if not items:
+            # run metadata: finished (no items / fail-fast)
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                level=logging.WARNING,
+                event="t7_stage_finished",
+                source=src,
+                stage="stage",
+                run_id=str(run_id),
+                app_git_sha=app_git_sha,
+                status="no_items",
+                crawl_rc=int(rc),
+                item_total=0,
+                item_inserted=0,
+                item_updated=0,
+                gate_inserted=0,
+                gate_updated=0,
+                artifact_dir=str(base_outdir),
+                ended_at=datetime.now(timezone.utc).isoformat(),
+            )
+            # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
+            # 將 stderr 原封不動印出，方便你追查
+            sys.stderr.write(stderr_txt)
+            return rc if rc != 0 else 2
 
-    # Gate 摘要：從 dq_report / t5.summary 讀進來（若存在）
-    dq_report_path = dq_outdir / "dq_report.json"
-    dq_report = _load_json(dq_report_path) if dq_report_path.exists() else None
-    dq_meta = _file_meta(dq_report_path, base_dir=base_outdir) if dq_report_path.exists() else None
+        # Gate 摘要：從 dq_report / t5.summary 讀進來（若存在）
+        dq_report_path = dq_outdir / "dq_report.json"
+        dq_report = _load_json(dq_report_path) if dq_report_path.exists() else None
+        dq_meta = _file_meta(dq_report_path, base_dir=base_outdir) if dq_report_path.exists() else None
 
-    t5_summary = None
-    t5_meta = None
-    if t5_outdir is not None:
-        t5_summary_path = t5_outdir / "t5.summary.json"
-        if t5_summary_path.exists():
-            t5_summary = _load_json(t5_summary_path)
-            t5_meta = _file_meta(t5_summary_path, base_dir=base_outdir)
+        t5_summary = None
+        t5_meta = None
+        if t5_outdir is not None:
+            t5_summary_path = t5_outdir / "t5.summary.json"
+            if t5_summary_path.exists():
+                t5_summary = _load_json(t5_summary_path)
+                t5_meta = _file_meta(t5_summary_path, base_dir=base_outdir)
 
-    # ORM 入庫：同一個交易（run + items + gate_results）
-    with SessionLocal() as db:
-        with db.begin():
-            rid = create_ingest_run(db, source=args.source, note=args.note, run_id=run_id)
-            inserted, updated = upsert_stg_items(db, run_id=rid, source=args.source, items=items)
+        # ORM 入庫：同一個交易（run + items + gate_results）
+        with SessionLocal() as db:
+            with db.begin():
+                rid = create_ingest_run(db, source=args.source, note=args.note, run_id=run_id)
+                inserted, updated = upsert_stg_items(db, run_id=rid, source=args.source, items=items)
 
-            gate_inserted = 0
-            gate_updated = 0
+                gate_inserted = 0
+                gate_updated = 0
 
-            for it in items:
-                url = str(it.get("url") or "")
-                item_key = _make_item_key(args.source, it)
+                for it in items:
+                    url = str(it.get("url") or "")
+                    item_key = _make_item_key(args.source, it)
 
-                # T4 DQ gate（成功才會有 items）
-                ins, upd = upsert_stg_gate_result(
-                    db,
-                    run_id=rid,
-                    item_key=item_key,
-                    gate_name="t4_dq",
-                    status="pass",
-                    detail_json={
-                        "artifact_dir": str(base_outdir),
-                        "snapshot_dir": str(Path(args.snapshot_dir).name),
-                        "dq_report": dq_meta,
-                        "dq_report_keys": list(dq_report.keys()) if isinstance(dq_report, dict) else None,
-                    },
-                )
-                gate_inserted += ins
-                gate_updated += upd
-
-                # Optional T5 gate（如果 enable_t5）
-                if args.enable_t5:
-                    # crawl_parse_snapshot：若有 non_match 會 return 2，但 stdout 仍是 match-only items
-                    t5_status = "pass"
-                    if rc != 0:
-                        t5_status = "fail"
-                    if isinstance(t5_summary, dict) and int(t5_summary.get("non_match") or 0) > 0:
-                        t5_status = "fail"
-
-                    ins2, upd2 = upsert_stg_gate_result(
+                    # T4 DQ gate（成功才會有 items）
+                    ins, upd = upsert_stg_gate_result(
                         db,
                         run_id=rid,
                         item_key=item_key,
-                        gate_name="t5_link",
-                        status=t5_status,
+                        gate_name="t4_dq",
+                        status="pass",
                         detail_json={
                             "artifact_dir": str(base_outdir),
                             "snapshot_dir": str(Path(args.snapshot_dir).name),
-                            "t5_summary": t5_meta,
-                            "t5_summary_keys": list(t5_summary.keys()) if isinstance(t5_summary, dict) else None,
+                            "dq_report": dq_meta,
+                            "dq_report_keys": list(dq_report.keys()) if isinstance(dq_report, dict) else None,
                         },
                     )
-                    gate_inserted += ins2
-                    gate_updated += upd2
+                    gate_inserted += ins
+                    gate_updated += upd
 
-    # run metadata: finished (has items staged)
-    status = "succeeded" if int(rc) == 0 else "completed_with_warnings"
-    log_loki_event(
-        _PIPELINE_LOGGER,
-        event="t7_stage_finished",
-        source=str(args.source),
-        stage="stage",
-        run_id=str(run_id),
-        app_git_sha=(os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown",
-        status=status,
-        crawl_rc=int(rc),
-        item_total=int(len(items)),
-        item_inserted=int(inserted),
-        item_updated=int(updated),
-        gate_inserted=int(gate_inserted),
-        gate_updated=int(gate_updated),
-        artifact_dir=str(base_outdir),
-        ended_at=datetime.now(timezone.utc).isoformat(),
-    )
+                    # Optional T5 gate（如果 enable_t5）
+                    if args.enable_t5:
+                        # crawl_parse_snapshot：若有 non_match 會 return 2，但 stdout 仍是 match-only items
+                        t5_status = "pass"
+                        if rc != 0:
+                            t5_status = "fail"
+                        if isinstance(t5_summary, dict) and int(t5_summary.get("non_match") or 0) > 0:
+                            t5_status = "fail"
 
-    print(
-        json.dumps(
-            {
-                "run_id": str(run_id),
-                "crawl_rc": rc,
-                "item_inserted": inserted,
-                "item_updated": updated,
-                "gate_inserted": gate_inserted,
-                "gate_updated": gate_updated,
-                "artifact_dir": str(base_outdir),
-            },
-            ensure_ascii=False,
+                        ins2, upd2 = upsert_stg_gate_result(
+                            db,
+                            run_id=rid,
+                            item_key=item_key,
+                            gate_name="t5_link",
+                            status=t5_status,
+                            detail_json={
+                                "artifact_dir": str(base_outdir),
+                                "snapshot_dir": str(Path(args.snapshot_dir).name),
+                                "t5_summary": t5_meta,
+                                "t5_summary_keys": list(t5_summary.keys()) if isinstance(t5_summary, dict) else None,
+                            },
+                        )
+                        gate_inserted += ins2
+                        gate_updated += upd2
+
+        # run metadata: finished (has items staged)
+        status = "succeeded" if int(rc) == 0 else "completed_with_warnings"
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t7_stage_finished",
+            source=src,
+            stage="stage",
+            run_id=str(run_id),
+            app_git_sha=app_git_sha,
+            status=status,
+            crawl_rc=int(rc),
+            item_total=int(len(items)),
+            item_inserted=int(inserted),
+            item_updated=int(updated),
+            gate_inserted=int(gate_inserted),
+            gate_updated=int(gate_updated),
+            artifact_dir=str(base_outdir),
+            ended_at=datetime.now(timezone.utc).isoformat(),
         )
-    )
 
-    # 保留 crawl rc，讓 pipeline 能知道是否有 T5 non_match 等問題
-    return rc
+        print(
+            json.dumps(
+                {
+                    "run_id": str(run_id),
+                    "crawl_rc": rc,
+                    "item_inserted": inserted,
+                    "item_updated": updated,
+                    "gate_inserted": gate_inserted,
+                    "gate_updated": gate_updated,
+                    "artifact_dir": str(base_outdir),
+                },
+                ensure_ascii=False,
+            )
+        )
+
+        # 保留 crawl rc，讓 pipeline 能知道是否有 T5 non_match 等問題
+        return rc
+    except (Exception, SystemExit) as e:
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            level=logging.ERROR,
+            event="t7_stage_failed",
+            source=src,
+            stage="stage",
+            run_id=str(run_id),
+            app_git_sha=app_git_sha,
+            snapshot_dir=str(args.snapshot_dir),
+            error=str(e),
+            exc_type=type(e).__name__,
+            ended_at=datetime.now(timezone.utc).isoformat(),
+        )
+        raise
 
 
 if __name__ == "__main__":

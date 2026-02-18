@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -10,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from backend.db import SessionLocal
-from backend.core.obs_events import log_loki_event
+from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.models.crawler_publication import CrawlerPublication, CrawlerPublicationPointer
 from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgGateResult, CrawlerStgItem
 
@@ -107,6 +108,9 @@ def main() -> int:
     if not env:
         raise SystemExit("env cannot be empty")
 
+    ensure_cli_logging(logger=_PIPELINE_LOGGER)
+    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+
     src = "unknown"
     db = SessionLocal()
     try:
@@ -125,6 +129,8 @@ def main() -> int:
                 env=env,
                 run_id=str(run_id),
                 dry_run=bool(args.dry_run),
+                app_git_sha=app_git_sha,
+                started_at=datetime.now(timezone.utc).isoformat(),
             )
 
             gate_stats = _calc_gate_stats(db, run_id=run_id)
@@ -152,6 +158,7 @@ def main() -> int:
                     run_id=str(run_id),
                     dry_run=True,
                     published=False,
+                    app_git_sha=app_git_sha,
                     gate_total=gate_stats["gate_total"],
                     gate_pass=gate_stats["gate_pass"],
                     gate_fail=gate_stats["gate_fail"],
@@ -159,6 +166,7 @@ def main() -> int:
                     item_pass=item_stats["item_pass"],
                     item_fail=item_stats["item_fail"],
                     item_no_gate=item_stats["item_no_gate"],
+                    ended_at=datetime.now(timezone.utc).isoformat(),
                 )
                 print(json.dumps({"ok": True, "dry_run": True, "env": env, "stats": stats}, ensure_ascii=False))
                 return 0
@@ -190,6 +198,7 @@ def main() -> int:
             run_id=str(run_id),
             dry_run=False,
             published=True,
+            app_git_sha=app_git_sha,
             gate_total=stats["gate_total"],
             gate_pass=stats["gate_pass"],
             gate_fail=stats["gate_fail"],
@@ -197,6 +206,7 @@ def main() -> int:
             item_pass=stats["item_pass"],
             item_fail=stats["item_fail"],
             item_no_gate=stats["item_no_gate"],
+            ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
         print(json.dumps({"ok": True, "published": True, "env": env, "run_id": str(run_id)}, ensure_ascii=False))
@@ -211,8 +221,10 @@ def main() -> int:
             env=env,
             run_id=str(run_id),
             dry_run=bool(args.dry_run),
+            app_git_sha=app_git_sha,
             error=str(e),
             exc_type=type(e).__name__,
+            ended_at=datetime.now(timezone.utc).isoformat(),
         )
         raise
     finally:

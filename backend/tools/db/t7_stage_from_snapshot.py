@@ -19,7 +19,7 @@ from hashlib import sha256
 from sqlalchemy.orm import Session
 
 from backend.db import SessionLocal
-from backend.core.obs_events import log_loki_event
+from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.services.crawler.staging.repo import (
     create_ingest_run,
     upsert_stg_items,
@@ -30,16 +30,8 @@ from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
-def _ensure_cli_logging() -> None:
-    """
-    CLI 工具情境下，確保 INFO 等級會真的輸出到 stderr/stdout。
-    若沒有 handler，basicConfig 會建立預設 StreamHandler。
-    """
-    root = logging.getLogger()
-    if not root.handlers:
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-    root.setLevel(logging.INFO)
-    _PIPELINE_LOGGER.setLevel(logging.INFO)
+def _get_env() -> str:
+    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
 
 
 def _make_item_key(source: str, it: dict[str, Any]) -> str:
@@ -109,7 +101,7 @@ def main() -> int:
     args = ap.parse_args()
 
     run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
-    _ensure_cli_logging()
+    ensure_cli_logging(logger=_PIPELINE_LOGGER)
     src = str(args.source)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
     artifact_dir = None
@@ -120,6 +112,7 @@ def main() -> int:
         event="t7_stage_started",
         source=src,
         stage="stage",
+        env=_get_env(),
         run_id=str(run_id),
         app_git_sha=app_git_sha,
         snapshot_dir=str(args.snapshot_dir),
@@ -176,6 +169,7 @@ def main() -> int:
                 event="t7_stage_finished",
                 source=src,
                 stage="stage",
+                env=_get_env(),
                 run_id=str(run_id),
                 app_git_sha=app_git_sha,
                 status="no_items",
@@ -263,6 +257,7 @@ def main() -> int:
             event="t7_stage_finished",
             source=src,
             stage="stage",
+            env=_get_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             status=status,
@@ -300,6 +295,7 @@ def main() -> int:
             event="t7_stage_failed",
             source=src,
             stage="stage",
+            env=_get_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             snapshot_dir=str(args.snapshot_dir),

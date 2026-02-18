@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import os
+from datetime import datetime, timezone
 from typing import Any
 
 import sqlalchemy as sa
 
 from backend.db import SessionLocal
+from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.models.crawler_publication import CrawlerPublication, CrawlerPublicationPointer
+
+_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def _stats_summary(stats: dict[str, Any] | None) -> dict[str, Any]:
@@ -35,13 +41,30 @@ def main() -> int:
     args = ap.parse_args()
 
     limit = max(1, min(int(args.limit), 200))
+    ensure_cli_logging(logger=_PIPELINE_LOGGER)
+    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    env_value = (args.env or "").strip() or None
+    env_filter = env_value or "all"
 
     db = SessionLocal()
     try:
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t9_publication_list_started",
+            source="unknown",
+            stage="publish",
+            env=env_value,
+            app_git_sha=app_git_sha,
+            limit=limit,
+            env_filter=env_filter,
+            with_stats_json=bool(args.with_stats_json),
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+
         # pointers
         ptr_stmt = sa.select(CrawlerPublicationPointer)
-        if args.env:
-            ptr_stmt = ptr_stmt.where(CrawlerPublicationPointer.env == args.env)
+        if env_value:
+            ptr_stmt = ptr_stmt.where(CrawlerPublicationPointer.env == env_value)
 
         ptrs = db.execute(ptr_stmt).scalars().all()
         pointers = {
@@ -73,6 +96,21 @@ def main() -> int:
                 d["stats"] = _stats_summary(pub.stats_json)
             out_pubs.append(d)
 
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t9_publication_list_finished",
+            source="unknown",
+            stage="publish",
+            env=env_value,
+            app_git_sha=app_git_sha,
+            limit=limit,
+            env_filter=env_filter,
+            with_stats_json=bool(args.with_stats_json),
+            pointer_count=len(pointers),
+            publication_count=len(out_pubs),
+            ended_at=datetime.now(timezone.utc).isoformat(),
+        )
+
         print(
             json.dumps(
                 {"ok": True, "pointers": pointers, "publications": out_pubs},
@@ -80,6 +118,23 @@ def main() -> int:
             )
         )
         return 0
+    except (Exception, SystemExit) as e:
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            level=logging.ERROR,
+            event="t9_publication_list_failed",
+            source="unknown",
+            stage="publish",
+            env=env_value,
+            app_git_sha=app_git_sha,
+            limit=limit,
+            env_filter=env_filter,
+            with_stats_json=bool(args.with_stats_json),
+            error=str(e),
+            exc_type=type(e).__name__,
+            ended_at=datetime.now(timezone.utc).isoformat(),
+        )
+        raise
     finally:
         db.close()
 

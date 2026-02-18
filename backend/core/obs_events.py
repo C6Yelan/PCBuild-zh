@@ -72,3 +72,17 @@ def log_loki_event(
         except Exception:
             # 不要讓觀測機制影響主流程
             pass
+
+
+def ensure_cli_logging(*, logger: logging.Logger, log_level: str | None = None) -> None:
+    """
+    CLI 工具情境下，沿用 app 端同一套 logging 格式與 handler。
+    讓工具事件與 auth/session 在 Grafana/Loki 的欄位一致（level/logger 等）。
+    """
+    from backend.core.logging import configure_logging
+
+    level_name = (log_level or os.getenv("LOG_LEVEL") or "INFO").upper()
+    configure_logging(log_level=level_name)
+    level = getattr(logging, level_name, logging.INFO)
+    logging.getLogger().setLevel(level)
+    logger.setLevel(level)

@@ -56,6 +56,8 @@ services:
       RATE_LIMIT_DEFAULT: 300/minute
       CSRF_TRUSTED_ORIGINS: https://pcbuild.redfiretw.xyz
       REQUEST_LOG_MODE: all
+      # docker compose exec 跑 t7/t9 CLI 時，將 pipeline log 同步寫到 PID1 stdout，讓 Loki 可收集
+      PCBUILD_LOG_TO_PID1: "1"
     ports:
       - "127.0.0.1:8000:8000"
     command: ["sh", "-lc", "uvicorn --factory $$APP_MODULE --host 0.0.0.0 --port 8000 --no-server-header --no-date-header --no-proxy-headers --no-access-log"]
@@ -132,7 +134,6 @@ services:
     depends_on:
       - loki
     restart: unless-stopped
-
 
 
 

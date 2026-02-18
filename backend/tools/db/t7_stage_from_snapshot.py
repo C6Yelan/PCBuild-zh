@@ -30,6 +30,18 @@ from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
+def _ensure_cli_logging() -> None:
+    """
+    CLI 工具情境下，確保 INFO 等級會真的輸出到 stderr/stdout。
+    若沒有 handler，basicConfig 會建立預設 StreamHandler。
+    """
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+    root.setLevel(logging.INFO)
+    _PIPELINE_LOGGER.setLevel(logging.INFO)
+
+
 def _make_item_key(source: str, it: dict[str, Any]) -> str:
     seed = "|".join(
         [
@@ -97,8 +109,10 @@ def main() -> int:
     args = ap.parse_args()
 
     run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
+    _ensure_cli_logging()
     src = str(args.source)
     app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    artifact_dir = None
 
     # run metadata: started
     log_loki_event(
@@ -119,30 +133,31 @@ def main() -> int:
         started_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    # 依你偏好：所有產物放 temp 下
-    base_outdir = Path("temp") / "t7" / str(run_id)
-    dq_outdir = base_outdir / "dq"
-    t5_outdir = base_outdir / "t5" if args.enable_t5 else None
-
-    crawl_argv = [
-        "--source", args.source,
-        "--snapshot-dir", args.snapshot_dir,
-        "--dq-outdir", str(dq_outdir),
-    ]
-
-    if args.enable_t5 and t5_outdir is not None:
-        crawl_argv += [
-            "--t5-outdir", str(t5_outdir),
-            "--t5-limit", str(args.t5_limit),
-            "--t5-min-interval-ms", str(args.t5_min_interval_ms),
-            "--t5-timeout-s", str(args.t5_timeout_s),
-            "--t5-max-redirects", str(args.t5_max_redirects),
-            "--t5-max-bytes", str(args.t5_max_bytes),
-        ]
-        for p in args.t5_block_pattern:
-            crawl_argv += ["--t5-block-pattern", p]
-
     try:
+        # 依你偏好：所有產物放 temp 下
+        base_outdir = Path("temp") / "t7" / str(run_id)
+        artifact_dir = str(base_outdir)
+        dq_outdir = base_outdir / "dq"
+        t5_outdir = base_outdir / "t5" if args.enable_t5 else None
+
+        crawl_argv = [
+            "--source", args.source,
+            "--snapshot-dir", args.snapshot_dir,
+            "--dq-outdir", str(dq_outdir),
+        ]
+
+        if args.enable_t5 and t5_outdir is not None:
+            crawl_argv += [
+                "--t5-outdir", str(t5_outdir),
+                "--t5-limit", str(args.t5_limit),
+                "--t5-min-interval-ms", str(args.t5_min_interval_ms),
+                "--t5-timeout-s", str(args.t5_timeout_s),
+                "--t5-max-redirects", str(args.t5_max_redirects),
+                "--t5-max-bytes", str(args.t5_max_bytes),
+            ]
+            for p in args.t5_block_pattern:
+                crawl_argv += ["--t5-block-pattern", p]
+
         rc, stdout_txt, stderr_txt = _run_crawl_and_capture(crawl_argv)
 
         # crawl_parse_snapshot 設計：stdout 永遠只會是「通過的 items」
@@ -165,12 +180,7 @@ def main() -> int:
                 app_git_sha=app_git_sha,
                 status="no_items",
                 crawl_rc=int(rc),
-                item_total=0,
-                item_inserted=0,
-                item_updated=0,
-                gate_inserted=0,
-                gate_updated=0,
-                artifact_dir=str(base_outdir),
+                artifact_dir=artifact_dir,
                 ended_at=datetime.now(timezone.utc).isoformat(),
             )
             # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
@@ -262,7 +272,7 @@ def main() -> int:
             item_updated=int(updated),
             gate_inserted=int(gate_inserted),
             gate_updated=int(gate_updated),
-            artifact_dir=str(base_outdir),
+            artifact_dir=artifact_dir,
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -293,6 +303,7 @@ def main() -> int:
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             snapshot_dir=str(args.snapshot_dir),
+            artifact_dir=artifact_dir,
             error=str(e),
             exc_type=type(e).__name__,
             ended_at=datetime.now(timezone.utc).isoformat(),

@@ -138,6 +138,7 @@ def main() -> int:
             "--source", args.source,
             "--snapshot-dir", args.snapshot_dir,
             "--dq-outdir", str(dq_outdir),
+            "--run-id", str(run_id),
         ]
 
         if args.enable_t5 and t5_outdir is not None:

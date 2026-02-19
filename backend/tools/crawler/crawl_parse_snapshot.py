@@ -4,17 +4,27 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import logging
 import os
 import sys
 import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.services.crawler.sources import SourceId
 from backend.services.crawler.parsers import get_listing_parser
 from backend.services.crawler.schema_gate.validate import SchemaGateError, validate_payload_fail_fast
 from backend.services.crawler.dq_gate import run_dq_gate
 from backend.tools.crawler.link_consistency_check_json import main as run_link_consistency_check_json
+
+_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
+
+
+def _get_env() -> str:
+    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
 
 
 def _write_json_atomic(path: Path, obj: Any) -> None:
@@ -90,6 +100,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True, choices=[s.value for s in SourceId])
     ap.add_argument("--snapshot-dir", required=True, help="包含 meta.json 與 body.txt 的資料夾")
+    ap.add_argument("--run-id", default=None, help="(optional) pipeline run_id for observability correlation")
     ap.add_argument(
         "--dq-outdir",
         default=None,
@@ -103,6 +114,9 @@ def main() -> int:
     ap.add_argument("--t5-max-bytes", default=4194304, type=int)
     ap.add_argument("--t5-block-pattern", action="append", default=[])
     args = ap.parse_args()
+    ensure_cli_logging(logger=_PIPELINE_LOGGER)
+    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    src = str(args.source)
 
     snap = Path(args.snapshot_dir).resolve()
     meta = json.loads((snap / "meta.json").read_text(encoding="utf-8"))
@@ -153,6 +167,7 @@ def main() -> int:
 
     # Optional T5 gate: only runs when t5_outdir is explicitly provided.
     if args.t5_outdir:
+        t5_t0 = time.monotonic()
         outdir = Path(args.t5_outdir).resolve()
         outdir.mkdir(parents=True, exist_ok=True)
 
@@ -161,6 +176,25 @@ def main() -> int:
             t5_items = dq_ok_items[: args.t5_limit]
         else:
             t5_items = dq_ok_items
+
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t5_link_started",
+            source=src,
+            stage="t5_link",
+            env=_get_env(),
+            gate_name="t5_link",
+            run_id=args.run_id,
+            app_git_sha=app_git_sha,
+            snapshot_dir=str(snap),
+            t5_outdir=str(outdir),
+            input_total=int(len(t5_items)),
+            min_interval_ms=int(args.t5_min_interval_ms),
+            timeout_s=float(args.t5_timeout_s),
+            max_redirects=int(args.t5_max_redirects),
+            max_bytes=int(args.t5_max_bytes),
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
 
         t5_input_path = outdir / "t5.input.json"
         t5_report_path = outdir / "t5.link_report.jsonl"
@@ -172,6 +206,24 @@ def main() -> int:
         try:
             t5_input_items = [_coerce_t5_input_item(item, source=str(args.source)) for item in t5_items]
         except ValueError as e:
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                level=logging.ERROR,
+                event="t5_link_failed",
+                source=src,
+                stage="t5_link",
+                env=_get_env(),
+                gate_name="t5_link",
+                run_id=args.run_id,
+                app_git_sha=app_git_sha,
+                snapshot_dir=str(snap),
+                t5_outdir=str(outdir),
+                input_total=int(len(t5_items)),
+                error=str(e),
+                exc_type=type(e).__name__,
+                elapsed_ms=int((time.monotonic() - t5_t0) * 1000),
+                ended_at=datetime.now(timezone.utc).isoformat(),
+            )
             print(f"T5 input error: {e}", file=sys.stderr)
             return 2
 
@@ -196,18 +248,74 @@ def main() -> int:
 
         t5_rc = run_link_consistency_check_json(t5_argv)
         if t5_rc != 0:
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                level=logging.ERROR,
+                event="t5_link_failed",
+                source=src,
+                stage="t5_link",
+                env=_get_env(),
+                gate_name="t5_link",
+                run_id=args.run_id,
+                app_git_sha=app_git_sha,
+                snapshot_dir=str(snap),
+                t5_outdir=str(outdir),
+                input_total=int(len(t5_items)),
+                t5_rc=int(t5_rc),
+                error=f"link_consistency_check_json failed rc={t5_rc}",
+                exc_type="SystemExit",
+                elapsed_ms=int((time.monotonic() - t5_t0) * 1000),
+                ended_at=datetime.now(timezone.utc).isoformat(),
+            )
             return 2
 
         try:
             reports = _read_jsonl(t5_report_path)
         except (OSError, ValueError) as e:
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                level=logging.ERROR,
+                event="t5_link_failed",
+                source=src,
+                stage="t5_link",
+                env=_get_env(),
+                gate_name="t5_link",
+                run_id=args.run_id,
+                app_git_sha=app_git_sha,
+                snapshot_dir=str(snap),
+                t5_outdir=str(outdir),
+                input_total=int(len(t5_items)),
+                error=str(e),
+                exc_type=type(e).__name__,
+                elapsed_ms=int((time.monotonic() - t5_t0) * 1000),
+                ended_at=datetime.now(timezone.utc).isoformat(),
+            )
             print(f"T5 output error: {e}", file=sys.stderr)
             return 2
 
         if len(reports) != len(t5_items):
+            msg = "T5 output error: report/input length mismatch report=%d input=%d" % (len(reports), len(t5_items))
+            log_loki_event(
+                _PIPELINE_LOGGER,
+                level=logging.ERROR,
+                event="t5_link_failed",
+                source=src,
+                stage="t5_link",
+                env=_get_env(),
+                gate_name="t5_link",
+                run_id=args.run_id,
+                app_git_sha=app_git_sha,
+                snapshot_dir=str(snap),
+                t5_outdir=str(outdir),
+                input_total=int(len(t5_items)),
+                report_total=int(len(reports)),
+                error=msg,
+                exc_type="ValueError",
+                elapsed_ms=int((time.monotonic() - t5_t0) * 1000),
+                ended_at=datetime.now(timezone.utc).isoformat(),
+            )
             print(
-                "T5 output error: report/input length mismatch report=%d input=%d"
-                % (len(reports), len(t5_items)),
+                msg,
                 file=sys.stderr,
             )
             return 2
@@ -229,6 +337,28 @@ def main() -> int:
             "T5 status_counts=%s reason_counts=%s outdir=%s"
             % (summary["status_counts"], summary["reason_counts"], str(outdir)),
             file=sys.stderr,
+        )
+
+        non_match = int(summary["non_match"])
+        status = "succeeded" if non_match == 0 else "completed_with_mismatch"
+        log_loki_event(
+            _PIPELINE_LOGGER,
+            event="t5_link_finished",
+            source=src,
+            stage="t5_link",
+            env=_get_env(),
+            gate_name="t5_link",
+            run_id=args.run_id,
+            app_git_sha=app_git_sha,
+            snapshot_dir=str(snap),
+            t5_outdir=str(outdir),
+            status=status,
+            input_total=int(len(t5_items)),
+            report_total=int(len(reports)),
+            matched_total=int(len(t5_passed)),
+            non_match_total=non_match,
+            elapsed_ms=int((time.monotonic() - t5_t0) * 1000),
+            ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
         # Keep stdout as match-only items even when gate fails, so consumers never receive non-match rows.

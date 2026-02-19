@@ -68,29 +68,26 @@ loki.process "docker_pipeline" {
 loki.process "pcbuild" {
   forward_to = [loki.write.default.receiver]
 
+  // 解析 logfmt：從整行抓 category/event/level/logger（與其他 key=value）
   stage.logfmt {
     mapping = {
-      "category"  = "",
-      "event"     = "",
-      "level"     = "",
-      "logger"    = "",
-      "source"    = "",
-      "stage"     = "",
-      "gate_name" = "",
+      "category" = "",
+      "event"    = "",
+      "level"    = "",
+      "logger"   = "",
     }
   }
 
+  // 只把「低基數」欄位升成 label（避免高基數造成 Loki 壓力）
   stage.labels {
     values = {
-      category  = "",
-      event     = "",
-      level     = "",
-      logger    = "",
-      source    = "",
-      stage     = "",
-      gate_name = "",
+      category = "",
+      event    = "",
+      level    = "",
+      logger   = "",
     }
   }
+}
 
 loki.write "default" {
   endpoint {

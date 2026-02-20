@@ -159,14 +159,20 @@ def upsert_product_spec(
     """
     upsert catalog_product_spec by (product_id, spec_key_id)
     """
-    stmt = (
+    insert_stmt = (
         pg_insert(CatalogProductSpec)
         .values(product_id=product_id, spec_key_id=spec_key_id, value_text=value_text, unit=unit)
+    )
+    stmt = (
+        insert_stmt
         .on_conflict_do_update(
             constraint="uq_catalog_product_spec_product_key",
             set_={
                 "value_text": sa.text("EXCLUDED.value_text"),
-                "unit": sa.text("EXCLUDED.unit"),
+                "unit": sa.func.coalesce(
+                    sa.func.nullif(CatalogProductSpec.unit, ""),
+                    sa.func.nullif(insert_stmt.excluded.unit, ""),
+                ),
             },
         )
     )

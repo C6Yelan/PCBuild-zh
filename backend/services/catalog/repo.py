@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.catalog import (
     CatalogSource,
+    CatalogBrand,
     CatalogProduct,
     CatalogPriceSnapshot,
     CatalogSpecKey,
@@ -35,6 +36,22 @@ def upsert_source(db: Session, *, code: str, name: str | None = None) -> int:
     return int(db.execute(stmt).scalar_one())
 
 
+def upsert_brand(db: Session, *, name: str) -> int:
+    """
+    upsert catalog_brand by name, return brand_id
+    """
+    stmt = (
+        pg_insert(CatalogBrand)
+        .values(name=name)
+        .on_conflict_do_update(
+            index_elements=[CatalogBrand.name],
+            set_={"name": sa.text("EXCLUDED.name")},
+        )
+        .returning(CatalogBrand.id)
+    )
+    return int(db.execute(stmt).scalar_one())
+
+
 def upsert_product(
     db: Session,
     *,
@@ -45,6 +62,7 @@ def upsert_product(
     url: str,
     sku_hint: str | None,
     run_id: UUID,
+    brand_id: int | None = None,
 ) -> UUID:
     """
     upsert catalog_product by (source_id, source_item_key), return product_id
@@ -52,6 +70,18 @@ def upsert_product(
     - last_seen_run_id：每次 upsert 都更新
     """
     new_pid = uuid4()
+    update_set: dict[str, object] = {
+        "category": sa.text("EXCLUDED.category"),
+        "title": sa.text("EXCLUDED.title"),
+        "url": sa.text("EXCLUDED.url"),
+        "sku_hint": sa.text("EXCLUDED.sku_hint"),
+        "last_seen_run_id": sa.text("EXCLUDED.last_seen_run_id"),
+        "updated_at": sa.func.now(),
+    }
+    if brand_id is not None:
+        # Only backfill when current brand_id is NULL; never override non-NULL value.
+        update_set["brand_id"] = sa.func.coalesce(CatalogProduct.brand_id, sa.text("EXCLUDED.brand_id"))
+
     stmt = (
         pg_insert(CatalogProduct)
         .values(
@@ -62,20 +92,14 @@ def upsert_product(
             title=title,
             url=url,
             sku_hint=sku_hint,
+            brand_id=brand_id,
             first_seen_run_id=run_id,
             last_seen_run_id=run_id,
             updated_at=sa.func.now(),
         )
         .on_conflict_do_update(
             constraint="uq_catalog_product_source_item_key",
-            set_={
-                "category": sa.text("EXCLUDED.category"),
-                "title": sa.text("EXCLUDED.title"),
-                "url": sa.text("EXCLUDED.url"),
-                "sku_hint": sa.text("EXCLUDED.sku_hint"),
-                "last_seen_run_id": sa.text("EXCLUDED.last_seen_run_id"),
-                "updated_at": sa.func.now(),
-            },
+            set_=update_set,
         )
         .returning(CatalogProduct.product_id)
     )

@@ -11,12 +11,31 @@ from backend.db import SessionLocal
 from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgItem, CrawlerStgGateResult
 from backend.services.catalog.repo import (
     upsert_source,
+    upsert_brand,
     upsert_product,
     upsert_price_snapshot,
     upsert_spec_key,
     upsert_product_spec,
     normalize_value_text,
 )
+
+
+_SKIP_SPEC_KEYS = {"brand_hint", "model_hint", "is_bundle", "is_accessory"}
+
+
+def _infer_unit(spec_key: str) -> str | None:
+    key = spec_key.lower()
+    if key.endswith("_w_mk") or "_w_mk" in key:
+        return "W/mK"
+    if key.endswith("_mb_s") or "_mb_s" in key:
+        return "MB/s"
+    if key.endswith("_gib") or "_gib" in key:
+        return "GiB"
+    if key.endswith("_mm") or "_mm" in key:
+        return "mm"
+    if key.endswith("_w") or "_w" in key:
+        return "W"
+    return None
 
 
 def _select_pass_items(db: Session, *, run_id: UUID) -> list[CrawlerStgItem]:
@@ -67,6 +86,15 @@ def main() -> int:
             spec_n = 0
 
             for it in items:
+                extra = (it.canonical_json or {}).get("extra")
+                brand_id: int | None = None
+                if isinstance(extra, dict):
+                    brand_hint = extra.get("brand_hint")
+                    if isinstance(brand_hint, str):
+                        brand_name = brand_hint.strip()
+                        if brand_name:
+                            brand_id = upsert_brand(db, name=brand_name)
+
                 pid = upsert_product(
                     db,
                     source_id=source_id,
@@ -76,6 +104,7 @@ def main() -> int:
                     url=it.url,
                     sku_hint=it.sku_hint,
                     run_id=run_id,
+                    brand_id=brand_id,
                 )
                 product_n += 1
 
@@ -88,16 +117,19 @@ def main() -> int:
                 )
                 price_n += 1
 
-                extra = (it.canonical_json or {}).get("extra")
                 if isinstance(extra, dict):
                     for k, v in extra.items():
-                        key_id = upsert_spec_key(db, key=str(k))
+                        key_text = str(k)
+                        if key_text in _SKIP_SPEC_KEYS:
+                            continue
+
+                        key_id = upsert_spec_key(db, key=key_text)
                         upsert_product_spec(
                             db,
                             product_id=pid,
                             spec_key_id=key_id,
                             value_text=normalize_value_text(v),
-                            unit=None,
+                            unit=_infer_unit(key_text),
                         )
                         spec_n += 1
 

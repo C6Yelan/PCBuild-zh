@@ -142,6 +142,15 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     model_hint = _extract_model_token(line)
     sku_hint = model_hint
 
+    if brand_hint is None and model_hint is not None:
+        model_upper = model_hint.upper()
+        if model_upper.startswith("ST"):
+            brand_hint = "SEAGATE"
+        elif model_upper.startswith(("WD", "WUS")):
+            brand_hint = "WD"
+        elif model_upper.startswith(("HDWR", "HDWG", "HDW", "MQ", "MG")):
+            brand_hint = "TOSHIBA"
+
     capacity_gib = _extract_capacity_gib(head) or _extract_capacity_gib(line)
 
     rpm_hint = None

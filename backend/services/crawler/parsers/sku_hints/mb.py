@@ -205,10 +205,10 @@ def _is_bundle_head(head: str) -> bool: # 判斷主機板標題是否為套裝/�
 def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
     sku_hint = extract_mb_sku_hint(title)
     head = _extract_head(title)
-    brand_hint = _infer_brand_hint(head)
+    brand_hint = _infer_brand_hint(head) or _infer_brand_hint(sku_hint or "") or _infer_brand_hint(title or "")
 
     # 先拿 chipset_hint，供 socket 推導使用
-    chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head)
+    chipset_hint = _extract_chipset(sku_hint) or _extract_chipset(head) or _extract_chipset(title)
 
     cpu_field = _extract_label_value(title or "", "CPU")
     socket_hint = _normalize_socket(cpu_field, allow_bare=True)
@@ -217,6 +217,10 @@ def extract_mb_hints(title: str) -> tuple[str | None, dict[str, object]]:
     if not socket_hint:
         sock_m = _CPU_SOCKET_RE.search(title or "")
         socket_hint = _normalize_socket(sock_m.group("sock") if sock_m else None, allow_bare=False)
+    if not socket_hint:
+        bare_lga = re.search(r"(?<!\d)(1700|1851|1200|1151|1150|4677)(?!\d)", title or "")
+        if bare_lga:
+            socket_hint = f"LGA{bare_lga.group(1)}"
 
     # ★補推導：socket 抽不到才用 chipset 推
     if not socket_hint:

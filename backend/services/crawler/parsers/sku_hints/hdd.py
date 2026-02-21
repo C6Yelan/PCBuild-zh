@@ -50,6 +50,30 @@ _SEGMENT_RULES: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def _pick_hint(*candidates: str | None) -> str:
+    for cand in candidates:
+        if cand is not None:
+            s = str(cand).strip()
+            if s != "":
+                return s
+    return ""
+
+
+def _infer_brand_from_model_token(model_token: str | None) -> str | None:
+    if model_token is None:
+        return None
+    token = model_token.strip().upper()
+    if token == "":
+        return None
+    if token.startswith("ST"):
+        return "SEAGATE"
+    if token.startswith(("WD", "WUS")):
+        return "WD"
+    if token.startswith(("HDWR", "HDWG", "HDW", "MQ", "MG")):
+        return "TOSHIBA"
+    return None
+
+
 def _extract_capacity_gib(text: str) -> int | None: # 提取容量並轉換為 GiB。
     m = _CAPACITY_RE.search(text or "")
     if not m:
@@ -126,8 +150,11 @@ def _infer_brand(text: str) -> str | None: # 推斷品牌提示。
 
 
 def extract_hdd_sku_hint(title: str) -> str | None: # 回傳 HDD 型號提示（sku_hint）。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
-    return _extract_model_token(line)
+    text = title or ""
+    line = normalize_spaces(strip_leading_note(first_line(text)))
+    head = head_before_brackets(line)
+    model_token = _pick_hint(_extract_model_token(line), _extract_model_token(head), _extract_model_token(text))
+    return _pick_hint(model_token, head, line, "UNKNOWN-HDD")
 
 
 def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
@@ -137,19 +164,19 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     text = title or ""
     line = normalize_spaces(strip_leading_note(first_line(text)))
     head = head_before_brackets(line)
+    title_first_line = normalize_spaces(strip_leading_note(first_line(text)))
+
+    model_token = _pick_hint(_extract_model_token(line), _extract_model_token(head), _extract_model_token(text))
+    model_hint = _pick_hint(model_token, head, line, title_first_line, "UNKNOWN-HDD")
+    sku_hint = _pick_hint(model_token, model_hint, head, line, title_first_line, "UNKNOWN-HDD")
 
     brand_hint = _infer_brand(head or line)
-    model_hint = _extract_model_token(line)
-    sku_hint = model_hint
-
-    if brand_hint is None and model_hint is not None:
-        model_upper = model_hint.upper()
-        if model_upper.startswith("ST"):
-            brand_hint = "SEAGATE"
-        elif model_upper.startswith(("WD", "WUS")):
-            brand_hint = "WD"
-        elif model_upper.startswith(("HDWR", "HDWG", "HDW", "MQ", "MG")):
-            brand_hint = "TOSHIBA"
+    if brand_hint is None:
+        brand_hint = _infer_brand(text)
+    if brand_hint is None:
+        brand_hint = _infer_brand_from_model_token(model_token)
+    if brand_hint is None:
+        brand_hint = _infer_brand_from_model_token(model_hint)
 
     capacity_gib = _extract_capacity_gib(head) or _extract_capacity_gib(line)
 
@@ -217,5 +244,6 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
         "warranty_years": warranty_years, # 保固年限
         "limit_hint": limit_hint, # 限購或限組裝提示
     }
+    extra["model_hint"] = model_hint
     extra = {k: v for k, v in extra.items() if v is not None}
     return sku_hint, extra

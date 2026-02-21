@@ -88,6 +88,11 @@ def main() -> int:
     ap.add_argument("--snapshot-dir", required=True)
     ap.add_argument("--note", default=None)
     ap.add_argument("--run-id", default=None)
+    ap.add_argument(
+        "--artifact-dir",
+        default=None,
+        help="(optional) output dir for DQ/T5 artifacts; default temp/t7/<run_id>",
+    )
 
     # 是否啟用 T5：crawl_parse_snapshot 是「有 t5-outdir 才會跑」
     ap.add_argument("--enable-t5", action="store_true")
@@ -129,7 +134,7 @@ def main() -> int:
 
     try:
         # 依你偏好：所有產物放 temp 下
-        base_outdir = Path("temp") / "t7" / str(run_id)
+        base_outdir = Path(args.artifact_dir).resolve() if args.artifact_dir else (Path("temp") / "t7" / str(run_id))
         artifact_dir = str(base_outdir)
         dq_outdir = base_outdir / "dq"
         t5_outdir = base_outdir / "t5" if args.enable_t5 else None

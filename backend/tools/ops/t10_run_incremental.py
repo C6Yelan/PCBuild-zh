@@ -595,9 +595,19 @@ def main(argv: list[str] | None = None) -> int:
                         _write_text(part_logs / "stage.stderr.log", stage_stderr)
 
                         stage_obj = _extract_last_json_object(stage_stdout)
-                        staged_total = 0
+                        staged_total: int | None = None
                         if isinstance(stage_obj, dict):
-                            staged_total = int(stage_obj.get("item_inserted") or 0) + int(stage_obj.get("item_updated") or 0)
+                            raw_item_total = stage_obj.get("item_total")
+                            if raw_item_total is not None:
+                                try:
+                                    staged_total = int(raw_item_total)
+                                except (TypeError, ValueError):
+                                    staged_total = None
+
+                        if staged_total is None:
+                            staged_total = int((stage_obj or {}).get("item_inserted") or 0) + int(
+                                (stage_obj or {}).get("item_updated") or 0
+                            )
 
                         over_limit = bool(args.max_items > 0 and staged_total > int(args.max_items))
                         part_entry["parse"] = {
@@ -652,16 +662,22 @@ def main(argv: list[str] | None = None) -> int:
                             continue
 
                         part_entry["status"] = "staged"
+                        stage_state = get_fetch_state(
+                            db,
+                            source=src,
+                            part_type=part_type,
+                            url=str(part["url"]),
+                        )
                         _record_fetch_state(
                             db,
                             dry_run=dry_run,
                             source=src,
                             part_type=part_type,
                             url=str(part["url"]),
-                            etag=None,
-                            last_modified=None,
-                            content_sha256=None,
-                            last_status_code=None,
+                            etag=stage_state.etag if stage_state is not None else None,
+                            last_modified=stage_state.last_modified if stage_state is not None else None,
+                            content_sha256=stage_state.content_sha256 if stage_state is not None else None,
+                            last_status_code=stage_state.last_status_code if stage_state is not None else None,
                             last_success_at=_utc_now(),
                         )
 

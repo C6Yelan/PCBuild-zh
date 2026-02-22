@@ -103,7 +103,8 @@ services:
       APP_GIT_SHA: ${APP_GIT_SHA:?APP_GIT_SHA is required in release/run environment}
       PCBUILD_LOG_TO_PID1: "1"
     command:
-      ["sh","-lc","while true; do python -m backend.tools.ops.t9_db_retention --confirm --unpublished-days 30 --published-staging-days 180; sleep 86400; done"]
+      ["sh","-lc",
+       "while true; do python -m backend.tools.ops.t9_db_retention --confirm --batch-size 5000 --max-batches 20; sleep 86400; done"]
     restart: unless-stopped
     
   cloudflared:
@@ -177,4 +178,3 @@ services:
     depends_on:
       - loki
     restart: unless-stopped
-

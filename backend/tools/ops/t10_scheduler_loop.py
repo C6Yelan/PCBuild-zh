@@ -52,6 +52,12 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.set_defaults(publish=False)
 
     ap.add_argument("--max-items", type=int, default=0)
+    ap.add_argument("--t5-limit", type=int, default=200)
+    ap.add_argument("--t5-min-interval-ms", type=int, default=1500)
+    ap.add_argument("--t5-timeout-s", type=float, default=10.0)
+    ap.add_argument("--t5-max-redirects", type=int, default=5)
+    ap.add_argument("--t5-max-bytes", type=int, default=4194304)
+    ap.add_argument("--t5-block-pattern", action="append", default=[])
     ap.add_argument(
         "--lock-key",
         type=int,
@@ -86,7 +92,26 @@ def main(argv: list[str] | None = None) -> int:
     interval_s = int(args.interval_seconds)
     lock_key = int(args.lock_key) if args.lock_key is not None else _build_lock_key(source, parts)
 
-    runner_argv = ["--source", source, "--parts", parts, "--max-items", str(int(args.max_items))]
+    runner_argv = [
+        "--source",
+        source,
+        "--parts",
+        parts,
+        "--max-items",
+        str(int(args.max_items)),
+        "--t5-limit",
+        str(int(args.t5_limit)),
+        "--t5-min-interval-ms",
+        str(int(args.t5_min_interval_ms)),
+        "--t5-timeout-s",
+        str(float(args.t5_timeout_s)),
+        "--t5-max-redirects",
+        str(int(args.t5_max_redirects)),
+        "--t5-max-bytes",
+        str(int(args.t5_max_bytes)),
+    ]
+    for p in args.t5_block_pattern:
+        runner_argv.extend(["--t5-block-pattern", str(p)])
     if bool(args.dry_run):
         runner_argv.append("--dry-run")
     if bool(args.publish):
@@ -103,6 +128,12 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=bool(args.dry_run),
         publish=bool(args.publish),
         max_items=int(args.max_items),
+        t5_limit=int(args.t5_limit),
+        t5_min_interval_ms=int(args.t5_min_interval_ms),
+        t5_timeout_s=float(args.t5_timeout_s),
+        t5_max_redirects=int(args.t5_max_redirects),
+        t5_max_bytes=int(args.t5_max_bytes),
+        t5_block_pattern_count=int(len(args.t5_block_pattern)),
         lock_key=lock_key,
         started_at=datetime.now(timezone.utc).isoformat(),
     )

@@ -145,6 +145,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.set_defaults(publish=False)
 
     ap.add_argument("--max-items", type=int, default=0, help="per-part protection cap; <=0 means unlimited")
+    ap.add_argument("--t5-limit", type=int, default=0, help="T5 check first N rows; <=0 means full")
+    ap.add_argument("--t5-min-interval-ms", type=int, default=1500)
+    ap.add_argument("--t5-timeout-s", type=float, default=10.0)
+    ap.add_argument("--t5-max-redirects", type=int, default=5)
+    ap.add_argument("--t5-max-bytes", type=int, default=4194304)
+    ap.add_argument("--t5-block-pattern", action="append", default=[])
     return ap
 
 
@@ -570,7 +576,20 @@ def main(argv: list[str] | None = None) -> int:
                             run_id,
                             "--artifact-dir",
                             str(part_t7_artifact_dir),
+                            "--enable-t5",
+                            "--t5-limit",
+                            str(int(args.t5_limit)),
+                            "--t5-min-interval-ms",
+                            str(int(args.t5_min_interval_ms)),
+                            "--t5-timeout-s",
+                            str(float(args.t5_timeout_s)),
+                            "--t5-max-redirects",
+                            str(int(args.t5_max_redirects)),
+                            "--t5-max-bytes",
+                            str(int(args.t5_max_bytes)),
                         ]
+                        for p in args.t5_block_pattern:
+                            stage_argv.extend(["--t5-block-pattern", str(p)])
                         stage_rc, stage_stdout, stage_stderr = _run_cli_main(t7_stage_main, stage_argv)
                         _write_text(part_logs / "stage.stdout.log", stage_stdout)
                         _write_text(part_logs / "stage.stderr.log", stage_stderr)

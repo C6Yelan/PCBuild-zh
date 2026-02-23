@@ -84,7 +84,7 @@ groups:
                     (
                       sum(
                         count_over_time(
-                          {container_name="pcbuild-fastapi", logger="pcbuild.pipeline"}
+                          {container_name=~"pcbuild-(fastapi|scheduler)", logger="pcbuild.pipeline"}
                           |= "event=t9_publish_finished"
                           |= "env=prod"
                           |= "published=true"

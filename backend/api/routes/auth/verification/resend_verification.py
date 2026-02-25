@@ -1,25 +1,23 @@
 # backend/api/routes/auth/verification/resend_verification.py
-import math
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
 from backend.api.auth.config import EMAIL_ADAPTER, RESEND_SIGNUP_MIN_INTERVAL_SECONDS
 from backend.api.auth.utils import raise_400
 from backend.api.dependencies.auth import try_get_current_user
-from backend.models import User, EmailVerificationToken
+from backend.models import User
 from backend.schemas.auth import ResendVerificationIn
 from backend.services.auth.workflows.signup_verification import resend_signup_verification_for_email
-from backend.services.auth.verification.core import (
-    VerificationEmailRateLimitedError,
-    VerificationPurpose,
-)
+from backend.services.auth.verification.core import VerificationEmailRateLimitedError
 from backend.core.middleware.throttling.rate_limit import limiter
 from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
+_RESEND_GENERIC_OK = {
+    "ok": True,
+    "message": "If the account exists, you will receive an email.",
+}
 
 
 # ===== 重新寄送驗證信 =====
@@ -42,7 +40,7 @@ def resend_verification(
         current_user = try_get_current_user(request=request, db=db)
         if not current_user:
             log_security("email_verification_resend_anonymous", **security_ctx(request))
-            return {"ok": True}
+            return _RESEND_GENERIC_OK
         email = current_user.email
 
     # B) 有 email（或從 session 推到 email）：才做格式檢查與寄送
@@ -61,50 +59,44 @@ def resend_verification(
         )
         raise_400({"email": "Email 格式不正確。"})
 
-    # 先查 user（用於 429 時精準算剩餘秒數；不存在/已啟用也不暴露）
+    # 先查 user（僅用於內部審計；對外不暴露存在與否）
     user = db.query(User).filter(User.email == email).first()
+    email_domain = email.split("@", 1)[-1].lower() if "@" in email else "-"
+    if user is None:
+        log_security(
+            "email_verification_resend_suppressed",
+            reason="user_not_found",
+            email_domain=email_domain,
+            **security_ctx(request),
+        )
+        return _RESEND_GENERIC_OK
+
+    if user.is_active:
+        log_security(
+            "email_verification_resend_suppressed",
+            reason="already_verified",
+            user_id=user.id,
+            email_domain=email_domain,
+            **security_ctx(request),
+        )
+        return _RESEND_GENERIC_OK
 
     try:
         resend_signup_verification_for_email(db=db, email=email, request=request)
     except VerificationEmailRateLimitedError:
-        retry_after = RESEND_SIGNUP_MIN_INTERVAL_SECONDS
-
-        # 若查得到 user（且尚未啟用），用最新 token.created_at 精準計算剩餘秒數
-        if user is not None and not user.is_active:
-            latest = (
-                db.query(EmailVerificationToken)
-                .filter(
-                    EmailVerificationToken.user_id == user.id,
-                    EmailVerificationToken.purpose == VerificationPurpose.SIGNUP.value,
-                )
-                .order_by(EmailVerificationToken.created_at.desc())
-                .first()
-            )
-            if latest is not None:
-                now = datetime.now(timezone.utc)
-                wait_until = latest.created_at + timedelta(seconds=RESEND_SIGNUP_MIN_INTERVAL_SECONDS)
-                remaining = (wait_until - now).total_seconds()
-                retry_after = max(1, int(math.ceil(remaining)))
-                
-        email_domain = email.split("@", 1)[-1].lower() if "@" in email else "-"
         log_security(
             "email_verification_resend_rate_limited",
-            user_id=(user.id if (user is not None) else "-"),
+            user_id=user.id,
             email_domain=email_domain,
-            retry_after=retry_after,
+            retry_after=RESEND_SIGNUP_MIN_INTERVAL_SECONDS,
             **security_ctx(request),
         )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            # 重要：不要放到 email 欄位，避免前端把輸入框標紅
-            detail={"errors": {"_global": "驗證信寄送太頻繁，請稍後再試。"}},
-            headers={"Retry-After": str(retry_after)},
-        )
+        # 對外回應維持一致，避免可枚舉訊號（200 vs 429）
+        return _RESEND_GENERIC_OK
 
-    email_domain = email.split("@", 1)[-1].lower() if "@" in email else "-"
     log_security(
         "email_verification_resent",
-        user_id=(user.id if (user is not None) else "-"),
+        user_id=user.id,
         email_domain=email_domain,
         client=(request.headers.get("cf-connecting-ip")
                 or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
@@ -113,4 +105,4 @@ def resend_verification(
         path=request.url.path,
     )
     # C) 一律回成功（避免暴露帳號是否存在/是否已驗證）
-    return {"ok": True}
+    return _RESEND_GENERIC_OK

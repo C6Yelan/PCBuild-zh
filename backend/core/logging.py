@@ -13,6 +13,25 @@ from fastapi import Request, Response
 _configured = False
 
 
+def _sanitize_path(path: str) -> str:
+    """
+    Redact path token segments for sensitive auth endpoints.
+    """
+    if not path:
+        return path
+
+    redacted = path.split("/")
+    sensitive_prev = {"verify-email", "reset-password"}
+
+    for i, segment in enumerate(redacted):
+        if segment in sensitive_prev:
+            token_idx = i + 1
+            if token_idx < len(redacted) and redacted[token_idx]:
+                redacted[token_idx] = "[REDACTED]"
+
+    return "/".join(redacted)
+
+
 def configure_logging(*, log_level: str) -> None:
     """
     Configure application + uvicorn loggers.
@@ -86,6 +105,8 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
     logger = logging.getLogger("pcbuild.request")
 
     req_id = uuid.uuid4().hex[:12]
+    raw_path = request.url.path
+    sanitized_path = _sanitize_path(raw_path)
     start = time.perf_counter()
 
     try:
@@ -96,7 +117,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.exception(
              "category=error event=request_failed method=%s path=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
-            request.url.path,
+            sanitized_path,
             dur_ms,
             req_id,
             getattr(request.client, "host", "-"),
@@ -110,7 +131,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.warning(
              "category=error event=request_error method=%s path=%s status=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
-            request.url.path,
+            sanitized_path,
             status,
             dur_ms,
             req_id,
@@ -120,7 +141,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.warning(
             "category=access event=request_slow method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
             request.method,
-            request.url.path,
+            sanitized_path,
             status,
             dur_ms,
             req_id,
@@ -129,7 +150,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.info(
             "category=access event=request_ok method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
             request.method,
-            request.url.path,
+            sanitized_path,
             status,
             dur_ms,
             req_id,

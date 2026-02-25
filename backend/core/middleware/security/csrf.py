@@ -13,11 +13,21 @@ from backend.api.auth.config import SESSION_COOKIE_NAME
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _API_PREFIX = "/api"
+# 由路由組合確認：auth prefix "/api/auth" + session_login 路由 "/login"
+_LOGIN_PATHS = {"/api/auth/login"}
 
 
 def _normalize_origin(origin: str) -> str:
     o = origin.strip().rstrip("/")
     return o
+
+
+def _normalize_path(path: str) -> str:
+    if not path:
+        return "/"
+    p = path if path.startswith("/") else f"/{path}"
+    p = p.rstrip("/")
+    return p or "/"
 
 
 def _origin_from_referer(referer: str) -> str | None:
@@ -43,15 +53,20 @@ def add_csrf_protection_middleware(app: FastAPI) -> None:
         for x in trusted_raw.split(",")
         if x.strip()
     }
-
     @app.middleware("http")
     async def _csrf_guard(request: Request, call_next):
         # 只管 API，且只管會改狀態的方法
-        if not request.url.path.startswith(_API_PREFIX) or request.method not in _UNSAFE_METHODS:
+        raw_path = request.url.path
+        norm_path = _normalize_path(raw_path)
+        if not norm_path.startswith(_API_PREFIX) or request.method not in _UNSAFE_METHODS:
             return await call_next(request)
 
-        # 未帶 session cookie：不視為 session 驗證請求，不做 CSRF 檢查
-        if SESSION_COOKIE_NAME not in request.cookies:
+        has_session_cookie = SESSION_COOKIE_NAME in request.cookies
+        is_login_request = norm_path in _LOGIN_PATHS
+
+        # 既有行為：未帶 session cookie 時通常放行
+        # 例外：login 是會建立 session 的狀態變更端點，仍需做 CSRF 檢查
+        if not has_session_cookie and not is_login_request:
             return await call_next(request)
 
         origin = request.headers.get("origin")
@@ -64,13 +79,24 @@ def add_csrf_protection_middleware(app: FastAPI) -> None:
 
         # 未設定信任清單或來源不在清單：拒絕（fail-closed）
         if not trusted or not req_origin or req_origin not in trusted:
-            log_security(
-                "csrf_block",
-                method=request.method,
-                path=request.url.path,
-                client=getattr(request.client, "host", "-"),
-                origin=req_origin or "-",
-            )
+            if is_login_request and not has_session_cookie:
+                log_security(
+                    "login_csrf_rejected",
+                    endpoint="login",
+                    reason=("missing_origin" if not req_origin else "origin_not_allowed"),
+                    method=request.method,
+                    path=raw_path,
+                    client=getattr(request.client, "host", "-"),
+                    origin=req_origin or "-",
+                )
+            else:
+                log_security(
+                    "csrf_block",
+                    method=request.method,
+                    path=raw_path,
+                    client=getattr(request.client, "host", "-"),
+                    origin=req_origin or "-",
+                )
             return JSONResponse(
                 status_code=403,
                 content={"errors": {"_global": "CSRF protection: invalid origin"}},

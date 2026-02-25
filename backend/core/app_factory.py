@@ -14,7 +14,19 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(log_level=settings.log_level)
 
-    app = FastAPI()
+    openapi_url = None
+    docs_url = None
+    redoc_url = None
+    if settings.debug_routes_enabled:
+        openapi_url = "/openapi.json"
+        docs_url = "/docs"
+        redoc_url = "/redoc"
+
+    app = FastAPI(
+        openapi_url=openapi_url,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+    )
     app.state.request_log_mode = settings.request_log_mode
 
     add_app_middlewares(app, settings)
@@ -35,4 +47,3 @@ def create_app() -> FastAPI:
     mount_static_site(app)
     app.middleware("http")(request_log_middleware)
     return app
-

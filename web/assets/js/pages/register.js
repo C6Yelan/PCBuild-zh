@@ -195,14 +195,15 @@ try {
 
     if (!resp.ok) {
     let msg = "註冊失敗，請稍後再試。";
+    const detail =
+        data && typeof data === "object" && data.detail && typeof data.detail === "object"
+        ? data.detail
+        : null;
+    const errors = detail && detail.errors && typeof detail.errors === "object"
+        ? detail.errors
+        : null;
 
-    if (
-        resp.status === 400 &&
-        data &&
-        data.detail &&
-        typeof data.detail === "object"
-    ) {
-        const errors = data.detail.errors || {};
+    if (errors) {
         const globalMessages = [];
 
         Object.entries(errors).forEach(([field, rawMsg]) => {
@@ -231,7 +232,7 @@ try {
 
         if (globalMessages.length > 0) {
         msg = globalMessages.join(" ");
-        } else {
+        } else if (resp.status === 400) {
         msg = "請修正紅色標示的欄位。";
         }
     }
@@ -327,4 +328,3 @@ window.location.href = "/verify-email-pending.html";
     input.focus({ preventScroll: true });
   });
 })();
-

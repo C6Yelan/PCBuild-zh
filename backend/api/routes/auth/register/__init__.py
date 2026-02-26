@@ -1,5 +1,7 @@
 # backend/api/routes/auth/register/__init__.py
-from fastapi import APIRouter, Depends, Request, Response
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from sqlalchemy.orm import Session as OrmSession
 
@@ -13,6 +15,7 @@ from backend.services.auth.workflows.signup_verification import send_signup_veri
 from backend.core.middleware.throttling.rate_limit import limiter
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ===== 註冊 =====
@@ -56,11 +59,26 @@ def register(
     db.refresh(user)
 
     # 5. 寄出註冊驗證信（使用 url_for 產生驗證連結）
-    send_signup_verification_for_user(
-        db=db,
-        user=user,
-        request=request,
-    )
+    try:
+        send_signup_verification_for_user(
+            db=db,
+            user=user,
+            request=request,
+        )
+    except Exception:
+        logger.exception("signup_verification_send_failed user_id=%s", user.id)
+        db.rollback()
+        # 避免出現「前端顯示註冊失敗，但 DB 已有帳號」的不一致狀態
+        try:
+            db.delete(user)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"errors": {"_global": "驗證信寄送失敗，請稍後再試。"}},
+        )
 
     # 6. 回傳基本資訊（前端只拿來判斷成功與否）
     return RegisterOut(

@@ -15,7 +15,7 @@
 - 腳本入口：`/opt/pcbuild-backups/bin`
 
 ## Repo 內的腳本模板
-- repo 提供伺服器備份腳本模板路徑：`ops/scripts/server-backup/`
+- repo 提供伺服器備份腳本模板路徑：`scripts/server-backup/`
 - 內容包含：
   - `backup_now.sh`
   - `cleanup_local.sh`

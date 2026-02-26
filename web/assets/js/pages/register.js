@@ -10,29 +10,6 @@ const emailField = document.querySelector('[data-field="email"]');
 const usernameField = document.querySelector('[data-field="username"]');
 const passwordField = document.querySelector('[data-field="password"]');
 const passwordConfirmField = document.querySelector('[data-field="password-confirm"]');
-const REGISTER_GENERIC_OK_MESSAGE =
-    "已收到你的請求。若帳號符合條件，你會收到一封 Email 提供下一步指引。若你已註冊，請直接登入或使用忘記密碼。";
-
-const genericActionsEl = document.createElement("p");
-genericActionsEl.className = "hint";
-genericActionsEl.style.display = "none";
-genericActionsEl.style.marginTop = "4px";
-genericActionsEl.style.textAlign = "center";
-
-const loginCta = document.createElement("a");
-loginCta.href = "/login.html";
-loginCta.textContent = "前往登入";
-
-const divider = document.createTextNode(" · ");
-
-const forgotCta = document.createElement("a");
-forgotCta.href = "/forgot-password.html";
-forgotCta.textContent = "忘記密碼";
-
-genericActionsEl.appendChild(loginCta);
-genericActionsEl.appendChild(divider);
-genericActionsEl.appendChild(forgotCta);
-errorEl.insertAdjacentElement("afterend", genericActionsEl);
 
 // 已登入者不應停留在註冊頁：直接導回首頁（用 replace 避免返回又回到註冊頁）
 (async function redirectIfAuthed() {
@@ -63,28 +40,8 @@ const hasError = fields.some(
 
 // 當所有欄位都沒有紅框錯誤，就把下方總體錯誤訊息清掉
 if (!hasError) {
-    clearGlobalError();
+    errorEl.textContent = "";
 }
-}
-
-function clearGlobalError() {
-errorEl.textContent = "";
-errorEl.style.color = "";
-}
-
-function setGlobalError(message) {
-errorEl.textContent = message || "";
-errorEl.style.color = "";
-}
-
-function clearGenericRegisterNotice() {
-genericActionsEl.style.display = "none";
-}
-
-function showGenericRegisterNotice() {
-errorEl.textContent = REGISTER_GENERIC_OK_MESSAGE;
-errorEl.style.color = "var(--text)";
-genericActionsEl.style.display = "";
 }
 
 emailInput.addEventListener("blur", validateEmailField);
@@ -180,28 +137,9 @@ const msgEl = field.querySelector(".field-error-text");
 if (msgEl) msgEl.textContent = message || "";
 }
 
-function sanitizeRegisterFieldError(fieldName, message) {
-const raw = String(message || "").trim();
-if (!raw) return "";
-
-const looksLikeAccountState =
-    /已註冊|已存在|不存在|already|exists|not\s+found|registered|taken|verified/i.test(raw);
-if (!looksLikeAccountState) return raw;
-
-switch (fieldName) {
-    case "email":
-    return "請輸入正確的 Email 格式。";
-    case "username":
-    return "使用者名稱格式不正確，請重新確認。";
-    default:
-    return "輸入資料有誤，請重新確認。";
-}
-}
-
 form.addEventListener("submit", async (e) => {
 e.preventDefault();
-clearGlobalError();
-clearGenericRegisterNotice();
+errorEl.textContent = "";
 
 // 1. 先用欄位自己的驗證函式刷新一次所有錯誤
 validateEmailField();
@@ -222,7 +160,7 @@ const hasError = fields.some(
 // 若目前仍有任何欄位錯誤，就阻止送出
 if (hasError) {
     if (!errorEl.textContent) {
-    setGlobalError("請修正紅色標示的欄位。");
+    errorEl.textContent = "請修正紅色標示的欄位。";
     }
     return;
 }
@@ -257,93 +195,80 @@ try {
 
     if (!resp.ok) {
     let msg = "註冊失敗，請稍後再試。";
-    let hasFieldErrors = false;
 
     if (
-        (resp.status === 400 || resp.status === 422) &&
+        resp.status === 400 &&
         data &&
-        data.detail
+        data.detail &&
+        typeof data.detail === "object"
     ) {
-        const globalMessages = [];
-        if (typeof data.detail === "object" && !Array.isArray(data.detail)) {
         const errors = data.detail.errors || {};
+        const globalMessages = [];
+
         Object.entries(errors).forEach(([field, rawMsg]) => {
-            const fieldMsg = sanitizeRegisterFieldError(field, rawMsg);
-            switch (field) {
+        const fieldMsg = String(rawMsg || "");
+        switch (field) {
             case "email":
-                setFieldError(emailField, fieldMsg);
-                hasFieldErrors = true;
-                break;
+            setFieldError(emailField, fieldMsg);
+            break;
             case "username":
-                setFieldError(usernameField, fieldMsg);
-                hasFieldErrors = true;
-                break;
+            setFieldError(usernameField, fieldMsg);
+            break;
             case "password":
-                setFieldError(passwordField, fieldMsg);
-                hasFieldErrors = true;
-                break;
+            setFieldError(passwordField, fieldMsg);
+            break;
             case "password_confirm":
-                setFieldError(passwordConfirmField, fieldMsg);
-                hasFieldErrors = true;
-                break;
+            setFieldError(passwordConfirmField, fieldMsg);
+            break;
             case "_global":
-                globalMessages.push(fieldMsg);
-                break;
+            globalMessages.push(fieldMsg);
+            break;
             default:
-                globalMessages.push(fieldMsg);
-                break;
-            }
-        });
-        } else if (Array.isArray(data.detail)) {
-        data.detail.forEach((item) => {
-            const loc = Array.isArray(item && item.loc) ? item.loc : [];
-            const field = String(loc[loc.length - 1] || "");
-            const fieldMsg = sanitizeRegisterFieldError(
-            field,
-            (item && item.msg) || "輸入資料有誤。"
-            );
-            switch (field) {
-            case "email":
-                setFieldError(emailField, fieldMsg);
-                hasFieldErrors = true;
-                break;
-            case "username":
-                setFieldError(usernameField, fieldMsg);
-                hasFieldErrors = true;
-                break;
-            case "password":
-                setFieldError(passwordField, fieldMsg);
-                hasFieldErrors = true;
-                break;
-            case "password_confirm":
-                setFieldError(passwordConfirmField, fieldMsg);
-                hasFieldErrors = true;
-                break;
-            default:
-                break;
-            }
-        });
+            globalMessages.push(fieldMsg);
+            break;
         }
+        });
 
         if (globalMessages.length > 0) {
         msg = globalMessages.join(" ");
-        } else if (hasFieldErrors) {
+        } else {
         msg = "請修正紅色標示的欄位。";
         }
     }
 
-    setGlobalError(msg);
+    errorEl.textContent = msg;
     return;
     }
 
-    if (data && data.ok === true) {
-    showGenericRegisterNotice();
-    return;
-    }
+// 3. 註冊成功：後端已建立帳號並寄出驗證信（此階段不建立登入態 / 不寫入 Cookie）
+//    前端只需導向「請驗證電子郵件」說明頁，不在網址帶出任何 Email 或 token
+//
+// Pending 頁 UX：用 sessionStorage 暫存必要資訊（不放 URL、不放 localStorage）。
+// 注意：sessionStorage 可被 JS 讀取；為降低留存風險，只存短期且後續會清除。
+try {
+    const now = Date.now();
 
-    setGlobalError("註冊失敗，請稍後再試。");
+    // UI-only：供 Pending 頁「可刷新可恢復」用，不等同 token 有效期
+    const EXPIRES_IN_MINUTES = 30;
+
+    sessionStorage.setItem("pcbuild_verify_email", email);
+    sessionStorage.setItem(
+    "pcbuild_verify_email_expires_at",
+    String(now + EXPIRES_IN_MINUTES * 60 * 1000)
+    );
+
+    // 註冊流程進入 Pending：完成驗證後通常會引導去登入（後續 Pending/Success 會用到）
+    sessionStorage.setItem("pcbuild_verify_flow", "signup");
+
+    // 註冊當下後端已寄出驗證信：直接讓 Pending 頁顯示 60 秒冷卻倒數
+    sessionStorage.setItem("pcbuild_verify_cooldown_until", String(now + 60 * 1000));
+} catch (e) {
+    // 若瀏覽器禁用 storage 或滿額，不影響註冊流程
+}
+
+window.location.href = "/verify-email-pending.html";
 } catch (err) {
-    setGlobalError("註冊失敗，請稍後再試。");
+    errorEl.textContent = "註冊失敗，請稍後再試。";
 } finally {
     registerBtn.disabled = false;
     registerBtn.textContent = originalText;
@@ -402,3 +327,4 @@ try {
     input.focus({ preventScroll: true });
   });
 })();
+

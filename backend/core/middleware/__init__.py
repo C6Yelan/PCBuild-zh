@@ -8,7 +8,6 @@ from slowapi.middleware import SlowAPIMiddleware
 from backend.core.middleware.access.cors import add_cors_middleware
 from backend.core.middleware.security.csrf import add_csrf_protection_middleware
 from backend.core.middleware.security.security_headers import add_security_headers_middleware
-from backend.core.middleware.gates.docs_gate import DocsGateMiddleware
 from backend.core.middleware.gates.debug_gate import add_debug_gate_middleware
 from backend.core.middleware.throttling.rate_limit import limiter
 from backend.core.middleware.throttling.rate_limit_handler import rate_limit_exceeded_handler
@@ -26,9 +25,8 @@ def add_app_middlewares(app: FastAPI, settings) -> None:
         app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
         app.add_middleware(SlowAPIMiddleware)
 
-    # 維持你原本 app_factory 的順序：CORS -> CSRF -> security headers -> docs gate -> debug gate
+    # 維持你原本 app_factory 的順序：CORS -> CSRF -> security headers -> debug gate
     add_cors_middleware(app)
     add_csrf_protection_middleware(app)
     add_security_headers_middleware(app)
-    app.add_middleware(DocsGateMiddleware)
     add_debug_gate_middleware(app)

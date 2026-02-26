@@ -9,18 +9,13 @@ const emailField = document.querySelector('[data-field="email"]');
 // 後端在 429 時會回 Retry-After: <seconds>
 // 前端只做 UI 倒數與 reload 復原（sessionStorage）
 const COOLDOWN_KEY = "pcbuild_forgot_cooldown_until"; // 毫秒 timestamp
-const COOLDOWN_REASON_KEY = "pcbuild_forgot_cooldown_reason"; // "generic" | "rate" | ""
 const BTN_BASE_TEXT = forgotBtn.textContent.trim();
 const COOLDOWN_FALLBACK_SECONDS = 60;
-const FORGOT_GENERIC_OK_MESSAGE = "若帳號存在，你會收到一封 Email。";
-const FORGOT_RATE_LIMIT_MESSAGE = "請稍後再試。";
 let cooldownTimer = null;
-let cooldownReason = "";
 
-function setGlobalError(message, source, tone = "error") {
+function setGlobalError(message, source) {
 errorEl.textContent = message || "";
 errorEl.dataset.source = source || ""; // "fields" | "server" | "cooldown" | ""
-errorEl.style.color = tone === "neutral" ? "var(--text)" : "";
 }
 
 function _parseRetryAfterSeconds(resp) {
@@ -48,31 +43,9 @@ try {
 }
 }
 
-function _readCooldownReason() {
-try {
-    return sessionStorage.getItem(COOLDOWN_REASON_KEY) || "";
-} catch {
-    return "";
-}
-}
-
-function _writeCooldownReason(reason) {
-cooldownReason = reason || "";
-try {
-    if (cooldownReason) {
-    sessionStorage.setItem(COOLDOWN_REASON_KEY, cooldownReason);
-    } else {
-    sessionStorage.removeItem(COOLDOWN_REASON_KEY);
-    }
-} catch {
-    // ignore
-}
-}
-
 function _clearCooldownStorage() {
 try {
     sessionStorage.removeItem(COOLDOWN_KEY);
-    sessionStorage.removeItem(COOLDOWN_REASON_KEY);
 } catch {
     // ignore
 }
@@ -90,7 +63,6 @@ const tick = () => {
 
     if (remaining <= 0) {
     _clearCooldownStorage();
-    cooldownReason = "";
     forgotBtn.disabled = false;
     forgotBtn.textContent = BTN_BASE_TEXT;
     if (errorEl.dataset.source === "cooldown") {
@@ -108,18 +80,16 @@ const tick = () => {
     // 按鈕內顯示倒數（不加「秒」字）
     forgotBtn.textContent = `${BTN_BASE_TEXT}(${remaining})`;
 
-    const msg =
-    cooldownReason === "rate" ? FORGOT_RATE_LIMIT_MESSAGE : FORGOT_GENERIC_OK_MESSAGE;
-    setGlobalError(msg, "cooldown", "neutral");
+    // 下方 global 只顯示固定提示（不再顯示倒數）
+    setGlobalError("重設密碼請求太頻繁，請稍候再試。", "cooldown");
 };
 
 tick();
 cooldownTimer = setInterval(tick, 250);
 }
 
-function _applyCooldownSeconds(seconds, reason) {
+function _applyCooldownSeconds(seconds) {
 const untilMs = Date.now() + seconds * 1000;
-_writeCooldownReason(reason);
 _writeCooldownUntilMs(untilMs);
 _startCooldown(untilMs);
 }
@@ -172,7 +142,6 @@ emailInput.addEventListener("blur", validateEmailField);
 
 // 頁面載入時嘗試復原冷卻倒數（允許 reload 後繼續倒數）
 (function restoreCooldownOnLoad() {
-cooldownReason = _readCooldownReason();
 const untilMs = _readCooldownUntilMs();
 if (untilMs && untilMs > Date.now()) {
     _startCooldown(untilMs);
@@ -232,7 +201,7 @@ try {
     if (resp.status === 429) {
         const seconds = _parseRetryAfterSeconds(resp) || COOLDOWN_FALLBACK_SECONDS;
         clearSingleFieldError(emailField);
-        _applyCooldownSeconds(seconds, "rate");
+        _applyCooldownSeconds(seconds);
         return;
     }
 
@@ -271,12 +240,14 @@ try {
     return;
     }
 
-    if (data && data.ok === true) {
-    _applyCooldownSeconds(COOLDOWN_FALLBACK_SECONDS, "generic");
-    return;
+    // 成功：記錄 email 供 sent 頁遮罩顯示（與冷卻機制無關）
+    try {
+    sessionStorage.setItem("pcbuild_forgot_email", email);
+    } catch {
+    // ignore
     }
 
-    setGlobalError("重設密碼請求失敗，請稍後再試。", "server");
+    window.location.href = "/forgot-password-sent.html";
 } catch {
     setGlobalError("重設密碼請求失敗，請稍後再試。", "server");
 } finally {

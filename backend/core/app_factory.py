@@ -7,6 +7,9 @@ from backend.core.bootstrap.routes import include_api_routes
 from backend.core.settings import get_settings
 from backend.core.bootstrap.static_site import mount_static_site
 from backend.core.logging import configure_logging, request_log_middleware
+from backend.core.middleware.throttling.rate_limit_headers import (
+    add_generic_ok_rate_limit_header_cleanup_middleware,
+)
 from backend.core.oplog import log_operation
 
 
@@ -46,4 +49,6 @@ def create_app() -> FastAPI:
     include_api_routes(app)
     mount_static_site(app)
     app.middleware("http")(request_log_middleware)
+    # 最後註冊：在 response 返回前最後清理 generic 200 的 rate-limit headers
+    add_generic_ok_rate_limit_header_cleanup_middleware(app)
     return app

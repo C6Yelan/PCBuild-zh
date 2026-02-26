@@ -408,6 +408,7 @@ async function loadAuthState(preloadedData = null) {
     // 點擊後：先嘗試重寄驗證信 + 寫入冷卻時間到 sessionStorage + 轉到 pending 頁
     if (data && data.is_active === false) {
       const COOLDOWN_KEY = "pcbuild_verify_cooldown_until";
+      const COOLDOWN_REASON_KEY = "pcbuild_verify_cooldown_reason";
       const DEFAULT_WAIT_SEC = 60;
 
       const verifyLink = document.createElement("a");
@@ -449,14 +450,18 @@ async function loadAuthState(preloadedData = null) {
           // 成功或被 rate limit 時，寫入冷卻時間，讓 pending 頁一載入就能倒數
           if (r.ok || r.status === 429) {
             let waitSec = DEFAULT_WAIT_SEC;
+            let reason = "generic";
 
-            // 200/429 都盡量尊重後端 Retry-After（秒）
-            const ra = r.headers.get("Retry-After");
-            const n = ra ? parseInt(ra, 10) : NaN;
-            if (!Number.isNaN(n) && n > 0) waitSec = Math.min(n, 600);
+            if (r.status === 429) {
+              reason = "rate";
+              const ra = r.headers.get("Retry-After");
+              const n = ra ? parseInt(ra, 10) : NaN;
+              if (!Number.isNaN(n) && n > 0) waitSec = Math.min(n, 600);
+            }
 
             try {
               sessionStorage.setItem(COOLDOWN_KEY, String(Date.now() + waitSec * 1000));
+              sessionStorage.setItem(COOLDOWN_REASON_KEY, reason);
             } catch (_) {}
           }
         } catch (_) {

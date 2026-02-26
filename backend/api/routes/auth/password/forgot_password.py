@@ -1,24 +1,22 @@
 # backend/api/routes/auth/password/forgot_password.py
-import math
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
-from backend.api.auth.config import EMAIL_ADAPTER, RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS
+from backend.api.auth.config import EMAIL_ADAPTER
 from backend.api.auth.utils import raise_400
-from backend.models import User, EmailVerificationToken
+from backend.models import User
 from backend.schemas.auth import ForgotPasswordIn
 from backend.services.auth.workflows.password_reset import send_password_reset_for_user
-from backend.services.auth.verification.core import (
-    VerificationEmailRateLimitedError,
-    VerificationPurpose,
-)
+from backend.services.auth.verification.core import VerificationEmailRateLimitedError
 from backend.core.middleware.throttling.rate_limit import limiter
 from backend.core.seclog import log_security, security_ctx
 
 router = APIRouter()
+_FORGOT_PASSWORD_GENERIC_OK = {
+    "ok": True,
+    "message": "If the account exists, you will receive an email.",
+}
 
 
 # ===== 忘記密碼：發送重設密碼信 =====
@@ -34,10 +32,10 @@ def forgot_password(
     """
     忘記密碼入口：
 
-    - 一律回傳 200 + {"ok": True}（不暴露帳號是否存在 / 是否已啟用）
+    - 一律回傳 200 + 泛化成功訊息（不暴露帳號是否存在 / 是否已啟用）
     - 若 email 格式錯誤，回 400 提示使用者修正
     - 若帳號存在，才實際發 PASSWORD_RESET token 並寄信
-    - 若請求過於頻繁，回 429 告知稍後再試
+    - 若內部流程判定寄送過於頻繁，僅記錄安全事件，不回傳可枚舉訊號
     """
     try:
         EMAIL_ADAPTER.validate_python(body.email)
@@ -58,44 +56,22 @@ def forgot_password(
             email_domain=email_domain,
             **ctx,
         )
-        return {"ok": True}
+        return _FORGOT_PASSWORD_GENERIC_OK
 
     try:
         send_password_reset_for_user(db=db, user=user, request=request)
     except VerificationEmailRateLimitedError:
-        now = datetime.now(timezone.utc)
-        latest = (
-            db.query(EmailVerificationToken)
-            .filter(
-                EmailVerificationToken.user_id == user.id,
-                EmailVerificationToken.purpose == VerificationPurpose.PASSWORD_RESET.value,
-            )
-            .order_by(EmailVerificationToken.created_at.desc())
-            .first()
-        )
-
-        retry_after = RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS
-        if latest is not None:
-            wait_until = latest.created_at + timedelta(seconds=RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS)
-            remaining = (wait_until - now).total_seconds()
-            retry_after = max(1, int(math.ceil(remaining)))
-        
         log_security(
             "password_reset_rate_limited",
             user_id=user.id,
-            retry_after=retry_after,
             **ctx,
         )
-
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"errors": {"_global": "重設密碼請求太頻繁，請稍後再試。"}},
-            headers={"Retry-After": str(retry_after)},
-        )
+        # 對外回應維持一致，避免可枚舉訊號（200 vs 429）
+        return _FORGOT_PASSWORD_GENERIC_OK
 
     log_security(
         "password_reset_email_sent",
         user_id=user.id,
         **ctx,
     )
-    return {"ok": True}
+    return _FORGOT_PASSWORD_GENERIC_OK

@@ -284,19 +284,39 @@ window.location.href = "/verify-email-pending.html";
     else el.removeAttribute("hidden");
   };
 
-  const syncBtnIcons = (btn) => {
+  const syncBtnState = (btn) => {
+    const targetId =
+      btn.getAttribute("data-pw-target") || btn.getAttribute("aria-controls");
+    if (!targetId) return;
+
+    const input = document.getElementById(targetId);
+    if (!input) return;
+
     const isShowing = btn.getAttribute("aria-pressed") === "true";
+    const expectedType = isShowing ? "text" : "password";
+    if (input.type !== expectedType) {
+      try {
+        input.type = expectedType;
+      } catch (_) {}
+    }
+
     const eye = btn.querySelector(".pw-icon-eye");
     const eyeOff = btn.querySelector(".pw-icon-eye-off");
     if (!eye || !eyeOff) return;
 
-    // 狀態式 icon：show -> eye；hide -> eye-off
-    setHiddenAttr(eye, !isShowing);
-    setHiddenAttr(eyeOff, isShowing);
+    setHiddenAttr(eye, isShowing);
+    setHiddenAttr(eyeOff, !isShowing);
+
+    const showLabel =
+      btn.getAttribute("data-label-show") || "顯示密碼（注意：在公開環境可能外露）";
+    const hideLabel = btn.getAttribute("data-label-hide") || "隱藏密碼";
+    const actionLabel = isShowing ? hideLabel : showLabel;
+    btn.setAttribute("aria-label", actionLabel);
+    btn.setAttribute("title", actionLabel);
   };
 
-  // Init：載入時把 icon 與 aria-pressed 同步，避免初始顯示錯
-  document.querySelectorAll(".pw-toggle").forEach(syncBtnIcons);
+  // Init：載入時把 input type / icon 與 aria-pressed 同步
+  document.querySelectorAll(".pw-toggle").forEach(syncBtnState);
 
   document.addEventListener("click", (e) => {
     const btn = e.target.closest(".pw-toggle");
@@ -314,15 +334,8 @@ window.location.href = "/verify-email-pending.html";
     const isPressed = btn.getAttribute("aria-pressed") === "true";
     const nextPressed = !isPressed;
 
-    // pressed=true 代表「顯示密碼」
-    try {
-      input.type = nextPressed ? "text" : "password";
-    } catch (_) {
-      return;
-    }
-
     btn.setAttribute("aria-pressed", nextPressed ? "true" : "false");
-    syncBtnIcons(btn);
+    syncBtnState(btn);
 
     // 保持輸入體驗（避免點 icon 後游標不見）
     input.focus({ preventScroll: true });

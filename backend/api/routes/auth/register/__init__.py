@@ -82,6 +82,7 @@ def register(
 
     # 6. 回傳基本資訊（前端只拿來判斷成功與否）
     return RegisterOut(
+        ok=True,
         id=user.id,
         email=user.email,
         username=user.username,

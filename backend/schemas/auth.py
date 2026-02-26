@@ -11,6 +11,7 @@ class RegisterIn(BaseModel):
 
 
 class RegisterOut(BaseModel):
+    ok: bool = True
     id: int
     email: EmailStr
     username: str

@@ -26,14 +26,16 @@ const fallbackEmailEl = document.getElementById("fallback-email");
 const fallbackErrEl = document.getElementById("fallback-email-error");
 const cooldownHintEl = document.getElementById("cooldown-hint");
 const RESEND_BTN_BASE_TEXT = "重新寄送驗證信";
-const COOLDOWN_REASON_KEY = "pcbuild_verify_cooldown_reason"; // "rate" | ""
+const COOLDOWN_REASON_KEY = "pcbuild_verify_cooldown_reason"; // "generic" | "rate" | ""
+const RESEND_GENERIC_OK_MESSAGE = "若帳號存在，你會收到一封 Email。";
+const RESEND_RATE_LIMIT_MESSAGE = "請稍後再試。";
 
 // State
 let currentEmail = "";
 let isLoggedIn = false;
 let isActive = false; // 只有 isLoggedIn=true 時才可信
 let countdownTimer = null;
-let cooldownReason = ""; // "rate" 才顯示「太頻繁」
+let cooldownReason = ""; // "generic" | "rate" | ""
 
 function safeGetSessionItem(key) {
 try {
@@ -188,9 +190,10 @@ else safeRemoveSessionItem(COOLDOWN_REASON_KEY);
 }
 
 function showSendFail() {
-_writeCooldownReason(""); // 非 429 不顯示「太頻繁」
+_writeCooldownReason("");
 if (cooldownHintEl) {
     cooldownHintEl.style.display = "";
+    cooldownHintEl.style.color = "";
     cooldownHintEl.textContent = "驗證信寄送失敗，請稍後再試。";
 }
 resendBtn.disabled = false;
@@ -220,15 +223,19 @@ const s = Math.max(0, Number(remainingSeconds) || 0);
 resendBtn.disabled = s > 0;
 resendBtn.textContent = s > 0 ? `${RESEND_BTN_BASE_TEXT} (${s})` : RESEND_BTN_BASE_TEXT;
 
-// 紅字只提示原因，不重複顯示秒數（避免雙倒數）
+// 只提示冷卻狀態，不重複顯示秒數（避免雙倒數）
 if (!cooldownHintEl) return;
 
-if (s > 0 && cooldownReason === "rate") {
+if (s > 0) {
+    const msg =
+    cooldownReason === "rate" ? RESEND_RATE_LIMIT_MESSAGE : RESEND_GENERIC_OK_MESSAGE;
     cooldownHintEl.style.display = "";
-    cooldownHintEl.textContent = "驗證信寄送太頻繁，請稍候再試。";
+    cooldownHintEl.style.color = "var(--muted)";
+    cooldownHintEl.textContent = msg;
 } else {
     cooldownHintEl.textContent = "";
     cooldownHintEl.style.display = "none";
+    cooldownHintEl.style.color = "";
 }
 }
 
@@ -393,12 +400,15 @@ try {
     credentials: "same-origin",
     });
 
-    if (resp.ok || resp.status === 429) {
+    if (resp.ok) {
+    _writeCooldownReason("generic");
+    _applyCooldownSeconds(DEFAULT_MIN_INTERVAL_SECONDS);
+    return;
+    }
+
+    if (resp.status === 429) {
     const retry = parseRetryAfterSeconds(resp) || DEFAULT_MIN_INTERVAL_SECONDS;
-
-    if (resp.status === 429) _writeCooldownReason("rate");
-    else _writeCooldownReason("");
-
+    _writeCooldownReason("rate");
     _applyCooldownSeconds(retry);
     return;
     }

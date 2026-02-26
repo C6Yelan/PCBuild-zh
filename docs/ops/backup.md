@@ -14,6 +14,15 @@
 - 作業日誌：`/opt/pcbuild-backups/logs`
 - 腳本入口：`/opt/pcbuild-backups/bin`
 
+## Repo 內的腳本模板
+- repo 提供伺服器備份腳本模板路徑：`ops/scripts/server-backup/`
+- 內容包含：
+  - `backup_now.sh`
+  - `cleanup_local.sh`
+  - `retention_weekly.sh`
+  - `check_weekly.sh`
+- 部署時請將上述腳本複製到 `/opt/pcbuild-backups/bin/` 後再由 cron 呼叫。
+
 ## 3) 排程（cron）
 - 每日 `03:30`：執行 `/opt/pcbuild-backups/bin/backup_now.sh`
 - 每週日 `05:10`：執行 `/opt/pcbuild-backups/bin/retention_weekly.sh`

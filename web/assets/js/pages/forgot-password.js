@@ -81,7 +81,7 @@ const tick = () => {
     forgotBtn.textContent = `${BTN_BASE_TEXT}(${remaining})`;
 
     // 下方 global 只顯示固定提示（不再顯示倒數）
-    setGlobalError("重設密碼請求太頻繁，請稍候再試。", "cooldown");
+    setGlobalError("若需再次寄送，請稍候再試。", "cooldown");
 };
 
 tick();
@@ -245,6 +245,13 @@ try {
     sessionStorage.setItem("pcbuild_forgot_email", email);
     } catch {
     // ignore
+    }
+
+    // 200 也可能是「已受理但仍在冷卻期間」，統一尊重 Retry-After，
+    // 讓使用者返回本頁時維持一致倒數體驗。
+    const retryAfter = _parseRetryAfterSeconds(resp);
+    if (retryAfter && retryAfter > 0) {
+      _writeCooldownUntilMs(Date.now() + retryAfter * 1000);
     }
 
     window.location.href = "/forgot-password-sent.html";

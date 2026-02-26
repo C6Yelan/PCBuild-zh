@@ -26,14 +26,12 @@ const fallbackEmailEl = document.getElementById("fallback-email");
 const fallbackErrEl = document.getElementById("fallback-email-error");
 const cooldownHintEl = document.getElementById("cooldown-hint");
 const RESEND_BTN_BASE_TEXT = "重新寄送驗證信";
-const COOLDOWN_REASON_KEY = "pcbuild_verify_cooldown_reason"; // "rate" | ""
 
 // State
 let currentEmail = "";
 let isLoggedIn = false;
 let isActive = false; // 只有 isLoggedIn=true 時才可信
 let countdownTimer = null;
-let cooldownReason = ""; // "rate" 才顯示「太頻繁」
 
 function safeGetSessionItem(key) {
 try {
@@ -177,18 +175,7 @@ if (!raw) return null;
 const ms = Number(raw);
 return Number.isFinite(ms) ? ms : null;
 }
-function _readCooldownReason() {
-return safeGetSessionItem(COOLDOWN_REASON_KEY) || "";
-}
-
-function _writeCooldownReason(reason) {
-cooldownReason = reason || "";
-if (cooldownReason) safeSetSessionItem(COOLDOWN_REASON_KEY, cooldownReason);
-else safeRemoveSessionItem(COOLDOWN_REASON_KEY);
-}
-
 function showSendFail() {
-_writeCooldownReason(""); // 非 429 不顯示「太頻繁」
 if (cooldownHintEl) {
     cooldownHintEl.style.display = "";
     cooldownHintEl.textContent = "驗證信寄送失敗，請稍後再試。";
@@ -203,7 +190,6 @@ safeSetSessionItem(COOLDOWN_KEY, String(untilMs));
 
 function _clearCooldownStorage() {
 safeRemoveSessionItem(COOLDOWN_KEY);
-safeRemoveSessionItem(COOLDOWN_REASON_KEY);
 }
 
 function _stopCooldownTimer() {
@@ -220,12 +206,12 @@ const s = Math.max(0, Number(remainingSeconds) || 0);
 resendBtn.disabled = s > 0;
 resendBtn.textContent = s > 0 ? `${RESEND_BTN_BASE_TEXT} (${s})` : RESEND_BTN_BASE_TEXT;
 
-// 紅字只提示原因，不重複顯示秒數（避免雙倒數）
+// 紅字只顯示固定提示，不重複顯示秒數（避免雙倒數）
 if (!cooldownHintEl) return;
 
-if (s > 0 && cooldownReason === "rate") {
+if (s > 0) {
     cooldownHintEl.style.display = "";
-    cooldownHintEl.textContent = "驗證信寄送太頻繁，請稍候再試。";
+    cooldownHintEl.textContent = "驗證信處理中，若需再次寄送請稍候。";
 } else {
     cooldownHintEl.textContent = "";
     cooldownHintEl.style.display = "none";
@@ -261,7 +247,6 @@ _startCooldown(untilMs);
 }
 
 function restoreCooldownFromStorage() {
-cooldownReason = _readCooldownReason();
 const untilMs = _readCooldownUntilMs();
 if (untilMs && untilMs > Date.now()) {
     _startCooldown(untilMs);
@@ -395,10 +380,6 @@ try {
 
     if (resp.ok || resp.status === 429) {
     const retry = parseRetryAfterSeconds(resp) || DEFAULT_MIN_INTERVAL_SECONDS;
-
-    if (resp.status === 429) _writeCooldownReason("rate");
-    else _writeCooldownReason("");
-
     _applyCooldownSeconds(retry);
     return;
     }

@@ -13,6 +13,9 @@ from backend.api.auth.config import SESSION_COOKIE_NAME
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _API_PREFIX = "/api"
+_ALWAYS_CHECK_PATHS = {
+    "/api/auth/login",
+}
 
 
 def _normalize_origin(origin: str) -> str:
@@ -50,8 +53,10 @@ def add_csrf_protection_middleware(app: FastAPI) -> None:
         if not request.url.path.startswith(_API_PREFIX) or request.method not in _UNSAFE_METHODS:
             return await call_next(request)
 
-        # 未帶 session cookie：不視為 session 驗證請求，不做 CSRF 檢查
-        if SESSION_COOKIE_NAME not in request.cookies:
+        # 一般情況：僅對 cookie-based session 的 unsafe request 做檢查。
+        # 但 login 端點會建立 session cookie，因此即使尚未有 cookie 也要做來源檢查。
+        has_session_cookie = SESSION_COOKIE_NAME in request.cookies
+        if (not has_session_cookie) and (request.url.path not in _ALWAYS_CHECK_PATHS):
             return await call_next(request)
 
         origin = request.headers.get("origin")

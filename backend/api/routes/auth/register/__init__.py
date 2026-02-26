@@ -33,17 +33,13 @@ def register(
     except Exception:
         raise_400({"email": "Email 格式不正確。"})
 
-    # 2. 檢查 Email / 使用者名稱是否已存在（一次收集所有欄位錯誤）
-    errors: dict[str, str] = {}
-
-    if db.query(User).filter(User.email == body.email).first():
-        errors["email"] = "Email 已被註冊。"
-
-    if db.query(User).filter(User.username == body.username).first():
-        errors["username"] = "使用者名稱已被註冊。"
-
-    if errors:
-        raise_400(errors)
+    # 2. 檢查 Email / 使用者名稱是否已存在
+    # 回傳全域訊息，避免直接暴露是 email 或 username 命中重複。
+    if (
+        db.query(User).filter(User.email == body.email).first()
+        or db.query(User).filter(User.username == body.username).first()
+    ):
+        raise_400({"_global": "註冊資料不可用，請確認後再試。"})
 
     # 3. 建立使用者（預設為未啟用，待 Email 驗證後啟用）
     hashed = hash_password(body.password)

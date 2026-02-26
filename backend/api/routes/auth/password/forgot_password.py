@@ -2,7 +2,7 @@
 import math
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
@@ -31,13 +31,15 @@ def forgot_password(
     db: OrmSession = Depends(get_db),
 ):
     ctx = security_ctx(request)
+    # 一律帶 Retry-After，避免不同狀態回應暴露額外訊號
+    response.headers["Retry-After"] = str(RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS)
     """
     忘記密碼入口：
 
     - 一律回傳 200 + {"ok": True}（不暴露帳號是否存在 / 是否已啟用）
     - 若 email 格式錯誤，回 400 提示使用者修正
     - 若帳號存在，才實際發 PASSWORD_RESET token 並寄信
-    - 若請求過於頻繁，回 429 告知稍後再試
+    - 若請求過於頻繁，仍回 200（防止 200/429 枚舉側通道）
     """
     try:
         EMAIL_ADAPTER.validate_python(body.email)
@@ -86,12 +88,8 @@ def forgot_password(
             retry_after=retry_after,
             **ctx,
         )
-
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"errors": {"_global": "重設密碼請求太頻繁，請稍後再試。"}},
-            headers={"Retry-After": str(retry_after)},
-        )
+        response.headers["Retry-After"] = str(retry_after)
+        return {"ok": True}
 
     log_security(
         "password_reset_email_sent",

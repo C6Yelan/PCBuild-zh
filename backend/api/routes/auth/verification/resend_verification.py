@@ -2,7 +2,7 @@
 import math
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
@@ -61,7 +61,7 @@ def resend_verification(
         )
         raise_400({"email": "Email 格式不正確。"})
 
-    # 先查 user（用於 429 時精準算剩餘秒數；不存在/已啟用也不暴露）
+    # 先查 user（用於限流時精準算剩餘秒數；不存在/已啟用也不暴露）
     user = db.query(User).filter(User.email == email).first()
 
     try:
@@ -94,12 +94,8 @@ def resend_verification(
             retry_after=retry_after,
             **security_ctx(request),
         )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            # 重要：不要放到 email 欄位，避免前端把輸入框標紅
-            detail={"errors": {"_global": "驗證信寄送太頻繁，請稍後再試。"}},
-            headers={"Retry-After": str(retry_after)},
-        )
+        response.headers["Retry-After"] = str(retry_after)
+        return {"ok": True}
 
     email_domain = email.split("@", 1)[-1].lower() if "@" in email else "-"
     log_security(

@@ -60,6 +60,8 @@ _EVENT_LEVELS: dict[str, int] = {
     "password_reset_token_invalid": logging.WARNING,
     "password_reset_policy_violation": logging.WARNING,
     "password_reset_success": logging.INFO,
+    "password_reset_notice_email_sent": logging.INFO,
+    "password_reset_notice_email_failed": logging.ERROR,
 
     # --- verification token ---
     "verification_token_issued": logging.INFO,

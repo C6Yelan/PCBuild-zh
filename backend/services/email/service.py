@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from .resend_client import ResendEmailClient
 from .templates import (
+    build_password_changed_email,
     build_password_reset_email,
     build_signup_verification_email,
 )
@@ -60,5 +61,12 @@ def send_signup_verification_email(to_email: str, verify_url: str) -> str:
 def send_password_reset_email(to_email: str, reset_url: str) -> str:
     """忘記密碼信寄送（僅負責套模板 + 寄送）。"""
     subject, html = build_password_reset_email(reset_url)
+    message = build_email_message(to=[to_email], subject=subject, html=html)
+    return send_email(message)
+
+
+def send_password_changed_email(to_email: str) -> str:
+    """密碼已修改通知信寄送（僅負責套模板 + 寄送）。"""
+    subject, html = build_password_changed_email()
     message = build_email_message(to=[to_email], subject=subject, html=html)
     return send_email(message)

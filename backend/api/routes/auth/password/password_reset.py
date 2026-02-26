@@ -12,6 +12,7 @@ from backend.services.auth.verification.core import (
     InvalidOrExpiredTokenError,
     VerificationPurpose,
 )
+from backend.services.email.client import send_password_changed_email
 from backend.core.middleware.throttling.rate_limit import limiter
 from backend.core.seclog import log_security, security_ctx
 
@@ -76,6 +77,21 @@ def reset_password(
         account_activated=("1" if was_inactive else "0"),
         **ctx,
     )
+
+    try:
+        send_password_changed_email(to_email=user.email)
+        log_security(
+            "password_reset_notice_email_sent",
+            user_id=user.id,
+            **ctx,
+        )
+    except Exception as exc:
+        log_security(
+            "password_reset_notice_email_failed",
+            user_id=user.id,
+            error_type=type(exc).__name__,
+            **ctx,
+        )
 
     clear_session_cookie(response)
     return {"ok": True}

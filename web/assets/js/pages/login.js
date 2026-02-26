@@ -139,11 +139,10 @@ try {
     data = null;
     }
 
-    if (!resp.ok) {
+        if (!resp.ok) {
         const errors =
             (data && data.detail && data.detail.errors) ? data.detail.errors : {};
         const emailError = String(errors.email || "");
-        const globalError = String(errors._global || "");
 
         // 顯示欄位錯誤
         if (errors.email) {
@@ -151,13 +150,11 @@ try {
         }
         if (errors.credentials) {
             errorEl.textContent = String(errors.credentials || "");
-        } else if (globalError) {
-            errorEl.textContent = globalError;
         } else if (!errorEl.textContent) {
             errorEl.textContent = "登入失敗，請稍後再試。";
         }
         return;
-    }
+        }
 
     // 登入成功：session cookie 已設定，導回首頁
     window.location.href = "/";

@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import logging.config
 import os
-import re
 import time
 import uuid
 from typing import Callable, Awaitable
@@ -12,21 +11,6 @@ from typing import Callable, Awaitable
 from fastapi import Request, Response
 
 _configured = False
-_TOKEN_PATH_PATTERNS = (
-    re.compile(r"^/api/auth/verify-email/[^/]+$"),
-    re.compile(r"^/api/auth/reset-password/[^/]+$"),
-)
-
-
-def _sanitize_path(path: str) -> str:
-    """
-    Redact token-bearing auth paths before writing request logs.
-    """
-    if _TOKEN_PATH_PATTERNS[0].match(path):
-        return "/api/auth/verify-email/[REDACTED]"
-    if _TOKEN_PATH_PATTERNS[1].match(path):
-        return "/api/auth/reset-password/[REDACTED]"
-    return path
 
 
 def configure_logging(*, log_level: str) -> None:
@@ -103,7 +87,6 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
 
     req_id = uuid.uuid4().hex[:12]
     start = time.perf_counter()
-    safe_path = _sanitize_path(request.url.path)
 
     try:
         response = await call_next(request)
@@ -111,9 +94,9 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         dur_ms = (time.perf_counter() - start) * 1000
         # Do NOT log request.url (may include query tokens). Use path only.
         logger.exception(
-            "category=error event=request_failed method=%s path=%s duration_ms=%.1f request_id=%s client=%s",
+             "category=error event=request_failed method=%s path=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
-            safe_path,
+            request.url.path,
             dur_ms,
             req_id,
             getattr(request.client, "host", "-"),
@@ -127,7 +110,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.warning(
              "category=error event=request_error method=%s path=%s status=%s duration_ms=%.1f request_id=%s client=%s",
             request.method,
-            safe_path,
+            request.url.path,
             status,
             dur_ms,
             req_id,
@@ -137,7 +120,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.warning(
             "category=access event=request_slow method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
             request.method,
-            safe_path,
+            request.url.path,
             status,
             dur_ms,
             req_id,
@@ -146,7 +129,7 @@ async def request_log_middleware(request: Request, call_next: Callable[[Request]
         logger.info(
             "category=access event=request_ok method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
             request.method,
-            safe_path,
+            request.url.path,
             status,
             dur_ms,
             req_id,

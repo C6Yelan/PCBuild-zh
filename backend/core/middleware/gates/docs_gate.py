@@ -1,7 +1,6 @@
 # backend/core/middleware/gates/docs_gate.py
 from ipaddress import ip_address, ip_network
 
-from fastapi import FastAPI
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -26,7 +25,7 @@ class DocsGateMiddleware(BaseHTTPMiddleware):
                 return Response(status_code=404)
 
             # 內網直連則檢查來源 IP
-            host = getattr(request.client, "host", "") or ""
+            host = request.client.host or ""
             try:
                 ip = ip_address(host)
                 if not any(ip in n for n in _PRIVATE_NETS):
@@ -35,7 +34,3 @@ class DocsGateMiddleware(BaseHTTPMiddleware):
                 return Response(status_code=404)
 
         return await call_next(request)
-
-
-def add_docs_gate_middleware(app: FastAPI) -> None:
-    app.add_middleware(DocsGateMiddleware)

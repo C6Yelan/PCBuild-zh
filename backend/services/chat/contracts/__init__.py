@@ -1,11 +1,4 @@
 # backend/services/chat/contracts/__init__.py
-from .types import ChatResponse, ContextPart, P1Demand, P1RetrievalResult, PartCandidate, RetrievalLogItem
+from .types import ChatResponse, ContextPart
 
-__all__ = [
-    "ContextPart",
-    "ChatResponse",
-    "P1Demand",
-    "PartCandidate",
-    "RetrievalLogItem",
-    "P1RetrievalResult",
-]
+__all__ = ["ContextPart", "ChatResponse"]

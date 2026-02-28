@@ -60,7 +60,7 @@ class OpenAICompatChatClient:
                 latency_ms=latency_ms,
                 error_type=None,
             )
-            _log_call(chat_response, ok=True)
+            _log_call(chat_response, ok=True, status_code=None)
             return chat_response
         except httpx.TimeoutException:
             chat_response = self._error_response(
@@ -68,15 +68,16 @@ class OpenAICompatChatClient:
                 latency_ms=_latency_ms(started),
                 error_type="timeout",
             )
-            _log_call(chat_response, ok=False)
+            _log_call(chat_response, ok=False, status_code=None)
             return chat_response
         except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
             chat_response = self._error_response(
                 rid=rid,
                 latency_ms=_latency_ms(started),
-                error_type=_classify_http_status(exc.response.status_code),
+                error_type=_classify_http_status(status_code),
             )
-            _log_call(chat_response, ok=False)
+            _log_call(chat_response, ok=False, status_code=status_code)
             return chat_response
         except httpx.RequestError:
             chat_response = self._error_response(
@@ -84,7 +85,7 @@ class OpenAICompatChatClient:
                 latency_ms=_latency_ms(started),
                 error_type="network_error",
             )
-            _log_call(chat_response, ok=False)
+            _log_call(chat_response, ok=False, status_code=None)
             return chat_response
         except (TypeError, ValueError, KeyError):
             chat_response = self._error_response(
@@ -92,7 +93,7 @@ class OpenAICompatChatClient:
                 latency_ms=_latency_ms(started),
                 error_type="invalid_response",
             )
-            _log_call(chat_response, ok=False)
+            _log_call(chat_response, ok=False, status_code=None)
             return chat_response
 
     def _error_response(self, *, rid: UUID, latency_ms: int, error_type: str) -> ChatResponse:
@@ -113,11 +114,27 @@ def get_genai_client() -> OpenAICompatChatClient:
 
 
 def _classify_http_status(status_code: int) -> str:
+    if status_code == 400:
+        return "invalid_request"
+    if status_code == 401:
+        return "authentication_error"
+    if status_code == 403:
+        return "permission_error"
+    if status_code == 404:
+        return "not_found"
+    if status_code == 408:
+        return "timeout"
+    if status_code == 409:
+        return "conflict"
+    if status_code == 422:
+        return "validation_error"
     if status_code == 429:
-        return "rate_limited_429"
+        return "rate_limited"
     if 500 <= status_code <= 599:
-        return "upstream_5xx"
-    return "network_error"
+        return "upstream_error"
+    if 400 <= status_code <= 499:
+        return "client_error"
+    return "http_error"
 
 
 def _latency_ms(started: float) -> int:
@@ -150,13 +167,14 @@ def _extract_response_text(payload: dict[str, Any]) -> str:
     raise ValueError("empty response text")
 
 
-def _log_call(chat_response: ChatResponse, *, ok: bool) -> None:
+def _log_call(chat_response: ChatResponse, *, ok: bool, status_code: int | None) -> None:
     logger.info(
-        "event=ai_call request_id=%s provider=%s model=%s ok=%s latency_ms=%s error_type=%s",
+        "request_id=%s provider=%s model=%s ok=%s latency_ms=%s error_type=%s status_code=%s",
         chat_response.request_id,
         chat_response.provider,
         chat_response.model,
         ok,
         chat_response.latency_ms,
         chat_response.error_type or "",
+        status_code,
     )

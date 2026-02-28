@@ -132,7 +132,6 @@ class RetrievalLogItem(BaseModel):
 class P1RetrievalResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    publication_id: UUID | None = None
     snapshot_id: UUID | None = None
     candidates: dict[str, list[PartCandidate]] = Field(default_factory=dict)
     retrieval_log: list[RetrievalLogItem] = Field(default_factory=list)

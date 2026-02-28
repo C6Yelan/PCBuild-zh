@@ -128,16 +128,16 @@ def _run_list(db, *, env: str, limit: int) -> dict:
 def _run_create(db, *, env: str, note: str | None, cat_pairs: list[str], set_pointer: bool) -> dict:
     members = _parse_category_mapping(cat_pairs)
 
-    existing_runs = set(
-        db.execute(
-            sa.select(CrawlerIngestRun.run_id).where(CrawlerIngestRun.run_id.in_(list(members.values())))
-        ).scalars()
-    )
-    missing_runs = [str(run_id) for run_id in members.values() if run_id not in existing_runs]
-    if missing_runs:
-        raise SystemExit(f"run_id not found in crawler_ingest_run: {missing_runs}")
-
     with db.begin():
+        existing_runs = set(
+            db.execute(
+                sa.select(CrawlerIngestRun.run_id).where(CrawlerIngestRun.run_id.in_(list(members.values())))
+            ).scalars()
+        )
+        missing_runs = [str(run_id) for run_id in members.values() if run_id not in existing_runs]
+        if missing_runs:
+            raise SystemExit(f"run_id not found in crawler_ingest_run: {missing_runs}")
+
         publication_set = CrawlerPublicationSet(env=env, note=note)
         db.add(publication_set)
         db.flush()

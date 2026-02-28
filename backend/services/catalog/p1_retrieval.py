@@ -14,7 +14,11 @@ from backend.models.catalog import (
     CatalogSource,
     CatalogSpecKey,
 )
-from backend.models.crawler_publication import CrawlerPublicationPointer
+from backend.models.crawler_publication import (
+    CrawlerPublicationPointer,
+    CrawlerPublicationSetMember,
+    CrawlerPublicationSetPointer,
+)
 from backend.services.chat.contracts import (
     P1Demand,
     P1RetrievalResult,
@@ -39,6 +43,12 @@ DEFAULT_ORDER_BY_LABELS: tuple[str, ...] = (
     "captured_at desc nulls last",
     "product_id asc",
 )
+CATEGORY_ALIASES: dict[str, str] = {
+    "cpu": "CPU",
+    "mb": "MB",
+    "gpu": "GPU",
+    "ram": "RAM",
+}
 
 
 def retrieve_topk_candidates(
@@ -53,30 +63,46 @@ def retrieve_topk_candidates(
     effective_top_k = max(1, min(int(top_k), 200))
     effective_demand = demand or P1Demand()
 
-    active_run_id = _get_active_run_id(db, env=env)
-    latest_price_sq = None if active_run_id is not None else _build_latest_price_subquery()
+    publication_set = _get_active_publication_set(db, env=env)
+    publication_id: UUID | None = publication_set[0] if publication_set is not None else None
+    category_run_map: dict[str, UUID] = publication_set[1] if publication_set is not None else {}
+
+    legacy_active_run_id = None if publication_set is not None else _get_legacy_active_run_id(db, env=env)
+    latest_price_sq = None if (publication_set is not None or legacy_active_run_id is not None) else _build_latest_price_subquery()
 
     candidates_by_category: dict[str, list[PartCandidate]] = {}
     retrieval_log: list[RetrievalLogItem] = []
 
     for category in normalized_categories:
         filters: list[str] = [f"category={category}"]
-        if active_run_id is not None:
-            filters.append(f"snapshot_id={active_run_id}")
+        category_run_id: UUID | None = None
+
+        if publication_set is not None:
+            filters.append(f"publication_id={publication_id}")
+            category_run_id = category_run_map.get(category)
+            if category_run_id is None:
+                filters.append("not_published=true")
+                candidates_by_category[category] = []
+                retrieval_log.append(
+                    RetrievalLogItem(
+                        category=category,
+                        filters=filters,
+                        order_by=list(DEFAULT_ORDER_BY_LABELS),
+                        matched_count=0,
+                        returned_count=0,
+                        top_k=effective_top_k,
+                        snapshot_id=None,
+                    )
+                )
+                continue
+            filters.append(f"snapshot_id={category_run_id}")
+        elif legacy_active_run_id is not None:
+            category_run_id = legacy_active_run_id
+            filters.append(f"snapshot_id={category_run_id}")
         else:
             filters.append("snapshot_strategy=latest_price_per_product")
 
-        if active_run_id is not None:
-            price_source = CatalogPriceSnapshot
-            price_join_on = sa.and_(
-                CatalogPriceSnapshot.product_id == CatalogProduct.product_id,
-                CatalogPriceSnapshot.run_id == active_run_id,
-            )
-            price_col = CatalogPriceSnapshot.price
-            currency_col = CatalogPriceSnapshot.currency
-            captured_at_col = CatalogPriceSnapshot.captured_at
-            price_run_col = CatalogPriceSnapshot.run_id
-        else:
+        if category_run_id is None:
             assert latest_price_sq is not None
             price_source = latest_price_sq
             price_join_on = latest_price_sq.c.product_id == CatalogProduct.product_id
@@ -84,6 +110,16 @@ def retrieve_topk_candidates(
             currency_col = latest_price_sq.c.currency
             captured_at_col = latest_price_sq.c.captured_at
             price_run_col = latest_price_sq.c.run_id
+        else:
+            price_source = CatalogPriceSnapshot
+            price_join_on = sa.and_(
+                CatalogPriceSnapshot.product_id == CatalogProduct.product_id,
+                CatalogPriceSnapshot.run_id == category_run_id,
+            )
+            price_col = CatalogPriceSnapshot.price
+            currency_col = CatalogPriceSnapshot.currency
+            captured_at_col = CatalogPriceSnapshot.captured_at
+            price_run_col = CatalogPriceSnapshot.run_id
 
         filtered_stmt = (
             sa.select(
@@ -103,9 +139,9 @@ def retrieve_topk_candidates(
             .where(CatalogProduct.category == category)
         )
 
-        if active_run_id is not None:
-            filtered_stmt = filtered_stmt.where(CatalogProduct.last_seen_run_id == active_run_id)
-            filters.append(f"last_seen_run_id={active_run_id}")
+        if category_run_id is not None:
+            filtered_stmt = filtered_stmt.where(CatalogProduct.last_seen_run_id == category_run_id)
+            filters.append(f"last_seen_run_id={category_run_id}")
 
         if effective_demand.budget is not None:
             filtered_stmt = filtered_stmt.where(price_col <= effective_demand.budget)
@@ -154,7 +190,7 @@ def retrieve_topk_candidates(
                     currency=row["currency"],
                     source=row["source"],
                     source_url=row["source_url"],
-                    snapshot_id=active_run_id if active_run_id is not None else row["price_run_id"],
+                    snapshot_id=category_run_id if category_run_id is not None else row["price_run_id"],
                 )
             )
 
@@ -167,18 +203,41 @@ def retrieve_topk_candidates(
                 matched_count=matched_count,
                 returned_count=len(category_candidates),
                 top_k=effective_top_k,
-                snapshot_id=active_run_id,
+                snapshot_id=category_run_id,
             )
         )
 
     return P1RetrievalResult(
-        snapshot_id=active_run_id,
+        publication_id=publication_id,
+        snapshot_id=legacy_active_run_id,
         candidates=candidates_by_category,
         retrieval_log=retrieval_log,
     )
 
 
-def _get_active_run_id(db: Session, *, env: str) -> UUID | None:
+def _get_active_publication_set(db: Session, *, env: str) -> tuple[UUID, dict[str, UUID]] | None:
+    pointer = db.get(CrawlerPublicationSetPointer, env)
+    if pointer is None:
+        return None
+
+    rows = db.execute(
+        sa.select(
+            CrawlerPublicationSetMember.category,
+            CrawlerPublicationSetMember.run_id,
+        )
+        .where(CrawlerPublicationSetMember.publication_id == pointer.publication_id)
+        .order_by(CrawlerPublicationSetMember.id.asc())
+    ).all()
+
+    category_to_run: dict[str, UUID] = {}
+    for category, run_id in rows:
+        canonical_category = _canonicalize_category(str(category))
+        category_to_run[canonical_category] = run_id
+
+    return pointer.publication_id, category_to_run
+
+
+def _get_legacy_active_run_id(db: Session, *, env: str) -> UUID | None:
     pointer = db.get(CrawlerPublicationPointer, env)
     return pointer.run_id if pointer is not None else None
 
@@ -255,9 +314,20 @@ def _normalize_categories(categories: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for raw in categories:
-        value = raw.strip()
-        if not value or value in seen:
+        canonical = _canonicalize_category(raw)
+        if not canonical:
             continue
-        seen.add(value)
-        out.append(value)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        out.append(canonical)
     return out
+
+
+def _canonicalize_category(raw: str) -> str:
+    value = raw.strip()
+    if not value:
+        return ""
+    lowered = value.lower()
+    canonical = CATEGORY_ALIASES.get(lowered, value.upper())
+    return canonical

@@ -191,6 +191,7 @@ def retrieve_topk_candidates(
                     source=row["source"],
                     source_url=row["source_url"],
                     snapshot_id=category_run_id if category_run_id is not None else row["price_run_id"],
+                    run_id=category_run_id if category_run_id is not None else row["price_run_id"],
                 )
             )
 

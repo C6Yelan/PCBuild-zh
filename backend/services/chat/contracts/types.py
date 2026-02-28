@@ -91,6 +91,7 @@ class PartCandidate(BaseModel):
     source: str = Field(min_length=1)
     source_url: str = Field(min_length=1)
     snapshot_id: UUID | None = None
+    run_id: UUID | None = None
 
     @field_validator("category", "display_name", "source", "source_url")
     @classmethod

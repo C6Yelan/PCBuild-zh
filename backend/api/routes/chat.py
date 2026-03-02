@@ -18,5 +18,5 @@ def chat(
     body: ChatIn,
     _: User = Depends(get_active_user),  # 未登入→401；未驗證→403
 ) -> ChatOut:
-    reply_text = generate_chat_reply(message=body.message, history=body.history)
-    return ChatOut(reply=reply_text)
+    chat_response = generate_chat_reply(chat_request=body)
+    return ChatOut.model_validate(chat_response)

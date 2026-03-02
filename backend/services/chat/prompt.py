@@ -1,10 +1,10 @@
 # backend/services/chat/prompt.py
-from backend.schemas.chat import Turn
+from backend.services.chat.contracts import ChatMessage
 from backend.services.chat.config import HISTORY_MAX_TURNS, SYSTEM_PROMPT
 
 
-def build_prompt(message: str, history: list[Turn]) -> str:
-    def format_turn(t: Turn) -> str:
+def build_prompt(message: str, history: list[ChatMessage]) -> str:
+    def format_turn(t: ChatMessage) -> str:
         who = "使用者" if t.role == "user" else "AI"
         return f"{who}：{t.content}"
 

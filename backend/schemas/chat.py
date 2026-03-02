@@ -1,18 +1,24 @@
 # backend/schemas/chat.py
-from typing import List, Literal
+from pydantic import AliasChoices, ConfigDict, Field
 
-from pydantic import BaseModel
-
-
-class Turn(BaseModel):
-    role: Literal["user", "ai"]
-    content: str
+from backend.services.chat.contracts import ChatMessage, ChatRequest, ChatResponse
 
 
-class ChatIn(BaseModel):
-    message: str
-    history: List[Turn] = []
+class Turn(ChatMessage):
+    pass
 
 
-class ChatOut(BaseModel):
-    reply: str
+class ChatIn(ChatRequest):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    user_text: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("user_text", "message"),
+        serialization_alias="user_text",
+    )
+    messages: list[Turn] | None = None
+    history: list[Turn] = Field(default_factory=list)
+
+
+class ChatOut(ChatResponse):
+    pass

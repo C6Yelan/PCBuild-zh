@@ -8,10 +8,12 @@ from backend.core.settings import get_settings
 from backend.core.bootstrap.static_site import mount_static_site
 from backend.core.logging import configure_logging, request_log_middleware
 from backend.core.oplog import log_operation
+from backend.services.chat.config import get_ai_settings
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    get_ai_settings()  # fail fast on invalid AI provider/env
     configure_logging(log_level=settings.log_level)
 
     app = FastAPI()
@@ -35,4 +37,3 @@ def create_app() -> FastAPI:
     mount_static_site(app)
     app.middleware("http")(request_log_middleware)
     return app
-

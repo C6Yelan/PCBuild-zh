@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from time import perf_counter
 from typing import Any
-from uuid import UUID
 
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -118,7 +117,6 @@ def _apply_demand_filters(
 def _build_count_stmt(
     *,
     category: str,
-    run_id: UUID,
     demand: P1Demand | None,
 ) -> sa.Select[Any]:
     stmt = (
@@ -128,13 +126,13 @@ def _build_count_stmt(
             CatalogPriceSnapshot,
             sa.and_(
                 CatalogPriceSnapshot.product_id == CatalogProduct.product_id,
-                CatalogPriceSnapshot.run_id == run_id,
+                CatalogPriceSnapshot.run_id == CatalogProduct.last_seen_run_id,
             ),
             isouter=True,
         )
         .where(
-            CatalogProduct.last_seen_run_id == run_id,
             CatalogProduct.category == category,
+            CatalogProduct.last_seen_run_id.is_not(None),
         )
     )
     return _apply_demand_filters(stmt, demand=demand)
@@ -144,7 +142,6 @@ def _build_category_stmt(
     *,
     category: str,
     top_k: int,
-    run_id: UUID,
     demand: P1Demand | None,
 ) -> sa.Select[Any]:
     specs_sq = _build_specs_subquery()
@@ -157,6 +154,7 @@ def _build_category_stmt(
             CatalogPriceSnapshot.price.label("price"),
             CatalogSource.code.label("source"),
             CatalogProduct.url.label("source_url"),
+            CatalogProduct.last_seen_run_id.label("item_run_id"),
         )
         .select_from(CatalogProduct)
         .join(CatalogSource, CatalogSource.id == CatalogProduct.source_id)
@@ -164,14 +162,14 @@ def _build_category_stmt(
             CatalogPriceSnapshot,
             sa.and_(
                 CatalogPriceSnapshot.product_id == CatalogProduct.product_id,
-                CatalogPriceSnapshot.run_id == run_id,
+                CatalogPriceSnapshot.run_id == CatalogProduct.last_seen_run_id,
             ),
             isouter=True,
         )
         .join(specs_sq, specs_sq.c.product_id == CatalogProduct.product_id, isouter=True)
         .where(
-            CatalogProduct.last_seen_run_id == run_id,
             CatalogProduct.category == category,
+            CatalogProduct.last_seen_run_id.is_not(None),
         )
         .order_by(
             CatalogPriceSnapshot.price.asc().nullslast(),
@@ -199,20 +197,19 @@ def retrieve_topk_candidates(
     if ptr is None:
         raise RuntimeError(f"crawler_publication_pointer not found for env={env!r}; please publish first")
 
-    run_id = ptr.run_id
+    publication_run_id = ptr.run_id
     filters_summary = _summarize_filters(demand)
     result: dict[str, list[CandidatePart]] = {}
 
     for category in normalized_categories:
         started = perf_counter()
-        matched_count = int(db.execute(_build_count_stmt(category=category, run_id=run_id, demand=demand)).scalar_one())
+        matched_count = int(db.execute(_build_count_stmt(category=category, demand=demand)).scalar_one())
 
         rows = list(
             db.execute(
                 _build_category_stmt(
                     category=category,
                     top_k=normalized_top_k,
-                    run_id=run_id,
                     demand=demand,
                 )
             ).mappings()
@@ -227,7 +224,7 @@ def retrieve_topk_candidates(
                 price=row["price"],
                 source=str(row["source"]),
                 source_url=str(row["source_url"]),
-                run_id=str(run_id),
+                run_id=str(row["item_run_id"]),
             )
             for row in rows[:normalized_top_k]
         ]
@@ -238,6 +235,8 @@ def retrieve_topk_candidates(
         log_operation(
             "p1_retrieval",
             part_category=category,
+            env=env,
+            publication_run_id=str(publication_run_id),
             top_k=normalized_top_k,
             matched_count=matched_count,
             returned_count=len(candidates),

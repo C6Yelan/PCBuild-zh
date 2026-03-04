@@ -64,3 +64,5 @@ class ChatResponse(BaseModel):
     latency_ms: int
     error_type: str | None = None
     warnings: list[str] | None = None
+    compressed_candidates: dict[str, list[ContextPackItem]] | None = None
+    drop_log: dict[str, dict[str, Any]] | None = None

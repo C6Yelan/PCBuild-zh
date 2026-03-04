@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.core.oplog import log_operation
 from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
 from backend.services.chat.config import get_ai_settings
-from backend.services.chat.context_pack import P1Demand, retrieve_topk_candidates
+from backend.services.chat.context_pack import P1Demand, compress_candidates, retrieve_topk_candidates
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.prompt import build_prompt
 
@@ -94,17 +94,25 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     request_id = uuid4().hex
     started = perf_counter()
     warnings: list[str] = []
+    compressed_candidates: dict[str, list[dict[str, object]]] | None = None
+    drop_log: dict[str, dict[str, object]] | None = None
 
     if db is not None:
         categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
         if categories:
             try:
-                retrieve_topk_candidates(
+                p1_result = retrieve_topk_candidates(
                     db,
                     categories=categories,
                     top_k=p1_top_k,
                     demand=p1_demand,
                     env=p1_env,
+                )
+                compressed_candidates, drop_log = compress_candidates(
+                    p1_result,
+                    spec_whitelist_by_category=settings.p2_spec_whitelist_by_category,
+                    max_value_len=settings.p2_max_value_len,
+                    max_specs_per_part=settings.p2_max_specs_per_part,
                 )
             except Exception as exc:
                 warnings.append("p1_retrieval_failed")
@@ -115,6 +123,11 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     categories=",".join(categories),
                     top_k=p1_top_k,
                 )
+                compressed_candidates = {}
+                drop_log = {}
+        else:
+            compressed_candidates = {}
+            drop_log = {}
 
     try:
         response_text = generate_openai_compat_text(
@@ -136,6 +149,8 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             text=response_text,
             latency_ms=int((perf_counter() - started) * 1000),
             warnings=warnings or None,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
         )
     except OpenAICompatError as exc:
         return ChatResponse(
@@ -146,4 +161,6 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             latency_ms=int((perf_counter() - started) * 1000),
             error_type=exc.error_type,
             warnings=warnings or None,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
         )

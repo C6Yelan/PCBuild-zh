@@ -5,10 +5,12 @@ from .retrieval import (
     P1RetrievalResult,
     retrieve_topk_candidates,
 )
+from .compress import compress_candidates
 
 __all__ = [
     "CandidatePart",
     "P1Demand",
     "P1RetrievalResult",
     "retrieve_topk_candidates",
+    "compress_candidates",
 ]

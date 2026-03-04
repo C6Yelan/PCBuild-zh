@@ -237,7 +237,7 @@ def retrieve_topk_candidates(
         latency_ms = int((perf_counter() - started) * 1000)
         log_operation(
             "p1_retrieval",
-            category=category,
+            part_category=category,
             top_k=normalized_top_k,
             matched_count=matched_count,
             returned_count=len(candidates),

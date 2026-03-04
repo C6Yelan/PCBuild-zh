@@ -6,6 +6,7 @@ from backend.services.chat.clients.openai_compat_client import generate_openai_c
 from backend.services.chat.config import AISettings
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.clients import openai_compat_client
+from backend.schemas.chat import ChatOut
 
 
 def test_ai_settings_reject_invalid_provider() -> None:
@@ -70,3 +71,17 @@ def test_openai_compat_secretstr_uses_real_auth_header(monkeypatch: pytest.Monke
 
     assert captured_headers["Authorization"] == "Bearer abc"
     assert text == "ok"
+
+
+def test_chat_out_accepts_chat_response_dump() -> None:
+    resp = ChatResponse(
+        request_id="req_1",
+        provider="openai_compat",
+        model="gpt-4o-mini",
+        text="ok",
+        latency_ms=10,
+    )
+
+    out = ChatOut.model_validate(resp.model_dump())
+    assert out.request_id == "req_1"
+    assert out.text == "ok"

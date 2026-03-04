@@ -4,8 +4,12 @@ from __future__ import annotations
 from time import perf_counter
 from uuid import uuid4
 
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
 from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
 from backend.services.chat.config import get_ai_settings
+from backend.services.chat.context_pack import P1Demand, retrieve_topk_candidates
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.prompt import build_prompt
 
@@ -39,20 +43,61 @@ def _truncate_text(text: str, max_chars: int, warnings: list[str]) -> str:
     return text[:max_chars]
 
 
-def generate_chat_reply(chat_request: ChatRequest) -> ChatResponse:
+def _extract_p1_inputs(chat_request: ChatRequest) -> tuple[list[str], int, P1Demand | None, str]:
+    if not isinstance(chat_request.demand, dict):
+        return [], 5, None, "prod"
+
+    raw = chat_request.demand
+
+    categories: list[str] = []
+    raw_categories = raw.get("categories")
+    if isinstance(raw_categories, list):
+        for value in raw_categories:
+            normalized = str(value).strip()
+            if normalized:
+                categories.append(normalized)
+
+    raw_top_k = raw.get("top_k", 5)
+    try:
+        top_k = int(raw_top_k)
+    except (TypeError, ValueError):
+        top_k = 5
+
+    raw_env = raw.get("env")
+    env = raw_env.strip() if isinstance(raw_env, str) and raw_env.strip() else "prod"
+
+    p1_demand: P1Demand | None = None
+    raw_filters = raw.get("filters")
+    if isinstance(raw_filters, dict):
+        try:
+            p1_demand = P1Demand.model_validate(raw_filters)
+        except ValidationError:
+            p1_demand = None
+
+    return categories, top_k, p1_demand, env
+
+
+def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None) -> ChatResponse:
     settings = get_ai_settings()
     request_id = uuid4().hex
     started = perf_counter()
     warnings: list[str] = []
 
+    if db is not None:
+        categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
+        if categories:
+            retrieve_topk_candidates(
+                db,
+                categories=categories,
+                top_k=p1_top_k,
+                demand=p1_demand,
+                env=p1_env,
+            )
+
     try:
         response_text = generate_openai_compat_text(
             base_url=settings.ai_oai_base_url,
-            api_key=(
-                settings.ai_oai_api_key.get_secret_value()
-                if settings.ai_oai_api_key
-                else None
-            ),
+            api_key=settings.ai_oai_api_key,
             model=settings.ai_model,
             messages=_build_provider_messages(chat_request),
             timeout_seconds=settings.ai_timeout_seconds,

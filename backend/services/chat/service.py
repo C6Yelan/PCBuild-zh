@@ -4,9 +4,10 @@ from __future__ import annotations
 from time import perf_counter
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import SecretBytes, SecretStr, ValidationError
 from sqlalchemy.orm import Session
 
+from backend.core.oplog import log_operation
 from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
 from backend.services.chat.config import get_ai_settings
 from backend.services.chat.context_pack import P1Demand, retrieve_topk_candidates
@@ -31,7 +32,7 @@ def _build_provider_messages(chat_request: ChatRequest) -> list[dict[str, str]]:
         message=chat_request.user_text or "",
         history=chat_request.history,
     )
-    if chat_request.demand:
+    if chat_request.demand and not isinstance(chat_request.demand, dict):
         prompt = f"{prompt}\n\n需求補充：{chat_request.demand}"
     return [{"role": "user", "content": prompt}]
 
@@ -77,6 +78,17 @@ def _extract_p1_inputs(chat_request: ChatRequest) -> tuple[list[str], int, P1Dem
     return categories, top_k, p1_demand, env
 
 
+def _resolve_api_key(api_key: SecretStr | SecretBytes | str | None) -> str | None:
+    if isinstance(api_key, SecretStr):
+        return api_key.get_secret_value()
+    if isinstance(api_key, SecretBytes):
+        value = api_key.get_secret_value()
+        return value.decode("utf-8", errors="ignore")
+    if isinstance(api_key, str):
+        return api_key
+    return None
+
+
 def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None) -> ChatResponse:
     settings = get_ai_settings()
     request_id = uuid4().hex
@@ -86,18 +98,28 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     if db is not None:
         categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
         if categories:
-            retrieve_topk_candidates(
-                db,
-                categories=categories,
-                top_k=p1_top_k,
-                demand=p1_demand,
-                env=p1_env,
-            )
+            try:
+                retrieve_topk_candidates(
+                    db,
+                    categories=categories,
+                    top_k=p1_top_k,
+                    demand=p1_demand,
+                    env=p1_env,
+                )
+            except Exception as exc:
+                warnings.append("p1_retrieval_failed")
+                log_operation(
+                    "p1_retrieval_failed",
+                    error_type=type(exc).__name__,
+                    env=p1_env,
+                    categories=",".join(categories),
+                    top_k=p1_top_k,
+                )
 
     try:
         response_text = generate_openai_compat_text(
             base_url=settings.ai_oai_base_url,
-            api_key=settings.ai_oai_api_key,
+            api_key=_resolve_api_key(settings.ai_oai_api_key),
             model=settings.ai_model,
             messages=_build_provider_messages(chat_request),
             timeout_seconds=settings.ai_timeout_seconds,

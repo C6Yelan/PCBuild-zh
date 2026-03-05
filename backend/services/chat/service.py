@@ -114,6 +114,38 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     max_value_len=settings.p2_max_value_len,
                     max_specs_per_part=settings.p2_max_specs_per_part,
                 )
+                drop_entries = list(drop_log.values())
+                fallback_count = sum(
+                    1
+                    for entry in drop_entries
+                    if isinstance(entry, dict)
+                    and isinstance(entry.get("reason"), list)
+                    and "fallback_used" in entry["reason"]
+                )
+                dropped_specs_count = sum(
+                    len(entry["dropped_specs"])
+                    for entry in drop_entries
+                    if isinstance(entry, dict) and isinstance(entry.get("dropped_specs"), list)
+                )
+                truncated_specs_count = sum(
+                    len(entry["truncated_specs"])
+                    for entry in drop_entries
+                    if isinstance(entry, dict) and isinstance(entry.get("truncated_specs"), dict)
+                )
+                log_operation(
+                    "p2_compress",
+                    env=p1_env,
+                    top_k=p1_top_k,
+                    requested_categories=",".join(categories),
+                    returned_categories=",".join(sorted(compressed_candidates.keys())),
+                    returned_count=sum(len(items) for items in compressed_candidates.values()),
+                    drop_log_count=len(drop_entries),
+                    fallback_count=fallback_count,
+                    dropped_specs_count=dropped_specs_count,
+                    truncated_specs_count=truncated_specs_count,
+                    max_value_len=settings.p2_max_value_len,
+                    max_specs_per_part=settings.p2_max_specs_per_part,
+                )
             except Exception as exc:
                 warnings.append("p1_retrieval_failed")
                 log_operation(

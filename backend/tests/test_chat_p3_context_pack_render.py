@@ -100,3 +100,41 @@ def test_build_context_pack_keeps_empty_category_section() -> None:
 
     assert "=== CPU CANDIDATES ===" in pack.text
     assert "(no candidates)" in pack.text
+
+
+def test_build_context_pack_rerank_prefers_budget_distance_when_available() -> None:
+    compressed = {
+        "CPU": [
+            {
+                "part_id": "cpu-a",
+                "category": "CPU",
+                "display_name": "A model",
+                "key_specs": {},
+                "price": 3000,
+                "source": "coolpc",
+                "source_url": "https://example.invalid/cpu-a",
+                "run_id": "run-a",
+            },
+            {
+                "part_id": "cpu-z",
+                "category": "CPU",
+                "display_name": "Z model",
+                "key_specs": {},
+                "price": 5900,
+                "source": "coolpc",
+                "source_url": "https://example.invalid/cpu-z",
+                "run_id": "run-z",
+            },
+        ]
+    }
+
+    pack = build_context_pack(
+        compressed_by_category=compressed,
+        category_order=["CPU"],
+        enable_rerank=True,
+        demand={"min_price": 5000, "max_price": 7000},
+    )
+
+    lines = [line for line in pack.text.splitlines() if line.startswith("[CPU#")]
+    assert lines[0].startswith("[CPU#cpu-z]")
+    assert lines[1].startswith("[CPU#cpu-a]")

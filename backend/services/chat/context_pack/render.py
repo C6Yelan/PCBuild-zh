@@ -102,17 +102,70 @@ def _has_price(item: Mapping[str, Any]) -> bool: # 檢查候選項是否包含�
     return True
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_budget_target(demand: Any | None) -> float | None:
+    if demand is None:
+        return None
+
+    if isinstance(demand, Mapping):
+        min_price = _to_float(demand.get("min_price"))
+        max_price = _to_float(demand.get("max_price"))
+    else:
+        min_price = _to_float(getattr(demand, "min_price", None))
+        max_price = _to_float(getattr(demand, "max_price", None))
+
+    if min_price is not None and max_price is not None:
+        low, high = sorted((min_price, max_price))
+        return (low + high) / 2.0
+    if min_price is not None:
+        return min_price
+    if max_price is not None:
+        return max_price
+    return None
+
+
 def _rerank_items(
     items: Sequence[CompressedCandidate],
+    *,
+    budget_target: float | None,
 ) -> list[CompressedCandidate]:
-    # TODO(P3): when demand is threaded to P3, add budget-distance ranking before tie-break.
-    return sorted(
-        list(items),
-        key=lambda item: (
-            0 if _has_price(item) else 1,
+    def _sort_key(item: CompressedCandidate) -> tuple[int, float, str, str]:
+        has_price = _has_price(item)
+        price_value = _to_float(item.get("price"))
+        if budget_target is None:
+            budget_distance = 0.0
+        elif price_value is None:
+            budget_distance = float("inf")
+        else:
+            budget_distance = abs(price_value - budget_target)
+
+        return (
+            0 if has_price else 1,
+            budget_distance,
             _normalize_inline_text(item.get("display_name", "")),
             _normalize_inline_text(item.get("part_id", "")),
-        ),
+        )
+
+    return sorted(
+        list(items),
+        key=_sort_key,
     )
 
 
@@ -154,14 +207,20 @@ def build_context_pack(
     compressed_by_category: Mapping[str, Sequence[CompressedCandidate]],
     category_order: Sequence[str] | None = None,
     enable_rerank: bool = True,
+    demand: Any | None = None,
 ) -> P3ContextPack:
     ordered_categories = _ordered_categories(compressed_by_category, category_order)
     sections: list[str] = []
     counts: dict[str, int] = {}
+    budget_target = _extract_budget_target(demand)
 
     for category in ordered_categories:
         items = list(compressed_by_category.get(category, []))
-        ranked_items = _rerank_items(items) if enable_rerank else items
+        ranked_items = (
+            _rerank_items(items, budget_target=budget_target)
+            if enable_rerank
+            else items
+        )
         counts[category] = len(ranked_items)
 
         section_lines = [f"=== {category} CANDIDATES ==="]

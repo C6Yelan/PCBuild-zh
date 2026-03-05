@@ -171,6 +171,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     compressed_by_category=compressed_candidates,
                     category_order=categories,
                     enable_rerank=True,
+                    demand=p1_demand,
                 )
                 context_pack_text = context_pack.text
                 category_counts = ",".join(

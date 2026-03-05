@@ -94,8 +94,8 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     request_id = uuid4().hex
     started = perf_counter()
     warnings: list[str] = []
-    compressed_candidates: dict[str, list[dict[str, object]]] | None = None
-    drop_log: dict[str, dict[str, object]] | None = None
+    compressed_candidates: dict[str, list[dict[str, object]]] = {}
+    drop_log: dict[str, dict[str, object]] = {}
 
     if db is not None:
         categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
@@ -125,9 +125,6 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                 )
                 compressed_candidates = {}
                 drop_log = {}
-        else:
-            compressed_candidates = {}
-            drop_log = {}
 
     try:
         response_text = generate_openai_compat_text(

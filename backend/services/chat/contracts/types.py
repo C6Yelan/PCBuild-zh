@@ -38,6 +38,14 @@ class ContextPack(BaseModel):
     context_pack_hash: str | None = None
 
 
+class P3ContextPack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    hash: str
+    meta: dict[str, Any] | None = None
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

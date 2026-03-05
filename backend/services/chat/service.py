@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 from backend.core.oplog import log_operation
 from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
 from backend.services.chat.config import get_ai_settings
-from backend.services.chat.context_pack import P1Demand, compress_candidates, retrieve_topk_candidates
+from backend.services.chat.context_pack import (
+    P1Demand,
+    build_context_pack,
+    compress_candidates,
+    retrieve_topk_candidates,
+)
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.prompt import build_prompt
 
@@ -21,12 +26,24 @@ def _normalize_role(role: str) -> str:
     return role
 
 
-def _build_provider_messages(chat_request: ChatRequest) -> list[dict[str, str]]:
+def _build_provider_messages(
+    chat_request: ChatRequest,
+    *,
+    context_pack_text: str | None = None,
+) -> list[dict[str, str]]:
     if chat_request.messages:
-        return [
+        provider_messages = [
             {"role": _normalize_role(m.role), "content": m.content}
             for m in chat_request.messages
         ]
+        if context_pack_text:
+            provider_messages.append(
+                {
+                    "role": "user",
+                    "content": f"## CONTEXT_PACK\n{context_pack_text}",
+                }
+            )
+        return provider_messages
 
     prompt = build_prompt(
         message=chat_request.user_text or "",
@@ -34,6 +51,8 @@ def _build_provider_messages(chat_request: ChatRequest) -> list[dict[str, str]]:
     )
     if chat_request.demand and not isinstance(chat_request.demand, dict):
         prompt = f"{prompt}\n\n需求補充：{chat_request.demand}"
+    if context_pack_text:
+        prompt = f"{prompt}\n\n## CONTEXT_PACK\n{context_pack_text}"
     return [{"role": "user", "content": prompt}]
 
 
@@ -96,6 +115,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     warnings: list[str] = []
     compressed_candidates: dict[str, list[dict[str, object]]] = {}
     drop_log: dict[str, dict[str, object]] = {}
+    context_pack_text: str | None = None
 
     if db is not None:
         categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
@@ -146,6 +166,24 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     max_value_len=settings.p2_max_value_len,
                     max_specs_per_part=settings.p2_max_specs_per_part,
                 )
+
+                context_pack = build_context_pack(
+                    compressed_by_category=compressed_candidates,
+                    category_order=categories,
+                    enable_rerank=True,
+                )
+                context_pack_text = context_pack.text
+                category_counts = ",".join(
+                    f"{category}:{len(compressed_candidates.get(category, []))}"
+                    for category in sorted(compressed_candidates.keys())
+                )
+                log_operation(
+                    "p3_context_pack",
+                    env=p1_env,
+                    context_pack_hash=context_pack.hash,
+                    context_pack_chars=len(context_pack.text),
+                    category_counts=category_counts,
+                )
             except Exception as exc:
                 warnings.append("p1_retrieval_failed")
                 log_operation(
@@ -163,7 +201,10 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             base_url=settings.ai_oai_base_url,
             api_key=_resolve_api_key(settings.ai_oai_api_key),
             model=settings.ai_model,
-            messages=_build_provider_messages(chat_request),
+            messages=_build_provider_messages(
+                chat_request,
+                context_pack_text=context_pack_text,
+            ),
             timeout_seconds=settings.ai_timeout_seconds,
         )
         response_text = _truncate_text(

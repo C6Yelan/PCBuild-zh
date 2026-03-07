@@ -1,5 +1,7 @@
 # backend/schemas/chat.py
-from pydantic import AliasChoices, ConfigDict, Field
+from typing import Any
+
+from pydantic import AliasChoices, ConfigDict, Field, model_validator
 
 from backend.services.chat.contracts import ChatMessage, ChatRequest, ChatResponse
 
@@ -18,6 +20,20 @@ class ChatIn(ChatRequest):
     )
     messages: list[Turn] | None = None
     history: list[Turn] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _forbid_provider_overrides(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        blocked_keys = {"provider", "model", "base_url", "api_key"}
+        incoming_keys = {str(key).strip().lower() for key in value.keys()}
+        blocked = sorted(incoming_keys & blocked_keys)
+        if blocked:
+            blocked_display = ", ".join(blocked)
+            raise ValueError(f"ChatIn does not allow override fields: {blocked_display}")
+        return value
 
 
 class ChatOut(ChatResponse):

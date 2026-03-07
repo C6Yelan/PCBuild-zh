@@ -3,16 +3,24 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ALLOWED_AI_PROVIDERS = (
+OPENAI_COMPAT_PROVIDERS = (
     "openai_compat",
     "local_openai_compat",
     "backup_openai_compat",
 )
+ALLOWED_AI_PROVIDERS = OPENAI_COMPAT_PROVIDERS + ("gemini",)
+AIProviderAlias = Literal[
+    "openai_compat",
+    "local_openai_compat",
+    "backup_openai_compat",
+    "gemini",
+]
 
 HISTORY_MAX_TURNS = 8
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
@@ -24,12 +32,14 @@ class AISettings(BaseSettings):
         extra="ignore",
     )
 
-    ai_provider: str = Field(default="openai_compat", alias="AI_PROVIDER")
-    ai_model: str = Field(default="gpt-4o-mini", alias="AI_MODEL")
-    ai_timeout_seconds: float = Field(default=30.0, gt=0, alias="AI_TIMEOUT_SECONDS")
-    ai_max_output_chars: int = Field(default=4000, gt=0, alias="AI_MAX_OUTPUT_CHARS")
-    ai_oai_base_url: str = Field(default="http://localhost:11434/v1", alias="AI_OAI_BASE_URL")
+    ai_provider: AIProviderAlias = Field(alias="AI_PROVIDER")
+    ai_model: str = Field(alias="AI_MODEL")
+    ai_timeout_seconds: float = Field(gt=0, alias="AI_TIMEOUT_SECONDS")
+    ai_max_output_chars: int = Field(gt=0, alias="AI_MAX_OUTPUT_CHARS")
+    ai_oai_base_url: str | None = Field(default=None, alias="AI_OAI_BASE_URL")
     ai_oai_api_key: SecretStr | None = Field(default=None, alias="AI_OAI_API_KEY")
+    gemini_api_key: SecretStr | None = Field(default=None, alias="GEMINI_API_KEY")
+    google_api_key: SecretStr | None = Field(default=None, alias="GOOGLE_API_KEY")
     p2_max_value_len: int = Field(default=120, gt=0, alias="P2_MAX_VALUE_LEN")
     p2_max_specs_per_part: int = Field(default=12, gt=0, alias="P2_MAX_SPECS_PER_PART")
     p2_spec_whitelist_by_category: dict[str, list[str]] = Field(
@@ -46,16 +56,49 @@ class AISettings(BaseSettings):
         allowed = ", ".join(ALLOWED_AI_PROVIDERS)
         raise ValueError(f"AI_PROVIDER must be one of: {allowed}")
 
+    @field_validator("ai_model")
+    @classmethod
+    def _validate_ai_model(cls, value: str) -> str:
+        value = value.strip()
+        if value:
+            return value
+        raise ValueError("AI_MODEL must not be empty")
+
     @field_validator("ai_oai_base_url")
     @classmethod
-    def _validate_oai_base_url(cls, value: str) -> str:
+    def _validate_oai_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
+        if not value:
+            return None
         parsed = urlparse(value)
         if parsed.scheme not in {"http", "https"}:
             raise ValueError("AI_OAI_BASE_URL must use http or https")
         if not parsed.netloc:
             raise ValueError("AI_OAI_BASE_URL must include host")
         return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def _validate_provider_requirements(self) -> "AISettings":
+        if self.ai_provider in OPENAI_COMPAT_PROVIDERS:
+            if not self.ai_oai_base_url:
+                raise ValueError(
+                    "AI_OAI_BASE_URL is required for openai-compatible providers"
+                )
+            return self
+
+        if self.ai_provider == "gemini":
+            if self.get_gemini_api_key() is None:
+                raise ValueError(
+                    "GEMINI_API_KEY or GOOGLE_API_KEY is required for gemini provider"
+                )
+            return self
+
+        return self
+
+    def get_gemini_api_key(self) -> SecretStr | None:
+        return self.google_api_key or self.gemini_api_key
 
     @field_validator("p2_spec_whitelist_by_category", mode="before")
     @classmethod

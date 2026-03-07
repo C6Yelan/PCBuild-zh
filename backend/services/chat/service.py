@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.oplog import log_operation
 from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
-from backend.services.chat.config import get_ai_settings
+from backend.services.chat.config import OPENAI_COMPAT_PROVIDERS, AISettings, get_ai_settings
 from backend.services.chat.context_pack import (
     P1Demand,
     build_context_pack,
@@ -108,6 +108,57 @@ def _resolve_api_key(api_key: SecretStr | SecretBytes | str | None) -> str | Non
     return None
 
 
+class _ProviderDispatchError(RuntimeError):
+    def __init__(self, error_type: str, message: str) -> None:
+        super().__init__(message)
+        self.error_type = error_type
+
+
+def _generate_provider_text(
+    *,
+    settings: AISettings,
+    messages: list[dict[str, str]],
+) -> str:
+    provider = settings.ai_provider
+    if provider in OPENAI_COMPAT_PROVIDERS:
+        if not settings.ai_oai_base_url:
+            raise _ProviderDispatchError(
+                "config_error",
+                "AI_OAI_BASE_URL is required for openai-compatible providers.",
+            )
+        return generate_openai_compat_text(
+            base_url=settings.ai_oai_base_url,
+            api_key=_resolve_api_key(settings.ai_oai_api_key),
+            model=settings.ai_model,
+            messages=messages,
+            timeout_seconds=settings.ai_timeout_seconds,
+        )
+    if provider == "gemini":
+        raise _ProviderDispatchError(
+            "provider_not_ready",
+            "Gemini provider dispatch is reserved for A5 implementation.",
+        )
+    raise _ProviderDispatchError("config_error", f"Unsupported AI provider: {provider}")
+
+
+def _log_ai_call(
+    *,
+    request_id: str,
+    provider: str,
+    model: str,
+    ok: bool,
+    error_type: str | None = None,
+) -> None:
+    log_operation(
+        "ai_call",
+        request_id=request_id,
+        provider=provider,
+        model=model,
+        ok=ok,
+        error_type=error_type or "-",
+    )
+
+
 def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None) -> ChatResponse:
     settings = get_ai_settings()
     request_id = uuid4().hex
@@ -197,21 +248,26 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                 compressed_candidates = {}
                 drop_log = {}
 
+    provider_messages = _build_provider_messages(
+        chat_request,
+        context_pack_text=context_pack_text,
+    )
+
     try:
-        response_text = generate_openai_compat_text(
-            base_url=settings.ai_oai_base_url,
-            api_key=_resolve_api_key(settings.ai_oai_api_key),
-            model=settings.ai_model,
-            messages=_build_provider_messages(
-                chat_request,
-                context_pack_text=context_pack_text,
-            ),
-            timeout_seconds=settings.ai_timeout_seconds,
+        response_text = _generate_provider_text(
+            settings=settings,
+            messages=provider_messages,
         )
         response_text = _truncate_text(
             response_text,
             max_chars=settings.ai_max_output_chars,
             warnings=warnings,
+        )
+        _log_ai_call(
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            ok=True,
         )
         return ChatResponse(
             request_id=request_id,
@@ -224,11 +280,37 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             drop_log=drop_log,
         )
     except OpenAICompatError as exc:
+        _log_ai_call(
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            ok=False,
+            error_type=exc.error_type,
+        )
         return ChatResponse(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
             text="目前 AI 服務暫時不可用，請稍後再試。",
+            latency_ms=int((perf_counter() - started) * 1000),
+            error_type=exc.error_type,
+            warnings=warnings or None,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
+        )
+    except _ProviderDispatchError as exc:
+        _log_ai_call(
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            ok=False,
+            error_type=exc.error_type,
+        )
+        return ChatResponse(
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            text="目前 AI 服務提供者尚未啟用，請稍後再試。",
             latency_ms=int((perf_counter() - started) * 1000),
             error_type=exc.error_type,
             warnings=warnings or None,

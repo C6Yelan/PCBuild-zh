@@ -14,6 +14,10 @@ def test_ai_settings_reject_invalid_provider() -> None:
         AISettings(
             _env_file=None,
             AI_PROVIDER="invalid_provider",
+            AI_MODEL="gpt-4o-mini",
+            AI_TIMEOUT_SECONDS=30,
+            AI_MAX_OUTPUT_CHARS=4000,
+            AI_OAI_BASE_URL="https://example.invalid/v1",
         )
 
 

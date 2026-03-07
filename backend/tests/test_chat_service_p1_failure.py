@@ -15,7 +15,7 @@ class _FakeSettings:
 def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     monkeypatch,
 ) -> None:
-    logged: dict[str, object] = {}
+    events: list[tuple[str, dict[str, object]]] = []
 
     def fake_retrieve_topk_candidates(*args, **kwargs):
         raise RuntimeError("p1 unavailable")
@@ -24,8 +24,7 @@ def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
         return "fixed-response"
 
     def fake_log_operation(event: str, **fields):
-        logged["event"] = event
-        logged["fields"] = fields
+        events.append((event, fields))
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
     monkeypatch.setattr(chat_service, "retrieve_topk_candidates", fake_retrieve_topk_candidates)
@@ -45,10 +44,17 @@ def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     assert response.text == "fixed-response"
     assert response.warnings is not None
     assert "p1_retrieval_failed" in response.warnings
-    assert logged["event"] == "p1_retrieval_failed"
-    assert logged["fields"] == {
+    failure_events = [fields for event, fields in events if event == "p1_retrieval_failed"]
+    assert len(failure_events) == 1
+    assert failure_events[0] == {
         "error_type": "RuntimeError",
         "env": "prod",
         "categories": "CPU",
         "top_k": 2,
     }
+    ai_events = [fields for event, fields in events if event == "ai_call"]
+    assert len(ai_events) == 1
+    assert ai_events[0]["provider"] == "openai_compat"
+    assert ai_events[0]["model"] == "gpt-4o-mini"
+    assert ai_events[0]["ok"] is True
+    assert ai_events[0]["error_type"] == "-"

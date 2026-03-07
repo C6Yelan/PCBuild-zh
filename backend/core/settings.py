@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     # DB
     database_url: str = Field(alias="DATABASE_URL")
 
-    # GenAI（保留相容性；若兩者同時存在，仍讓 GOOGLE_API_KEY 優先）
+    # GenAI（僅保留給非 chat runtime 的舊路徑）
+    # /api/chat 的 provider/model/base_url/api_key 一律由
+    # backend/services/chat/config.py 的 AISettings 管理，避免雙重真實來源。
     gemini_api_key: Optional[str] = Field(default=None, alias="GEMINI_API_KEY")
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
 
@@ -30,9 +32,9 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["https://pcbuild.redfiretw.xyz"])
 
     def genai_api_key(self) -> Optional[str]:
-        # Google SDK 文件亦說明兩者同時存在時 GOOGLE_API_KEY 會優先
+        # 舊路徑相容：若兩者同時存在，GOOGLE_API_KEY 優先
         return self.google_api_key or self.gemini_api_key
-    
+
     # Rate limit（可用環境變數覆蓋）
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
     rate_limit_default: str = Field(default="300/minute", alias="RATE_LIMIT_DEFAULT")

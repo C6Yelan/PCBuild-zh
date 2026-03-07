@@ -21,5 +21,6 @@ def chat(
     db: OrmSession = Depends(get_db),
     _: User = Depends(get_active_user),  # 未登入→401；未驗證→403
 ) -> ChatOut:
+    # provider/model/base_url/api_key 只由後端環境變數決定，不接受前端覆寫。
     chat_response = generate_chat_reply(chat_request=body, db=db)
     return ChatOut.model_validate(chat_response.model_dump())

@@ -8,6 +8,22 @@ from backend.services.chat.config import AISettings
 from backend.services.chat.contracts import ChatRequest
 
 
+@pytest.fixture
+def isolate_ai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    keys = (
+        "AI_PROVIDER",
+        "AI_MODEL",
+        "AI_TIMEOUT_SECONDS",
+        "AI_MAX_OUTPUT_CHARS",
+        "AI_OAI_BASE_URL",
+        "AI_OAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+    )
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+
+
 def _openai_settings_kwargs() -> dict[str, object]:
     return {
         "AI_PROVIDER": "openai_compat",
@@ -18,14 +34,14 @@ def _openai_settings_kwargs() -> dict[str, object]:
     }
 
 
-def test_ai_settings_accepts_valid_openai_compat() -> None:
+def test_ai_settings_accepts_valid_openai_compat(isolate_ai_env) -> None:
     settings = AISettings(_env_file=None, **_openai_settings_kwargs())
     assert settings.ai_provider == "openai_compat"
     assert settings.ai_model == "gpt-4o-mini"
     assert settings.ai_oai_base_url == "https://example.invalid/v1"
 
 
-def test_ai_settings_requires_provider_and_model() -> None:
+def test_ai_settings_requires_provider_and_model(isolate_ai_env) -> None:
     with pytest.raises(ValidationError):
         AISettings(
             _env_file=None,
@@ -45,7 +61,7 @@ def test_ai_settings_requires_provider_and_model() -> None:
         )
 
 
-def test_openai_compat_requires_base_url() -> None:
+def test_openai_compat_requires_base_url(isolate_ai_env) -> None:
     with pytest.raises(ValidationError):
         AISettings(
             _env_file=None,
@@ -56,7 +72,7 @@ def test_openai_compat_requires_base_url() -> None:
         )
 
 
-def test_gemini_requires_any_api_key() -> None:
+def test_gemini_requires_any_api_key(isolate_ai_env) -> None:
     with pytest.raises(ValidationError):
         AISettings(
             _env_file=None,
@@ -67,7 +83,7 @@ def test_gemini_requires_any_api_key() -> None:
         )
 
 
-def test_gemini_prefers_google_api_key() -> None:
+def test_gemini_prefers_google_api_key(isolate_ai_env) -> None:
     settings = AISettings(
         _env_file=None,
         AI_PROVIDER="gemini",
@@ -81,6 +97,26 @@ def test_gemini_prefers_google_api_key() -> None:
     resolved = settings.get_gemini_api_key()
     assert isinstance(resolved, SecretStr)
     assert resolved.get_secret_value() == "google-key"
+    assert settings.ai_oai_base_url is None
+
+
+def test_ai_settings_missing_all_required_fields_when_env_isolated(isolate_ai_env) -> None:
+    with pytest.raises(ValidationError):
+        AISettings(_env_file=None)
+
+
+def test_gemini_accepts_only_gemini_api_key_and_base_url_is_none(isolate_ai_env) -> None:
+    settings = AISettings(
+        _env_file=None,
+        AI_PROVIDER="gemini",
+        AI_MODEL="gemini-2.0-flash",
+        AI_TIMEOUT_SECONDS=30,
+        AI_MAX_OUTPUT_CHARS=4000,
+        GEMINI_API_KEY="gemini-only",
+    )
+    resolved = settings.get_gemini_api_key()
+    assert isinstance(resolved, SecretStr)
+    assert resolved.get_secret_value() == "gemini-only"
     assert settings.ai_oai_base_url is None
 
 

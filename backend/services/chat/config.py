@@ -38,6 +38,10 @@ class AISettings(BaseSettings):
     ai_max_output_chars: int = Field(gt=0, alias="AI_MAX_OUTPUT_CHARS")
     ai_oai_base_url: str | None = Field(default=None, alias="AI_OAI_BASE_URL")
     ai_oai_api_key: SecretStr | None = Field(default=None, alias="AI_OAI_API_KEY")
+    ai_raw_snapshot_dir: str = Field(
+        default="/tmp/pcbuild_ai_raw_snapshots",
+        alias="AI_RAW_SNAPSHOT_DIR",
+    )
     gemini_api_key: SecretStr | None = Field(default=None, alias="GEMINI_API_KEY")
     google_api_key: SecretStr | None = Field(default=None, alias="GOOGLE_API_KEY")
     p2_max_value_len: int = Field(default=120, gt=0, alias="P2_MAX_VALUE_LEN")
@@ -78,6 +82,14 @@ class AISettings(BaseSettings):
         if not parsed.netloc:
             raise ValueError("AI_OAI_BASE_URL must include host")
         return value.rstrip("/")
+
+    @field_validator("ai_raw_snapshot_dir")
+    @classmethod
+    def _validate_ai_raw_snapshot_dir(cls, value: str) -> str:
+        value = value.strip()
+        if value:
+            return value
+        raise ValueError("AI_RAW_SNAPSHOT_DIR must not be empty")
 
     @model_validator(mode="after")
     def _validate_provider_requirements(self) -> "AISettings":

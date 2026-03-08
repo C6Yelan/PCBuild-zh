@@ -1,14 +1,24 @@
 # backend/services/chat/service.py
 from __future__ import annotations
 
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
+from typing import Any
 from uuid import uuid4
 
 from pydantic import SecretBytes, SecretStr, ValidationError
 from sqlalchemy.orm import Session
 
 from backend.core.oplog import log_operation
-from backend.services.chat.clients import OpenAICompatError, generate_openai_compat_text
+from backend.services.chat.clients.openai_compat_client import (
+    OpenAICompatError,
+    OpenAICompatResult,
+    generate_openai_compat_completion,
+    generate_openai_compat_text,
+)
 from backend.services.chat.config import OPENAI_COMPAT_PROVIDERS, AISettings, get_ai_settings
 from backend.services.chat.context_pack import (
     P1Demand,
@@ -18,6 +28,35 @@ from backend.services.chat.context_pack import (
 )
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.prompt import build_prompt
+
+_SNAPSHOT_DIR_FALLBACK = "/tmp/pcbuild_ai_raw_snapshots"
+_REDACTED = "[REDACTED]"
+_ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
+_SENSITIVE_FIELD_NAMES = {
+    "authorization",
+    "api_key",
+    "x_api_key",
+    "x-api-key",
+    "openai_api_key",
+    "gemini_api_key",
+    "google_api_key",
+    "ai_oai_api_key",
+    "ai_api_key",
+}
+_BEARER_TOKEN_RE = re.compile(r"(?i)bearer\s+[a-z0-9._~+/=-]+")
+
+
+@dataclass(slots=True)
+class _ProviderCallResult:
+    text: str
+    endpoint: str
+    status_code: int
+    request_headers: dict[str, str]
+    request_json: dict[str, object]
+    response_headers: dict[str, str]
+    response_json: dict[str, object] | None
+    raw_response_text: str
+    upstream_request_id: str | None
 
 
 def _normalize_role(role: str) -> str:
@@ -108,37 +147,304 @@ def _resolve_api_key(api_key: SecretStr | SecretBytes | str | None) -> str | Non
     return None
 
 
+def _is_sensitive_key(key: str | None) -> bool:
+    if not key:
+        return False
+    lowered = key.strip().lower()
+    return lowered in _SENSITIVE_FIELD_NAMES or "api_key" in lowered
+
+
+def _redact_string(value: str, *, key: str | None = None) -> str:
+    if _is_sensitive_key(key):
+        return _REDACTED
+    return _BEARER_TOKEN_RE.sub("Bearer [REDACTED]", value)
+
+
+def _redact_snapshot_value(value: Any, *, key: str | None = None) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(item_key): _redact_snapshot_value(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_snapshot_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_snapshot_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_string(value, key=key)
+    if _is_sensitive_key(key):
+        return _REDACTED
+    return value
+
+
+def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def _snapshot_root(settings: AISettings) -> Path:
+    raw_dir = getattr(settings, "ai_raw_snapshot_dir", _SNAPSHOT_DIR_FALLBACK)
+    normalized = str(raw_dir or _SNAPSHOT_DIR_FALLBACK).strip() or _SNAPSHOT_DIR_FALLBACK
+    return Path(normalized)
+
+
 class _ProviderDispatchError(RuntimeError):
-    def __init__(self, error_type: str, message: str) -> None:
+    def __init__(
+        self,
+        error_type: str,
+        message: str,
+        *,
+        endpoint: str = "",
+        request_json: dict[str, object] | None = None,
+        response_headers: dict[str, str] | None = None,
+        response_json: dict[str, object] | None = None,
+        raw_response_text: str = "",
+        status_code: int | None = None,
+        upstream_request_id: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.error_type = error_type
+        self.endpoint = endpoint
+        self.request_json = request_json or {}
+        self.response_headers = response_headers or {}
+        self.response_json = response_json
+        self.raw_response_text = raw_response_text
+        self.status_code = status_code
+        self.upstream_request_id = upstream_request_id
 
 
-def _generate_provider_text(
+def _coerce_provider_result(result: OpenAICompatResult) -> _ProviderCallResult:
+    return _ProviderCallResult(
+        text=result.text,
+        endpoint=result.endpoint,
+        status_code=result.status_code,
+        request_headers=result.request_headers,
+        request_json=result.request_json,
+        response_headers=result.response_headers,
+        response_json=result.response_json,
+        raw_response_text=result.raw_response_text,
+        upstream_request_id=result.upstream_request_id,
+    )
+
+
+def _fallback_text_result(
     *,
     settings: AISettings,
     messages: list[dict[str, str]],
-) -> str:
+    request_id: str,
+    text: str,
+) -> _ProviderCallResult:
+    request_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-Client-Request-Id": request_id,
+    }
+    return _ProviderCallResult(
+        text=text,
+        endpoint=settings.ai_oai_base_url or "-",
+        status_code=200,
+        request_headers=request_headers,
+        request_json={"model": settings.ai_model, "messages": messages},
+        response_headers={},
+        response_json=None,
+        raw_response_text=text,
+        upstream_request_id=None,
+    )
+
+
+def _generate_provider_result(
+    *,
+    settings: AISettings,
+    messages: list[dict[str, str]],
+    request_id: str,
+) -> _ProviderCallResult:
     provider = settings.ai_provider
     if provider in OPENAI_COMPAT_PROVIDERS:
         if not settings.ai_oai_base_url:
             raise _ProviderDispatchError(
                 "config_error",
                 "AI_OAI_BASE_URL is required for openai-compatible providers.",
+                request_json={"model": settings.ai_model, "messages": messages},
             )
-        return generate_openai_compat_text(
+
+        if generate_openai_compat_text is not _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT:
+            text = generate_openai_compat_text(
+                base_url=settings.ai_oai_base_url,
+                api_key=_resolve_api_key(settings.ai_oai_api_key),
+                model=settings.ai_model,
+                messages=messages,
+                timeout_seconds=settings.ai_timeout_seconds,
+                client_request_id=request_id,
+            )
+            return _fallback_text_result(
+                settings=settings,
+                messages=messages,
+                request_id=request_id,
+                text=text,
+            )
+
+        result = generate_openai_compat_completion(
             base_url=settings.ai_oai_base_url,
             api_key=_resolve_api_key(settings.ai_oai_api_key),
             model=settings.ai_model,
             messages=messages,
             timeout_seconds=settings.ai_timeout_seconds,
+            client_request_id=request_id,
         )
+        return _coerce_provider_result(result)
+
     if provider == "gemini":
         raise _ProviderDispatchError(
             "provider_not_ready",
             "Gemini provider dispatch is reserved for A5 implementation.",
+            request_json={"model": settings.ai_model, "messages": messages},
         )
-    raise _ProviderDispatchError("config_error", f"Unsupported AI provider: {provider}")
+    raise _ProviderDispatchError(
+        "config_error",
+        f"Unsupported AI provider: {provider}",
+        request_json={"model": settings.ai_model, "messages": messages},
+    )
+
+
+def _write_ai_snapshot(
+    *,
+    settings: AISettings,
+    request_id: str,
+    provider: str,
+    model: str,
+    context_pack_hash: str,
+    client_request_id: str,
+    latency_ms: int,
+    ok: bool,
+    error_type: str | None,
+    messages: list[dict[str, str]],
+    provider_result: _ProviderCallResult | None = None,
+    provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
+) -> str:
+    snapshot_id = f"file:{request_id}"
+    snapshot_dir = _snapshot_root(settings) / request_id
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    endpoint = provider_result.endpoint if provider_result else provider_error.endpoint if provider_error else "-"
+    request_headers = (
+        provider_result.request_headers
+        if provider_result
+        else {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Client-Request-Id": client_request_id,
+        }
+    )
+    request_json = (
+        provider_result.request_json
+        if provider_result
+        else provider_error.request_json if provider_error else {"model": model, "messages": messages}
+    )
+    raw_request = {
+        "provider": provider,
+        "model": model,
+        "messages": messages,
+        "context_pack_hash": context_pack_hash,
+        "endpoint": endpoint or "-",
+        "client_request_id": client_request_id,
+        "request_headers": _redact_snapshot_value(request_headers),
+        "request_json": _redact_snapshot_value(request_json),
+    }
+
+    response_headers = (
+        provider_result.response_headers
+        if provider_result
+        else provider_error.response_headers if provider_error else {}
+    )
+    response_json = (
+        provider_result.response_json
+        if provider_result
+        else provider_error.response_json if provider_error else None
+    )
+    raw_response_text = (
+        provider_result.raw_response_text
+        if provider_result
+        else provider_error.raw_response_text if provider_error else ""
+    )
+    upstream_request_id = (
+        provider_result.upstream_request_id
+        if provider_result
+        else provider_error.upstream_request_id if provider_error else None
+    )
+    status_code = (
+        provider_result.status_code
+        if provider_result
+        else provider_error.status_code if provider_error else None
+    )
+    raw_response = {
+        "status_code": status_code,
+        "response_headers": _redact_snapshot_value(response_headers),
+        "response_json": _redact_snapshot_value(response_json),
+        "raw_response_text": _redact_snapshot_value(raw_response_text),
+        "upstream_request_id": upstream_request_id,
+    }
+
+    meta = {
+        "request_id": request_id,
+        "provider": provider,
+        "model": model,
+        "context_pack_hash": context_pack_hash,
+        "latency_ms": latency_ms,
+        "ok": ok,
+        "error_type": error_type or "-",
+        "snapshot_id": snapshot_id,
+    }
+
+    _write_json_file(snapshot_dir / "raw_request.json", raw_request)
+    _write_json_file(snapshot_dir / "raw_response.json", raw_response)
+    _write_json_file(snapshot_dir / "meta.json", meta)
+    return snapshot_id
+
+
+def _persist_ai_snapshot(
+    *,
+    settings: AISettings,
+    warnings: list[str],
+    request_id: str,
+    provider: str,
+    model: str,
+    context_pack_hash: str,
+    latency_ms: int,
+    ok: bool,
+    error_type: str | None,
+    messages: list[dict[str, str]],
+    provider_result: _ProviderCallResult | None = None,
+    provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
+) -> str:
+    try:
+        return _write_ai_snapshot(
+            settings=settings,
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            context_pack_hash=context_pack_hash,
+            client_request_id=request_id,
+            latency_ms=latency_ms,
+            ok=ok,
+            error_type=error_type,
+            messages=messages,
+            provider_result=provider_result,
+            provider_error=provider_error,
+        )
+    except Exception as exc:
+        if "ai_snapshot_write_failed" not in warnings:
+            warnings.append("ai_snapshot_write_failed")
+        log_operation(
+            "snapshot_write_failed",
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            context_pack_hash=context_pack_hash,
+            error_type=type(exc).__name__,
+        )
+        return "-"
 
 
 def _log_ai_call(
@@ -146,6 +452,9 @@ def _log_ai_call(
     request_id: str,
     provider: str,
     model: str,
+    context_pack_hash: str,
+    snapshot_id: str,
+    latency_ms: int,
     ok: bool,
     error_type: str | None = None,
 ) -> None:
@@ -154,6 +463,9 @@ def _log_ai_call(
         request_id=request_id,
         provider=provider,
         model=model,
+        context_pack_hash=context_pack_hash,
+        snapshot_id=snapshot_id,
+        latency_ms=latency_ms,
         ok=ok,
         error_type=error_type or "-",
     )
@@ -167,6 +479,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     compressed_candidates: dict[str, list[dict[str, object]]] = {}
     drop_log: dict[str, dict[str, object]] = {}
     context_pack_text: str | None = None
+    context_pack_hash = "-"
 
     if db is not None:
         categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
@@ -225,6 +538,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     demand=p1_demand,
                 )
                 context_pack_text = context_pack.text
+                context_pack_hash = context_pack.hash
                 category_counts = ",".join(
                     f"{category}:{len(compressed_candidates.get(category, []))}"
                     for category in sorted(compressed_candidates.keys())
@@ -232,7 +546,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                 log_operation(
                     "p3_context_pack",
                     env=p1_env,
-                    context_pack_hash=context_pack.hash,
+                    context_pack_hash=context_pack_hash,
                     context_pack_chars=len(context_pack.text),
                     category_counts=category_counts,
                 )
@@ -254,12 +568,27 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     )
 
     try:
-        response_text = _generate_provider_text(
+        provider_result = _generate_provider_result(
             settings=settings,
             messages=provider_messages,
+            request_id=request_id,
+        )
+        latency_ms = int((perf_counter() - started) * 1000)
+        snapshot_id = _persist_ai_snapshot(
+            settings=settings,
+            warnings=warnings,
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            latency_ms=latency_ms,
+            ok=True,
+            error_type="-",
+            messages=provider_messages,
+            provider_result=provider_result,
         )
         response_text = _truncate_text(
-            response_text,
+            provider_result.text,
             max_chars=settings.ai_max_output_chars,
             warnings=warnings,
         )
@@ -267,23 +596,44 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            snapshot_id=snapshot_id,
+            latency_ms=latency_ms,
             ok=True,
+            error_type="-",
         )
         return ChatResponse(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
             text=response_text,
-            latency_ms=int((perf_counter() - started) * 1000),
+            latency_ms=latency_ms,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
         )
     except OpenAICompatError as exc:
+        latency_ms = int((perf_counter() - started) * 1000)
+        snapshot_id = _persist_ai_snapshot(
+            settings=settings,
+            warnings=warnings,
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            latency_ms=latency_ms,
+            ok=False,
+            error_type=exc.error_type,
+            messages=provider_messages,
+            provider_error=exc,
+        )
         _log_ai_call(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            snapshot_id=snapshot_id,
+            latency_ms=latency_ms,
             ok=False,
             error_type=exc.error_type,
         )
@@ -292,17 +642,34 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             provider=settings.ai_provider,
             model=settings.ai_model,
             text="目前 AI 服務暫時不可用，請稍後再試。",
-            latency_ms=int((perf_counter() - started) * 1000),
+            latency_ms=latency_ms,
             error_type=exc.error_type,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
         )
     except _ProviderDispatchError as exc:
+        latency_ms = int((perf_counter() - started) * 1000)
+        snapshot_id = _persist_ai_snapshot(
+            settings=settings,
+            warnings=warnings,
+            request_id=request_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            latency_ms=latency_ms,
+            ok=False,
+            error_type=exc.error_type,
+            messages=provider_messages,
+            provider_error=exc,
+        )
         _log_ai_call(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            snapshot_id=snapshot_id,
+            latency_ms=latency_ms,
             ok=False,
             error_type=exc.error_type,
         )
@@ -311,7 +678,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             provider=settings.ai_provider,
             model=settings.ai_model,
             text="目前 AI 服務提供者尚未啟用，請稍後再試。",
-            latency_ms=int((perf_counter() - started) * 1000),
+            latency_ms=latency_ms,
             error_type=exc.error_type,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,

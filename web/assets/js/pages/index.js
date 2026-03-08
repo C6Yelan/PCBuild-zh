@@ -112,7 +112,7 @@ if (!chatEnabled) {
 
     // 只有成功才解析 JSON
     const data = await r.json();
-    const aiText = String(data?.reply ?? "");
+    const aiText = String(data?.text ?? data?.reply ?? "");
 
     // UI 顯示 AI
     appendMarkdown('ai', aiText, false);

@@ -27,6 +27,7 @@ from backend.services.chat.context_pack import (
     retrieve_topk_candidates,
 )
 from backend.services.chat.contracts import ChatRequest, ChatResponse
+from backend.services.chat.demand_inference import infer_chat_demand
 from backend.services.chat.prompt import build_prompt
 
 _SNAPSHOT_DIR_FALLBACK = "/tmp/pcbuild_ai_raw_snapshots"
@@ -57,6 +58,12 @@ class _ProviderCallResult:
     response_json: dict[str, object] | None
     raw_response_text: str
     upstream_request_id: str | None
+
+
+@dataclass(slots=True)
+class _ResolvedDemand:
+    raw_demand: dict[str, Any] | None
+    source: str
 
 
 def _normalize_role(role: str) -> str:
@@ -102,11 +109,44 @@ def _truncate_text(text: str, max_chars: int, warnings: list[str]) -> str:
     return text[:max_chars]
 
 
-def _extract_p1_inputs(chat_request: ChatRequest) -> tuple[list[str], int, P1Demand | None, str]:
-    if not isinstance(chat_request.demand, dict):
-        return [], 5, None, "prod"
+def _inference_inputs(chat_request: ChatRequest) -> tuple[str, list[Any]]:
+    if chat_request.user_text:
+        return chat_request.user_text, list(chat_request.history)
 
-    raw = chat_request.demand
+    if not chat_request.messages:
+        return "", []
+
+    last_user_index: int | None = None
+    for index in range(len(chat_request.messages) - 1, -1, -1):
+        if chat_request.messages[index].role == "user":
+            last_user_index = index
+            break
+
+    if last_user_index is None:
+        return "", list(chat_request.messages)
+
+    return (
+        chat_request.messages[last_user_index].content,
+        list(chat_request.messages[:last_user_index]),
+    )
+
+
+def _resolve_effective_demand(chat_request: ChatRequest) -> _ResolvedDemand:
+    if isinstance(chat_request.demand, dict):
+        return _ResolvedDemand(raw_demand=chat_request.demand, source="explicit")
+
+    message, history = _inference_inputs(chat_request)
+    inferred = infer_chat_demand(message=message, history=history)
+    if inferred is None:
+        return _ResolvedDemand(raw_demand=None, source="none")
+    return _ResolvedDemand(raw_demand=inferred, source="inferred")
+
+
+def _extract_p1_inputs_from_demand(
+    raw: dict[str, Any] | None,
+) -> tuple[list[str], int, P1Demand | None, str]:
+    if not isinstance(raw, dict):
+        return [], 5, None, "prod"
 
     categories: list[str] = []
     raw_categories = raw.get("categories")
@@ -480,87 +520,101 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     drop_log: dict[str, dict[str, object]] = {}
     context_pack_text: str | None = None
     context_pack_hash = "-"
+    resolved_demand = _resolve_effective_demand(chat_request)
+    categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs_from_demand(resolved_demand.raw_demand)
+    message_for_inference, history_for_inference = _inference_inputs(chat_request)
+    triggered_retrieval = db is not None and bool(categories)
 
-    if db is not None:
-        categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs(chat_request)
-        if categories:
-            try:
-                p1_result = retrieve_topk_candidates(
-                    db,
-                    categories=categories,
-                    top_k=p1_top_k,
-                    demand=p1_demand,
-                    env=p1_env,
-                )
-                compressed_candidates, drop_log = compress_candidates(
-                    p1_result,
-                    spec_whitelist_by_category=settings.p2_spec_whitelist_by_category,
-                    max_value_len=settings.p2_max_value_len,
-                    max_specs_per_part=settings.p2_max_specs_per_part,
-                )
-                drop_entries = list(drop_log.values())
-                fallback_count = sum(
-                    1
-                    for entry in drop_entries
-                    if isinstance(entry, dict)
-                    and isinstance(entry.get("reason"), list)
-                    and "fallback_used" in entry["reason"]
-                )
-                dropped_specs_count = sum(
-                    len(entry["dropped_specs"])
-                    for entry in drop_entries
-                    if isinstance(entry, dict) and isinstance(entry.get("dropped_specs"), list)
-                )
-                truncated_specs_count = sum(
-                    len(entry["truncated_specs"])
-                    for entry in drop_entries
-                    if isinstance(entry, dict) and isinstance(entry.get("truncated_specs"), dict)
-                )
-                log_operation(
-                    "p2_compress",
-                    env=p1_env,
-                    top_k=p1_top_k,
-                    requested_categories=",".join(categories),
-                    returned_categories=",".join(sorted(compressed_candidates.keys())),
-                    returned_count=sum(len(items) for items in compressed_candidates.values()),
-                    drop_log_count=len(drop_entries),
-                    fallback_count=fallback_count,
-                    dropped_specs_count=dropped_specs_count,
-                    truncated_specs_count=truncated_specs_count,
-                    max_value_len=settings.p2_max_value_len,
-                    max_specs_per_part=settings.p2_max_specs_per_part,
-                )
+    log_operation(
+        "demand_resolution",
+        request_id=request_id,
+        source=resolved_demand.source,
+        categories=",".join(categories) if categories else "-",
+        top_k=p1_top_k,
+        env=p1_env,
+        message_chars=len(message_for_inference),
+        history_turns=len(history_for_inference),
+        triggered_retrieval=triggered_retrieval,
+    )
 
-                context_pack = build_context_pack(
-                    compressed_by_category=compressed_candidates,
-                    category_order=categories,
-                    enable_rerank=True,
-                    demand=p1_demand,
-                )
-                context_pack_text = context_pack.text
-                context_pack_hash = context_pack.hash
-                category_counts = ",".join(
-                    f"{category}:{len(compressed_candidates.get(category, []))}"
-                    for category in sorted(compressed_candidates.keys())
-                )
-                log_operation(
-                    "p3_context_pack",
-                    env=p1_env,
-                    context_pack_hash=context_pack_hash,
-                    context_pack_chars=len(context_pack.text),
-                    category_counts=category_counts,
-                )
-            except Exception as exc:
-                warnings.append("p1_retrieval_failed")
-                log_operation(
-                    "p1_retrieval_failed",
-                    error_type=type(exc).__name__,
-                    env=p1_env,
-                    categories=",".join(categories),
-                    top_k=p1_top_k,
-                )
-                compressed_candidates = {}
-                drop_log = {}
+    if triggered_retrieval:
+        try:
+            p1_result = retrieve_topk_candidates(
+                db,
+                categories=categories,
+                top_k=p1_top_k,
+                demand=p1_demand,
+                env=p1_env,
+            )
+            compressed_candidates, drop_log = compress_candidates(
+                p1_result,
+                spec_whitelist_by_category=settings.p2_spec_whitelist_by_category,
+                max_value_len=settings.p2_max_value_len,
+                max_specs_per_part=settings.p2_max_specs_per_part,
+            )
+            drop_entries = list(drop_log.values())
+            fallback_count = sum(
+                1
+                for entry in drop_entries
+                if isinstance(entry, dict)
+                and isinstance(entry.get("reason"), list)
+                and "fallback_used" in entry["reason"]
+            )
+            dropped_specs_count = sum(
+                len(entry["dropped_specs"])
+                for entry in drop_entries
+                if isinstance(entry, dict) and isinstance(entry.get("dropped_specs"), list)
+            )
+            truncated_specs_count = sum(
+                len(entry["truncated_specs"])
+                for entry in drop_entries
+                if isinstance(entry, dict) and isinstance(entry.get("truncated_specs"), dict)
+            )
+            log_operation(
+                "p2_compress",
+                env=p1_env,
+                top_k=p1_top_k,
+                requested_categories=",".join(categories),
+                returned_categories=",".join(sorted(compressed_candidates.keys())),
+                returned_count=sum(len(items) for items in compressed_candidates.values()),
+                drop_log_count=len(drop_entries),
+                fallback_count=fallback_count,
+                dropped_specs_count=dropped_specs_count,
+                truncated_specs_count=truncated_specs_count,
+                max_value_len=settings.p2_max_value_len,
+                max_specs_per_part=settings.p2_max_specs_per_part,
+            )
+
+            context_pack = build_context_pack(
+                compressed_by_category=compressed_candidates,
+                category_order=categories,
+                enable_rerank=True,
+                demand=p1_demand,
+            )
+            context_pack_text = context_pack.text
+            context_pack_hash = context_pack.hash
+            category_counts = ",".join(
+                f"{category}:{len(compressed_candidates.get(category, []))}"
+                for category in sorted(compressed_candidates.keys())
+            )
+            log_operation(
+                "p3_context_pack",
+                env=p1_env,
+                context_pack_hash=context_pack_hash,
+                context_pack_chars=len(context_pack.text),
+                category_counts=category_counts,
+            )
+        except Exception as exc:
+            warnings.append("p1_retrieval_failed")
+            log_operation(
+                "p1_retrieval_failed",
+                error_type=type(exc).__name__,
+                env=p1_env,
+                categories=",".join(categories),
+                top_k=p1_top_k,
+            )
+            compressed_candidates = {}
+            drop_log = {}
 
     provider_messages = _build_provider_messages(
         chat_request,

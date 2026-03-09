@@ -19,7 +19,12 @@ from backend.services.chat.clients.openai_compat_client import (
     generate_openai_compat_completion,
     generate_openai_compat_text,
 )
-from backend.services.chat.config import OPENAI_COMPAT_PROVIDERS, AISettings, get_ai_settings
+from backend.services.chat.config import (
+    OPENAI_COMPAT_PROVIDERS,
+    AISettings,
+    SYSTEM_PROMPT,
+    get_ai_settings,
+)
 from backend.services.chat.context_pack import (
     P1Demand,
     build_context_pack,
@@ -72,16 +77,26 @@ def _normalize_role(role: str) -> str:
     return role
 
 
+def _strip_internal_system_prompt(prompt: str) -> str:
+    prefixed = f"{SYSTEM_PROMPT}\n\n"
+    if prompt.startswith(prefixed):
+        return prompt[len(prefixed) :]
+    if prompt.startswith(SYSTEM_PROMPT):
+        return prompt[len(SYSTEM_PROMPT) :].lstrip()
+    return prompt
+
+
 def _build_provider_messages(
     chat_request: ChatRequest,
     *,
     context_pack_text: str | None = None,
 ) -> list[dict[str, str]]:
     if chat_request.messages:
-        provider_messages = [
+        provider_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        provider_messages.extend(
             {"role": _normalize_role(m.role), "content": m.content}
             for m in chat_request.messages
-        ]
+        )
         if context_pack_text:
             provider_messages.append(
                 {
@@ -95,11 +110,15 @@ def _build_provider_messages(
         message=chat_request.user_text or "",
         history=chat_request.history,
     )
+    prompt = _strip_internal_system_prompt(prompt)
     if chat_request.demand and not isinstance(chat_request.demand, dict):
         prompt = f"{prompt}\n\n需求補充：{chat_request.demand}"
     if context_pack_text:
         prompt = f"{prompt}\n\n## CONTEXT_PACK\n{context_pack_text}"
-    return [{"role": "user", "content": prompt}]
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
 
 
 def _truncate_text(text: str, max_chars: int, warnings: list[str]) -> str:

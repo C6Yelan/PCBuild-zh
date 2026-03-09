@@ -134,7 +134,8 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
     assert response.text == "ok"
     assert response.compressed_candidates is not None
     assert captured_retrieve["categories"] == ["CPU"]
-    assert "## CONTEXT_PACK" in captured_openai["messages"][0]["content"]
+    user_messages = [m["content"] for m in captured_openai["messages"] if m["role"] == "user"]
+    assert any("## CONTEXT_PACK" in content for content in user_messages)
 
     demand_events = [fields for event, fields in events if event == "demand_resolution"]
     assert len(demand_events) == 1
@@ -178,7 +179,9 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monk
     assert response.text == "ok"
     assert response.compressed_candidates == {}
     assert response.drop_log == {}
-    assert "## CONTEXT_PACK" not in captured_openai["messages"][0]["content"]
+    user_messages = [m["content"] for m in captured_openai["messages"] if m["role"] == "user"]
+    assert user_messages
+    assert all("## CONTEXT_PACK" not in content for content in user_messages)
 
     demand_events = [fields for event, fields in events if event == "demand_resolution"]
     assert len(demand_events) == 1

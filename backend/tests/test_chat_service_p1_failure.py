@@ -41,7 +41,8 @@ def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     )
 
     response = chat_service.generate_chat_reply(request, db=object())
-    assert response.text == "fixed-response"
+    assert response.text == "目前資料不足，請補充需求後再試。"
+    assert response.error_type == "dq_failed"
     assert response.warnings is not None
     assert "p1_retrieval_failed" in response.warnings
     failure_events = [fields for event, fields in events if event == "p1_retrieval_failed"]
@@ -56,5 +57,5 @@ def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     assert len(ai_events) == 1
     assert ai_events[0]["provider"] == "openai_compat"
     assert ai_events[0]["model"] == "gpt-4o-mini"
-    assert ai_events[0]["ok"] is True
-    assert ai_events[0]["error_type"] == "-"
+    assert ai_events[0]["ok"] is False
+    assert ai_events[0]["error_type"] == "dq_failed"

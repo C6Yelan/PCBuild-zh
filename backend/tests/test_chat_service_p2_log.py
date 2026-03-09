@@ -66,7 +66,11 @@ def test_generate_chat_reply_emits_p2_compress_log(monkeypatch) -> None:
         "compress_candidates",
         lambda *args, **kwargs: (compressed_candidates, drop_log),
     )
-    monkeypatch.setattr(chat_service, "generate_openai_compat_text", lambda **kwargs: "fixed-response")
+    monkeypatch.setattr(
+        chat_service,
+        "generate_openai_compat_text",
+        lambda **kwargs: "建議選 CPU 1 搭配 GPU 1。",
+    )
     monkeypatch.setattr(
         chat_service,
         "log_operation",
@@ -84,7 +88,7 @@ def test_generate_chat_reply_emits_p2_compress_log(monkeypatch) -> None:
 
     response = chat_service.generate_chat_reply(request, db=object())
     dumped = response.model_dump()
-    assert response.text == "fixed-response"
+    assert response.text == "建議選 CPU 1 搭配 GPU 1。"
     assert dumped["compressed_candidates"] == {
         "CPU": [
             {

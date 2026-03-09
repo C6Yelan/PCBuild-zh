@@ -13,6 +13,7 @@
   meta.json
   request_context.json
   validation_report.json
+  dq_report.json
   context_pack.txt
   compressed_candidates.json
   drop_log.json
@@ -36,6 +37,9 @@
 - 也會包含 gate 結果：
   - `gate_status`（`pass` / `fail`）
   - `gate_reasons`
+- 也會包含 DQ 結果：
+  - `dq_status`（`pass` / `fail` / `skipped`）
+  - `dq_reasons`
 - 也會列出本次實際寫出的 artifact 檔名。
 
 ### request_context.json
@@ -61,6 +65,16 @@
   - `original_length`
   - `sanitized_length`
 - 若本次為較舊 snapshot 或未經 gate 路徑，則可能不存在。
+
+### dq_report.json
+- 保存 P8 文字版 DQ Gate 結果。
+- 包含：
+  - `passed`
+  - `reasons`
+  - `warnings`
+  - `metrics`
+  - `quarantine`
+- 若本次 gate 已失敗、或為較舊 snapshot，則可能不存在。
 
 ### context_pack.txt
 - 保存當次實際注入模型的 context pack 純文字。

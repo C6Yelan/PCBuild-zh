@@ -69,6 +69,11 @@ def test_generate_chat_reply_stages_successful_response(
     meta = json.loads((snapshot_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["staging_status"] == "staged"
     assert meta["quarantine_status"] == "not_quarantined"
+    staging_record = json.loads((snapshot_dir / "staging_record.json").read_text(encoding="utf-8"))
+    assert staging_record["published"] is True
+    assert staging_record["publish_blocked"] is False
+    assert staging_record["publish_reason"] == "staged_pass"
+    assert staging_record["data_versions"] == {}
 
 
 def test_generate_chat_reply_quarantines_dq_fail(
@@ -88,6 +93,7 @@ def test_generate_chat_reply_quarantines_dq_fail(
     response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=None)
 
     assert response.error_type == "dq_failed"
+    assert response.text.startswith("目前資料不足，請補充需求後再試。request_id=")
 
     snapshot_dir = tmp_path / response.request_id
     assert (snapshot_dir / "quarantine_entry.json").exists()
@@ -97,6 +103,12 @@ def test_generate_chat_reply_quarantines_dq_fail(
     meta = json.loads((snapshot_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["staging_status"] == "skipped"
     assert meta["quarantine_status"] == "quarantined"
+    quarantine_entry = json.loads(
+        (snapshot_dir / "quarantine_entry.json").read_text(encoding="utf-8")
+    )
+    assert quarantine_entry["published"] is False
+    assert quarantine_entry["publish_blocked"] is True
+    assert quarantine_entry["publish_reason"] == "dq_failed"
 
     index_path = tmp_path / "_quarantine" / "quarantine_index.jsonl"
     index_entries = [json.loads(line) for line in index_path.read_text(encoding="utf-8").splitlines()]
@@ -121,6 +133,7 @@ def test_generate_chat_reply_quarantines_validation_fail(
     response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=None)
 
     assert response.error_type == "validation_failed"
+    assert response.text.startswith("目前 AI 回覆格式異常，請稍後再試。request_id=")
 
     snapshot_dir = tmp_path / response.request_id
     assert (snapshot_dir / "quarantine_entry.json").exists()
@@ -130,6 +143,10 @@ def test_generate_chat_reply_quarantines_validation_fail(
     assert meta["staging_status"] == "skipped"
     assert meta["quarantine_status"] == "quarantined"
     assert meta["dq_status"] == "skipped"
+    quarantine_entry = json.loads(
+        (snapshot_dir / "quarantine_entry.json").read_text(encoding="utf-8")
+    )
+    assert quarantine_entry["publish_reason"] == "validation_failed"
 
 
 def test_provider_error_path_skips_staging_and_quarantine(

@@ -207,6 +207,11 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
         "staging_record.json",
         "meta.json",
     ]
+    staging_record = json.loads((snapshot_dir / "staging_record.json").read_text(encoding="utf-8"))
+    assert staging_record["published"] is True
+    assert staging_record["publish_blocked"] is False
+    assert staging_record["publish_reason"] == "staged_pass"
+    assert staging_record["data_versions"] == lineage["categories"]
 
     raw_request = json.loads((snapshot_dir / "raw_request.json").read_text(encoding="utf-8"))
     assert raw_request["request_headers"]["Authorization"] == "[REDACTED]"
@@ -273,6 +278,11 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
         "staging_record.json",
         "meta.json",
     ]
+    staging_record = json.loads((snapshot_dir / "staging_record.json").read_text(encoding="utf-8"))
+    assert staging_record["published"] is True
+    assert staging_record["publish_blocked"] is False
+    assert staging_record["publish_reason"] == "staged_pass"
+    assert staging_record["data_versions"] == {}
 
 
 def test_snapshot_request_context_reflects_truncation_warning(

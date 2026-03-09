@@ -2,10 +2,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import sleep
 from urllib.parse import urlparse, urlunparse
 
 import httpx
 from pydantic import SecretStr
+
+from backend.core.oplog import log_operation
+from backend.services.chat.retry_policy import (
+    RETRY_BACKOFF_SECONDS,
+    should_retry_chat_error,
+)
 
 
 @dataclass(slots=True)
@@ -97,6 +104,7 @@ def generate_openai_compat_completion(
     messages: list[dict[str, str]],
     timeout_seconds: float,
     client_request_id: str | None = None,
+    provider: str = "openai_compat",
 ) -> OpenAICompatResult:
     endpoint = _build_chat_completions_endpoint(base_url)
     headers: dict[str, str] = {
@@ -117,144 +125,164 @@ def generate_openai_compat_completion(
         "messages": messages,
     }
 
-    try:
-        response = httpx.post(
-            endpoint,
-            headers=headers,
-            json=payload,
-            timeout=timeout_seconds,
-        )
-    except httpx.TimeoutException as exc:
-        raise OpenAICompatError(
-            "timeout",
+    def _attempt_once() -> OpenAICompatResult:
+        try:
+            response = httpx.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                timeout=timeout_seconds,
+            )
+        except httpx.TimeoutException as exc:
+            raise OpenAICompatError(
+                "timeout",
+                endpoint=endpoint,
+                request_json=payload,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise OpenAICompatError(
+                "network_error",
+                endpoint=endpoint,
+                request_json=payload,
+            ) from exc
+
+        raw_response_text = getattr(response, "text", "")
+        response_headers_obj = getattr(response, "headers", {})
+        if isinstance(response_headers_obj, httpx.Headers):
+            upstream_request_id = _extract_upstream_request_id(response_headers_obj)
+            response_headers = dict(response_headers_obj.items())
+        else:
+            response_headers = dict(response_headers_obj or {})
+            upstream_request_id = None
+        response_json: dict[str, object] | None = None
+
+        try:
+            parsed_json = response.json()
+            if isinstance(parsed_json, dict):
+                response_json = parsed_json
+        except ValueError:
+            parsed_json = None
+
+        if response.status_code == 429:
+            raise OpenAICompatError(
+                "429",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=response_json,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            )
+        if response.status_code >= 500:
+            raise OpenAICompatError(
+                "5xx",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=response_json,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            )
+        if response.status_code >= 400:
+            raise OpenAICompatError(
+                "network_error",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=response_json,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            )
+
+        if response_json is None:
+            raise OpenAICompatError(
+                "parse_error",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=None,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            )
+
+        try:
+            choice = response_json["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise OpenAICompatError(
+                "parse_error",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=response_json,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            ) from exc
+
+        if not isinstance(choice, str):
+            raise OpenAICompatError(
+                "parse_error",
+                status_code=response.status_code,
+                upstream_request_id=upstream_request_id,
+                raw_response_text=raw_response_text,
+                response_json=response_json,
+                response_headers=response_headers,
+                endpoint=endpoint,
+                request_json=payload,
+            )
+
+        response_id = response_json.get("id")
+        if not isinstance(response_id, str):
+            response_id = None
+
+        finish_reason: str | None = None
+        choices = response_json.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                raw_finish_reason = first_choice.get("finish_reason")
+                if isinstance(raw_finish_reason, str):
+                    finish_reason = raw_finish_reason
+
+        usage = _extract_usage(response_json.get("usage"))
+
+        return OpenAICompatResult(
+            text=choice.strip(),
             endpoint=endpoint,
-            request_json=payload,
-        ) from exc
-    except httpx.RequestError as exc:
-        raise OpenAICompatError(
-            "network_error",
-            endpoint=endpoint,
-            request_json=payload,
-        ) from exc
-
-    raw_response_text = getattr(response, "text", "")
-    response_headers_obj = getattr(response, "headers", {})
-    if isinstance(response_headers_obj, httpx.Headers):
-        upstream_request_id = _extract_upstream_request_id(response_headers_obj)
-        response_headers = dict(response_headers_obj.items())
-    else:
-        response_headers = dict(response_headers_obj or {})
-        upstream_request_id = None
-    response_json: dict[str, object] | None = None
-
-    try:
-        parsed_json = response.json()
-        if isinstance(parsed_json, dict):
-            response_json = parsed_json
-    except ValueError:
-        parsed_json = None
-
-    if response.status_code == 429:
-        raise OpenAICompatError(
-            "429",
             status_code=response.status_code,
-            upstream_request_id=upstream_request_id,
-            raw_response_text=raw_response_text,
+            request_headers=headers,
+            request_json=payload,
+            response_headers=response_headers,
             response_json=response_json,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
-        )
-    if response.status_code >= 500:
-        raise OpenAICompatError(
-            "5xx",
-            status_code=response.status_code,
-            upstream_request_id=upstream_request_id,
             raw_response_text=raw_response_text,
-            response_json=response_json,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
-        )
-    if response.status_code >= 400:
-        raise OpenAICompatError(
-            "network_error",
-            status_code=response.status_code,
             upstream_request_id=upstream_request_id,
-            raw_response_text=raw_response_text,
-            response_json=response_json,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
+            response_id=response_id,
+            finish_reason=finish_reason,
+            usage=usage,
         )
 
-    if response_json is None:
-        raise OpenAICompatError(
-            "parse_error",
-            status_code=response.status_code,
-            upstream_request_id=upstream_request_id,
-            raw_response_text=raw_response_text,
-            response_json=None,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
-        )
+    attempt = 1
+    while True:
+        try:
+            return _attempt_once()
+        except OpenAICompatError as exc:
+            if not should_retry_chat_error(exc.error_type, attempt=attempt):
+                raise
 
-    try:
-        choice = response_json["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise OpenAICompatError(
-            "parse_error",
-            status_code=response.status_code,
-            upstream_request_id=upstream_request_id,
-            raw_response_text=raw_response_text,
-            response_json=response_json,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
-        ) from exc
-
-    if not isinstance(choice, str):
-        raise OpenAICompatError(
-            "parse_error",
-            status_code=response.status_code,
-            upstream_request_id=upstream_request_id,
-            raw_response_text=raw_response_text,
-            response_json=response_json,
-            response_headers=response_headers,
-            endpoint=endpoint,
-            request_json=payload,
-        )
-
-    response_id = response_json.get("id")
-    if not isinstance(response_id, str):
-        response_id = None
-
-    finish_reason: str | None = None
-    choices = response_json.get("choices")
-    if isinstance(choices, list) and choices:
-        first_choice = choices[0]
-        if isinstance(first_choice, dict):
-            raw_finish_reason = first_choice.get("finish_reason")
-            if isinstance(raw_finish_reason, str):
-                finish_reason = raw_finish_reason
-
-    usage = _extract_usage(response_json.get("usage"))
-
-    return OpenAICompatResult(
-        text=choice.strip(),
-        endpoint=endpoint,
-        status_code=response.status_code,
-        request_headers=headers,
-        request_json=payload,
-        response_headers=response_headers,
-        response_json=response_json,
-        raw_response_text=raw_response_text,
-        upstream_request_id=upstream_request_id,
-        response_id=response_id,
-        finish_reason=finish_reason,
-        usage=usage,
-    )
+            attempt += 1
+            log_operation(
+                "ai_retry",
+                request_id=client_request_id or "-",
+                provider=provider,
+                model=model,
+                attempt=attempt,
+                error_type=exc.error_type,
+            )
+            sleep(RETRY_BACKOFF_SECONDS)
 
 
 def generate_openai_compat_text(
@@ -265,6 +293,7 @@ def generate_openai_compat_text(
     messages: list[dict[str, str]],
     timeout_seconds: float,
     client_request_id: str | None = None,
+    provider: str = "openai_compat",
 ) -> str:
     result = generate_openai_compat_completion(
         base_url=base_url,
@@ -273,5 +302,6 @@ def generate_openai_compat_text(
         messages=messages,
         timeout_seconds=timeout_seconds,
         client_request_id=client_request_id,
+        provider=provider,
     )
     return result.text

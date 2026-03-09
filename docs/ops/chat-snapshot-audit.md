@@ -92,11 +92,18 @@
 - 保存 P9 staged 成功的摘要記錄。
 - 只有 gate 與 DQ 都通過時才會寫出。
 - 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_staging/<request_id>.staging.json`。
+- 會包含：
+  - `data_versions`：直接 materialize 的候選資料版本（`snapshot_id/run_id`）
+  - `published`
+  - `publish_reason`（目前 staged 成功時為 `staged_pass`）
 
 ### quarantine_entry.json
 - 保存 P9 quarantined 的摘要記錄。
 - 若 gate fail 或 DQ fail，則不寫 staging，而改寫 quarantine。
 - 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_quarantine/<request_id>.quarantine.json`。
+- 會包含：
+  - `publish_blocked`
+  - `publish_reason`（例如 `validation_failed` / `dq_failed`）
 
 ### _quarantine/quarantine_index.jsonl
 - append-only 的 quarantine 索引。

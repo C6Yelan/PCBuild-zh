@@ -27,8 +27,12 @@ class ChatStagingRecord:
     top_k: int
     env: str
     has_context_pack: bool
+    data_versions: dict[str, list[dict[str, str | None]]]
     snapshot_dir: str
     created_at: str
+    published: bool
+    publish_blocked: bool
+    publish_reason: str
     error_type: str | None = None
 
 
@@ -81,6 +85,7 @@ def persist_chat_quarantine_entry(
         "gate_status": record.gate_status,
         "dq_status": record.dq_status,
         "reasons": reasons,
+        "publish_reason": record.publish_reason,
         "created_at": record.created_at,
     }
     quarantine_dir.mkdir(parents=True, exist_ok=True)

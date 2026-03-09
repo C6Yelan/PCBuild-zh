@@ -213,7 +213,7 @@ def test_generate_chat_reply_returns_dq_failed_for_low_quality_text(
     response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=None)
 
     assert response.error_type == "dq_failed"
-    assert response.text == "目前資料不足，請補充需求後再試。"
+    assert response.text.startswith("目前資料不足，請補充需求後再試。request_id=")
 
     snapshot_dir = tmp_path / response.request_id
     dq_report = json.loads((snapshot_dir / "dq_report.json").read_text(encoding="utf-8"))

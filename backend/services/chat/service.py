@@ -83,6 +83,14 @@ class _ResolvedDemand:
     source: str
 
 
+@dataclass(slots=True)
+class _PublishedChatResult:
+    text: str
+    error_type: str | None
+    ok: bool
+    publish_reason: str
+
+
 def _normalize_role(role: str) -> str:
     if role == "ai":
         return "assistant"
@@ -138,6 +146,52 @@ def _truncate_text(text: str, max_chars: int, warnings: list[str]) -> str:
         return text
     warnings.append("output_truncated")
     return text[:max_chars]
+
+
+def _with_request_id(message: str, request_id: str) -> str:
+    return f"{message}request_id={request_id}"
+
+
+def _publish_chat_response(
+    *,
+    request_id: str,
+    staged_public_text: str | None = None,
+    error_type: str | None = None,
+    provider_fallback_text: str | None = None,
+) -> _PublishedChatResult:
+    if error_type is None:
+        return _PublishedChatResult(
+            text=staged_public_text or "",
+            error_type=None,
+            ok=True,
+            publish_reason="staged_pass",
+        )
+
+    if error_type == "validation_failed":
+        return _PublishedChatResult(
+            text=_with_request_id("目前 AI 回覆格式異常，請稍後再試。", request_id),
+            error_type=error_type,
+            ok=False,
+            publish_reason="validation_failed",
+        )
+
+    if error_type == "dq_failed":
+        return _PublishedChatResult(
+            text=_with_request_id("目前資料不足，請補充需求後再試。", request_id),
+            error_type=error_type,
+            ok=False,
+            publish_reason="dq_failed",
+        )
+
+    return _PublishedChatResult(
+        text=_with_request_id(
+            provider_fallback_text or "目前 AI 服務暫時不可用，請稍後再試。",
+            request_id,
+        ),
+        error_type=error_type,
+        ok=False,
+        publish_reason="provider_error",
+    )
 
 
 def _inference_inputs(chat_request: ChatRequest) -> tuple[str, list[Any]]:
@@ -310,12 +364,9 @@ def _build_request_context_payload(
     }
 
 
-def _build_lineage_payload(
-    *,
-    request_id: str,
-    context_pack_hash: str,
+def _build_candidate_lineage_categories(
     compressed_candidates: dict[str, list[dict[str, object]]],
-) -> dict[str, Any]:
+) -> dict[str, list[dict[str, Any]]]:
     def _optional_str(value: object) -> str | None:
         if value is None:
             return None
@@ -337,11 +388,19 @@ def _build_lineage_payload(
                 }
             )
         categories[category] = category_items
+    return categories
 
+
+def _build_lineage_payload(
+    *,
+    request_id: str,
+    context_pack_hash: str,
+    compressed_candidates: dict[str, list[dict[str, object]]],
+) -> dict[str, Any]:
     return {
         "request_id": request_id,
         "context_pack_hash": context_pack_hash,
-        "categories": categories,
+        "categories": _build_candidate_lineage_categories(compressed_candidates),
     }
 
 
@@ -366,7 +425,11 @@ def _build_chat_staging_record(
     top_k: int,
     env: str,
     has_context_pack: bool,
+    data_versions: dict[str, list[dict[str, str | None]]],
     snapshot_dir: str,
+    published: bool,
+    publish_blocked: bool,
+    publish_reason: str,
     error_type: str | None,
 ) -> ChatStagingRecord:
     return ChatStagingRecord(
@@ -389,8 +452,12 @@ def _build_chat_staging_record(
         top_k=top_k,
         env=env,
         has_context_pack=has_context_pack,
+        data_versions=data_versions,
         snapshot_dir=snapshot_dir,
         created_at=datetime.now(timezone.utc).isoformat(),
+        published=published,
+        publish_blocked=publish_blocked,
+        publish_reason=publish_reason,
         error_type=error_type,
     )
 
@@ -544,6 +611,7 @@ def _generate_provider_result(
                 messages=messages,
                 timeout_seconds=settings.ai_timeout_seconds,
                 client_request_id=request_id,
+                provider=provider,
             )
             return _fallback_text_result(
                 settings=settings,
@@ -559,6 +627,7 @@ def _generate_provider_result(
             messages=messages,
             timeout_seconds=settings.ai_timeout_seconds,
             client_request_id=request_id,
+            provider=provider,
         )
         return _coerce_provider_result(result)
 
@@ -889,6 +958,8 @@ def _persist_chat_stage_or_quarantine(
     top_k: int,
     env: str,
     has_context_pack: bool,
+    data_versions: dict[str, list[dict[str, str | None]]],
+    publish_reason: str,
     error_type: str | None,
 ) -> None:
     if snapshot_id == "-":
@@ -916,7 +987,11 @@ def _persist_chat_stage_or_quarantine(
         top_k=top_k,
         env=env,
         has_context_pack=has_context_pack,
+        data_versions=data_versions,
         snapshot_dir=str(snapshot_dir),
+        published=gate_status == "pass" and dq_status == "pass",
+        publish_blocked=not (gate_status == "pass" and dq_status == "pass"),
+        publish_reason=publish_reason,
         error_type=error_type,
     )
 
@@ -981,6 +1056,13 @@ def _log_ai_call(
     latency_ms: int,
     ok: bool,
     error_type: str | None = None,
+    gate_status: str,
+    dq_status: str,
+    staging_status: str,
+    quarantine_status: str,
+    warning_count: int,
+    demand_source: str,
+    triggered_retrieval: bool,
 ) -> None:
     log_operation(
         "ai_call",
@@ -992,6 +1074,13 @@ def _log_ai_call(
         latency_ms=latency_ms,
         ok=ok,
         error_type=error_type or "-",
+        gate_status=gate_status,
+        dq_status=dq_status,
+        staging_status=staging_status,
+        quarantine_status=quarantine_status,
+        warning_count=warning_count,
+        demand_source=demand_source,
+        triggered_retrieval=triggered_retrieval,
     )
 
 
@@ -1136,14 +1225,10 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             if warning not in warnings:
                 warnings.append(warning)
         response_text = validation.sanitized_text
-        response_error_type: str | None = None
-        response_ok = True
-        response_public_text = response_text
         dq_report: DQReport | None = None
+        response_error_type: str | None = None
         if not validation.passed:
             response_error_type = "validation_failed"
-            response_ok = False
-            response_public_text = "目前 AI 回覆格式異常，請稍後再試。"
         else:
             dq_report = evaluate_text_dq(
                 text=response_text,
@@ -1157,8 +1242,20 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
                     warnings.append(warning)
             if not dq_report.passed:
                 response_error_type = "dq_failed"
-                response_ok = False
-                response_public_text = "目前資料不足，請補充需求後再試。"
+        published = _publish_chat_response(
+            request_id=request_id,
+            staged_public_text=response_text,
+            error_type=response_error_type,
+        )
+        gate_status = "pass" if validation.passed else "fail"
+        dq_status = (
+            "skipped"
+            if dq_report is None
+            else "pass"
+            if dq_report.passed
+            else "fail"
+        )
+        data_versions = _build_candidate_lineage_categories(compressed_candidates)
         snapshot_id = _persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
@@ -1167,8 +1264,8 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             model=settings.ai_model,
             context_pack_hash=context_pack_hash,
             latency_ms=latency_ms,
-            ok=response_ok,
-            error_type=response_error_type or "-",
+            ok=published.ok,
+            error_type=published.error_type or "-",
             messages=provider_messages,
             request_mode=request_mode,
             demand_source=resolved_demand.source,
@@ -1194,16 +1291,10 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             model=settings.ai_model,
             context_pack_hash=context_pack_hash,
             normalized_text=response_text,
-            public_text=response_public_text,
+            public_text=published.text,
             latency_ms=latency_ms,
-            gate_status="pass" if validation.passed else "fail",
-            dq_status=(
-                "skipped"
-                if dq_report is None
-                else "pass"
-                if dq_report.passed
-                else "fail"
-            ),
+            gate_status=gate_status,
+            dq_status=dq_status,
             gate_reasons=list(validation.reasons),
             dq_reasons=list(dq_report.reasons) if dq_report else [],
             demand_source=resolved_demand.source,
@@ -1212,7 +1303,13 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             top_k=p1_top_k,
             env=p1_env,
             has_context_pack=bool(context_pack_text),
-            error_type=response_error_type,
+            data_versions=data_versions,
+            publish_reason=published.publish_reason,
+            error_type=published.error_type,
+        )
+        staging_status = "staged" if gate_status == "pass" and dq_status == "pass" else "skipped"
+        quarantine_status = (
+            "not_quarantined" if staging_status == "staged" else "quarantined"
         )
         _log_ai_call(
             request_id=request_id,
@@ -1221,16 +1318,23 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             context_pack_hash=context_pack_hash,
             snapshot_id=snapshot_id,
             latency_ms=latency_ms,
-            ok=response_ok,
-            error_type=response_error_type or "-",
+            ok=published.ok,
+            error_type=published.error_type or "-",
+            gate_status=gate_status,
+            dq_status=dq_status,
+            staging_status=staging_status,
+            quarantine_status=quarantine_status,
+            warning_count=len(warnings),
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
         )
         return ChatResponse(
             request_id=normalized.request_id,
             provider=normalized.provider,
             model=normalized.model,
-            text=response_public_text,
+            text=published.text,
             latency_ms=normalized.latency_ms,
-            error_type=response_error_type,
+            error_type=published.error_type,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
@@ -1261,6 +1365,11 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             drop_log=drop_log,
             provider_error=exc,
         )
+        published = _publish_chat_response(
+            request_id=request_id,
+            error_type=exc.error_type,
+            provider_fallback_text="目前 AI 服務暫時不可用，請稍後再試。",
+        )
         _log_ai_call(
             request_id=request_id,
             provider=settings.ai_provider,
@@ -1270,12 +1379,19 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             latency_ms=latency_ms,
             ok=False,
             error_type=exc.error_type,
+            gate_status="skipped",
+            dq_status="skipped",
+            staging_status="skipped",
+            quarantine_status="not_applicable",
+            warning_count=len(warnings),
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
         )
         return ChatResponse(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
-            text="目前 AI 服務暫時不可用，請稍後再試。",
+            text=published.text,
             latency_ms=latency_ms,
             error_type=exc.error_type,
             warnings=warnings or None,
@@ -1308,6 +1424,15 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             drop_log=drop_log,
             provider_error=exc,
         )
+        published = _publish_chat_response(
+            request_id=request_id,
+            error_type=exc.error_type,
+            provider_fallback_text=(
+                "目前 AI 服務提供者尚未啟用，請稍後再試。"
+                if exc.error_type == "provider_not_ready"
+                else "目前 AI 服務暫時不可用，請稍後再試。"
+            ),
+        )
         _log_ai_call(
             request_id=request_id,
             provider=settings.ai_provider,
@@ -1317,12 +1442,19 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             latency_ms=latency_ms,
             ok=False,
             error_type=exc.error_type,
+            gate_status="skipped",
+            dq_status="skipped",
+            staging_status="skipped",
+            quarantine_status="not_applicable",
+            warning_count=len(warnings),
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
         )
         return ChatResponse(
             request_id=request_id,
             provider=settings.ai_provider,
             model=settings.ai_model,
-            text="目前 AI 服務提供者尚未啟用，請稍後再試。",
+            text=published.text,
             latency_ms=latency_ms,
             error_type=exc.error_type,
             warnings=warnings or None,

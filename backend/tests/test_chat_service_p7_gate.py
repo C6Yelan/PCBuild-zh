@@ -129,7 +129,7 @@ def test_generate_chat_reply_rejects_empty_after_sanitize(
     response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=None)
 
     assert response.error_type == "validation_failed"
-    assert response.text == "目前 AI 回覆格式異常，請稍後再試。"
+    assert response.text.startswith("目前 AI 回覆格式異常，請稍後再試。request_id=")
     assert response.warnings is not None
     assert "control_chars_removed" in response.warnings
 

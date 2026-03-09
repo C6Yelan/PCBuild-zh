@@ -19,6 +19,9 @@ class OpenAICompatResult:
     response_json: dict[str, object] | None
     raw_response_text: str
     upstream_request_id: str | None
+    response_id: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, int] | None = None
 
 
 class OpenAICompatError(RuntimeError):
@@ -65,6 +68,25 @@ def _extract_upstream_request_id(headers: httpx.Headers) -> str | None:
         if value:
             return value
     return None
+
+
+def _extract_usage(payload: object) -> dict[str, int] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    normalized: dict[str, int] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            return None
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            normalized[key] = value
+            continue
+        if isinstance(value, float) and value.is_integer():
+            normalized[key] = int(value)
+
+    return normalized or None
 
 
 def generate_openai_compat_completion(
@@ -204,6 +226,21 @@ def generate_openai_compat_completion(
             request_json=payload,
         )
 
+    response_id = response_json.get("id")
+    if not isinstance(response_id, str):
+        response_id = None
+
+    finish_reason: str | None = None
+    choices = response_json.get("choices")
+    if isinstance(choices, list) and choices:
+        first_choice = choices[0]
+        if isinstance(first_choice, dict):
+            raw_finish_reason = first_choice.get("finish_reason")
+            if isinstance(raw_finish_reason, str):
+                finish_reason = raw_finish_reason
+
+    usage = _extract_usage(response_json.get("usage"))
+
     return OpenAICompatResult(
         text=choice.strip(),
         endpoint=endpoint,
@@ -214,6 +251,9 @@ def generate_openai_compat_completion(
         response_json=response_json,
         raw_response_text=raw_response_text,
         upstream_request_id=upstream_request_id,
+        response_id=response_id,
+        finish_reason=finish_reason,
+        usage=usage,
     )
 
 

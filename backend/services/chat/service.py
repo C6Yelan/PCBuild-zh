@@ -33,6 +33,7 @@ from backend.services.chat.context_pack import (
 )
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.demand_inference import infer_chat_demand
+from backend.services.chat.normalize import normalize_provider_success
 from backend.services.chat.prompt import build_prompt
 
 _SNAPSHOT_DIR_FALLBACK = "/tmp/pcbuild_ai_raw_snapshots"
@@ -63,6 +64,9 @@ class _ProviderCallResult:
     response_json: dict[str, object] | None
     raw_response_text: str
     upstream_request_id: str | None
+    response_id: str | None = None
+    finish_reason: str | None = None
+    usage: dict[str, int] | None = None
 
 
 @dataclass(slots=True)
@@ -414,6 +418,9 @@ def _coerce_provider_result(result: OpenAICompatResult) -> _ProviderCallResult:
         response_json=result.response_json,
         raw_response_text=result.raw_response_text,
         upstream_request_id=result.upstream_request_id,
+        response_id=result.response_id,
+        finish_reason=result.finish_reason,
+        usage=result.usage,
     )
 
 
@@ -856,8 +863,16 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             request_id=request_id,
         )
         latency_ms = int((perf_counter() - started) * 1000)
+        normalized = normalize_provider_success(
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            request_id=request_id,
+            latency_ms=latency_ms,
+            provider_result=provider_result,
+            warnings=warnings,
+        )
         response_text = _truncate_text(
-            provider_result.text,
+            normalized.text,
             max_chars=settings.ai_max_output_chars,
             warnings=warnings,
         )
@@ -896,11 +911,11 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             error_type="-",
         )
         return ChatResponse(
-            request_id=request_id,
-            provider=settings.ai_provider,
-            model=settings.ai_model,
+            request_id=normalized.request_id,
+            provider=normalized.provider,
+            model=normalized.model,
             text=response_text,
-            latency_ms=latency_ms,
+            latency_ms=normalized.latency_ms,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,

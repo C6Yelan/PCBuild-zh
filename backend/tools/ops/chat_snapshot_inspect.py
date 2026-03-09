@@ -57,6 +57,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload["validation_report"] = _load_json(snapshot_dir / "validation_report.json")
     if (snapshot_dir / "dq_report.json").is_file():
         payload["dq_report"] = _load_json(snapshot_dir / "dq_report.json")
+    if (snapshot_dir / "staging_record.json").is_file():
+        payload["staging_record"] = _load_json(snapshot_dir / "staging_record.json")
+    if (snapshot_dir / "quarantine_entry.json").is_file():
+        payload["quarantine_entry"] = _load_json(snapshot_dir / "quarantine_entry.json")
 
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 

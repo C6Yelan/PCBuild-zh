@@ -139,6 +139,8 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert (snapshot_dir / "validation_report.json").exists()
     assert (snapshot_dir / "dq_report.json").exists()
     assert (snapshot_dir / "lineage.json").exists()
+    assert (snapshot_dir / "staging_record.json").exists()
+    assert not (snapshot_dir / "quarantine_entry.json").exists()
 
     request_context = json.loads(
         (snapshot_dir / "request_context.json").read_text(encoding="utf-8")
@@ -190,6 +192,8 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert meta["gate_reasons"] == []
     assert meta["dq_status"] == "pass"
     assert meta["dq_reasons"] == []
+    assert meta["staging_status"] == "staged"
+    assert meta["quarantine_status"] == "not_quarantined"
     assert meta["artifacts"] == [
         "raw_request.json",
         "raw_response.json",
@@ -200,6 +204,7 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
         "compressed_candidates.json",
         "drop_log.json",
         "lineage.json",
+        "staging_record.json",
         "meta.json",
     ]
 
@@ -238,6 +243,8 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     assert (snapshot_dir / "request_context.json").exists()
     assert (snapshot_dir / "validation_report.json").exists()
     assert (snapshot_dir / "dq_report.json").exists()
+    assert (snapshot_dir / "staging_record.json").exists()
+    assert not (snapshot_dir / "quarantine_entry.json").exists()
     assert not (snapshot_dir / "context_pack.txt").exists()
     assert not (snapshot_dir / "compressed_candidates.json").exists()
     assert not (snapshot_dir / "drop_log.json").exists()
@@ -255,12 +262,15 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     assert meta["gate_reasons"] == []
     assert meta["dq_status"] == "pass"
     assert meta["dq_reasons"] == []
+    assert meta["staging_status"] == "staged"
+    assert meta["quarantine_status"] == "not_quarantined"
     assert meta["artifacts"] == [
         "raw_request.json",
         "raw_response.json",
         "request_context.json",
         "validation_report.json",
         "dq_report.json",
+        "staging_record.json",
         "meta.json",
     ]
 

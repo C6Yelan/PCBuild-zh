@@ -14,10 +14,19 @@
   request_context.json
   validation_report.json
   dq_report.json
+  staging_record.json
+  quarantine_entry.json
   context_pack.txt
   compressed_candidates.json
   drop_log.json
   lineage.json
+
+<AI_RAW_SNAPSHOT_DIR>/_staging/
+  <request_id>.staging.json
+
+<AI_RAW_SNAPSHOT_DIR>/_quarantine/
+  <request_id>.quarantine.json
+  quarantine_index.jsonl
 ```
 
 ## 檔案用途
@@ -40,6 +49,9 @@
 - 也會包含 DQ 結果：
   - `dq_status`（`pass` / `fail` / `skipped`）
   - `dq_reasons`
+- 也會包含 P9 暫存/隔離結果：
+  - `staging_status`（`staged` / `skipped`）
+  - `quarantine_status`（`not_quarantined` / `quarantined` / `not_applicable`）
 - 也會列出本次實際寫出的 artifact 檔名。
 
 ### request_context.json
@@ -76,6 +88,30 @@
   - `quarantine`
 - 若本次 gate 已失敗、或為較舊 snapshot，則可能不存在。
 
+### staging_record.json
+- 保存 P9 staged 成功的摘要記錄。
+- 只有 gate 與 DQ 都通過時才會寫出。
+- 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_staging/<request_id>.staging.json`。
+
+### quarantine_entry.json
+- 保存 P9 quarantined 的摘要記錄。
+- 若 gate fail 或 DQ fail，則不寫 staging，而改寫 quarantine。
+- 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_quarantine/<request_id>.quarantine.json`。
+
+### _quarantine/quarantine_index.jsonl
+- append-only 的 quarantine 索引。
+- 方便快速查看最近被 quarantine 的 request，而不必逐筆進 snapshot 目錄。
+- 每行至少包含：
+  - `request_id`
+  - `snapshot_id`
+  - `provider`
+  - `model`
+  - `error_type`
+  - `gate_status`
+  - `dq_status`
+  - `reasons`
+  - `created_at`
+
 ### context_pack.txt
 - 保存當次實際注入模型的 context pack 純文字。
 - 若本次沒有 retrieval / context pack，則可能不存在。
@@ -108,6 +144,11 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
 5. 若要查 provider 原始回應，再看：
    - `raw_request.json`
    - `raw_response.json`
+6. 若要確認是否已 staged / quarantined，再看：
+   - `meta.json`
+   - `staging_record.json`
+   - `quarantine_entry.json`
+   - `_quarantine/quarantine_index.jsonl`
 
 ## 重要說明
 - 這些檔案僅供後端稽核、除錯、交叉測試與回放，不提供前端直接使用。

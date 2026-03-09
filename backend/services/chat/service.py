@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -37,6 +38,11 @@ from backend.services.chat.dq import DQReport, evaluate_text_dq
 from backend.services.chat.gate import TextValidationReport, validate_text_response
 from backend.services.chat.normalize import normalize_provider_success
 from backend.services.chat.prompt import build_prompt
+from backend.services.chat.staging import (
+    ChatStagingRecord,
+    persist_chat_quarantine_entry,
+    persist_chat_staging_record,
+)
 
 _SNAPSHOT_DIR_FALLBACK = "/tmp/pcbuild_ai_raw_snapshots"
 _REDACTED = "[REDACTED]"
@@ -253,6 +259,10 @@ def _write_text_file(path: Path, payload: str) -> None:
     path.write_text(payload, encoding="utf-8")
 
 
+def _read_json_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _snapshot_root(settings: AISettings) -> Path:
     raw_dir = getattr(settings, "ai_raw_snapshot_dir", _SNAPSHOT_DIR_FALLBACK)
     normalized = str(raw_dir or _SNAPSHOT_DIR_FALLBACK).strip() or _SNAPSHOT_DIR_FALLBACK
@@ -333,6 +343,56 @@ def _build_lineage_payload(
         "context_pack_hash": context_pack_hash,
         "categories": categories,
     }
+
+
+def _build_chat_staging_record(
+    *,
+    request_id: str,
+    snapshot_id: str,
+    provider: str,
+    model: str,
+    context_pack_hash: str,
+    normalized_text: str,
+    public_text: str,
+    latency_ms: int,
+    gate_status: str,
+    dq_status: str,
+    gate_reasons: list[str],
+    dq_reasons: list[str],
+    warnings: list[str],
+    demand_source: str,
+    triggered_retrieval: bool,
+    categories: list[str],
+    top_k: int,
+    env: str,
+    has_context_pack: bool,
+    snapshot_dir: str,
+    error_type: str | None,
+) -> ChatStagingRecord:
+    return ChatStagingRecord(
+        request_id=request_id,
+        snapshot_id=snapshot_id,
+        provider=provider,
+        model=model,
+        context_pack_hash=context_pack_hash,
+        normalized_text=normalized_text,
+        public_text=public_text,
+        latency_ms=latency_ms,
+        gate_status=gate_status,
+        dq_status=dq_status,
+        gate_reasons=list(gate_reasons),
+        dq_reasons=list(dq_reasons),
+        warnings=list(warnings),
+        demand_source=demand_source,
+        triggered_retrieval=triggered_retrieval,
+        categories=list(categories),
+        top_k=top_k,
+        env=env,
+        has_context_pack=has_context_pack,
+        snapshot_dir=snapshot_dir,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        error_type=error_type,
+    )
 
 
 def _persist_snapshot_artifacts(
@@ -699,6 +759,10 @@ def _write_ai_snapshot(
             else "fail"
         ),
         "dq_reasons": list(dq_report.reasons) if dq_report else [],
+        "staging_status": "skipped",
+        "quarantine_status": (
+            "not_applicable" if provider_error is not None else "not_quarantined"
+        ),
         "artifacts": [*artifacts, "meta.json"],
     }
 
@@ -775,6 +839,136 @@ def _persist_ai_snapshot(
             error_type=type(exc).__name__,
         )
         return "-"
+
+
+def _update_snapshot_meta(
+    *,
+    settings: AISettings,
+    request_id: str,
+    staging_status: str,
+    quarantine_status: str,
+    artifact_name: str | None = None,
+) -> None:
+    meta_path = _snapshot_root(settings) / request_id / "meta.json"
+    if not meta_path.is_file():
+        return
+
+    meta = _read_json_file(meta_path)
+    meta["staging_status"] = staging_status
+    meta["quarantine_status"] = quarantine_status
+
+    artifacts = list(meta.get("artifacts", []))
+    if artifact_name and artifact_name not in artifacts:
+        if "meta.json" in artifacts:
+            artifacts.insert(artifacts.index("meta.json"), artifact_name)
+        else:
+            artifacts.append(artifact_name)
+    meta["artifacts"] = artifacts
+    _write_json_file(meta_path, meta)
+
+
+def _persist_chat_stage_or_quarantine(
+    *,
+    settings: AISettings,
+    warnings: list[str],
+    request_id: str,
+    snapshot_id: str,
+    provider: str,
+    model: str,
+    context_pack_hash: str,
+    normalized_text: str,
+    public_text: str,
+    latency_ms: int,
+    gate_status: str,
+    dq_status: str,
+    gate_reasons: list[str],
+    dq_reasons: list[str],
+    demand_source: str,
+    triggered_retrieval: bool,
+    categories: list[str],
+    top_k: int,
+    env: str,
+    has_context_pack: bool,
+    error_type: str | None,
+) -> None:
+    if snapshot_id == "-":
+        return
+
+    snapshot_root = _snapshot_root(settings)
+    snapshot_dir = snapshot_root / request_id
+    record = _build_chat_staging_record(
+        request_id=request_id,
+        snapshot_id=snapshot_id,
+        provider=provider,
+        model=model,
+        context_pack_hash=context_pack_hash,
+        normalized_text=normalized_text,
+        public_text=public_text,
+        latency_ms=latency_ms,
+        gate_status=gate_status,
+        dq_status=dq_status,
+        gate_reasons=gate_reasons,
+        dq_reasons=dq_reasons,
+        warnings=warnings,
+        demand_source=demand_source,
+        triggered_retrieval=triggered_retrieval,
+        categories=categories,
+        top_k=top_k,
+        env=env,
+        has_context_pack=has_context_pack,
+        snapshot_dir=str(snapshot_dir),
+        error_type=error_type,
+    )
+
+    if gate_status == "pass" and dq_status == "pass":
+        try:
+            persist_chat_staging_record(
+                snapshot_root_dir=snapshot_root,
+                snapshot_dir=snapshot_dir,
+                record=record,
+            )
+            _update_snapshot_meta(
+                settings=settings,
+                request_id=request_id,
+                staging_status="staged",
+                quarantine_status="not_quarantined",
+                artifact_name="staging_record.json",
+            )
+        except Exception as exc:
+            if "staging_write_failed" not in warnings:
+                warnings.append("staging_write_failed")
+            log_operation(
+                "chat_staging_write_failed",
+                request_id=request_id,
+                provider=provider,
+                model=model,
+                error_type=type(exc).__name__,
+            )
+        return
+
+    try:
+        persist_chat_quarantine_entry(
+            snapshot_root_dir=snapshot_root,
+            snapshot_dir=snapshot_dir,
+            record=record,
+        )
+        _update_snapshot_meta(
+            settings=settings,
+            request_id=request_id,
+            staging_status="skipped",
+            quarantine_status="quarantined",
+            artifact_name="quarantine_entry.json",
+        )
+    except Exception as exc:
+        if "quarantine_write_failed" not in warnings:
+            warnings.append("quarantine_write_failed")
+        log_operation(
+            "chat_quarantine_write_failed",
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            error_type=type(exc).__name__,
+        )
 
 
 def _log_ai_call(
@@ -990,6 +1184,35 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             validation_report=validation,
             dq_report=dq_report,
             provider_result=provider_result,
+        )
+        _persist_chat_stage_or_quarantine(
+            settings=settings,
+            warnings=warnings,
+            request_id=request_id,
+            snapshot_id=snapshot_id,
+            provider=settings.ai_provider,
+            model=settings.ai_model,
+            context_pack_hash=context_pack_hash,
+            normalized_text=response_text,
+            public_text=response_public_text,
+            latency_ms=latency_ms,
+            gate_status="pass" if validation.passed else "fail",
+            dq_status=(
+                "skipped"
+                if dq_report is None
+                else "pass"
+                if dq_report.passed
+                else "fail"
+            ),
+            gate_reasons=list(validation.reasons),
+            dq_reasons=list(dq_report.reasons) if dq_report else [],
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
+            categories=categories,
+            top_k=p1_top_k,
+            env=p1_env,
+            has_context_pack=bool(context_pack_text),
+            error_type=response_error_type,
         )
         _log_ai_call(
             request_id=request_id,

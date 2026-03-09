@@ -140,6 +140,20 @@
 docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect --request-id <REQUEST_ID>
 ```
 
+## P10 營運驗收工具
+- `chat_release_check.py` 用於 P10 release / acceptance check。
+- 它會以可重跑、deterministic 的方式驗證：
+  - staged success
+  - validation_failed
+  - dq_failed
+  - provider error
+  - retry/backoff
+- 這是營運驗收工具，不是正式服務路徑。
+
+```bash
+docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10
+```
+
 ## 如何從 request_id 追到 snapshot
 1. 從 `ai_call` log 或 API response 取得 `request_id`
 2. 用 inspect 指令找到對應 snapshot 目錄

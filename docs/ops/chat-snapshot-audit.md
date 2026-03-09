@@ -12,6 +12,7 @@
   raw_response.json
   meta.json
   request_context.json
+  validation_report.json
   context_pack.txt
   compressed_candidates.json
   drop_log.json
@@ -32,6 +33,9 @@
 ### meta.json
 - 保存最上層 trace 摘要。
 - 包含 request_id / provider / model / context_pack_hash / latency_ms / ok / error_type / snapshot_id。
+- 也會包含 gate 結果：
+  - `gate_status`（`pass` / `fail`）
+  - `gate_reasons`
 - 也會列出本次實際寫出的 artifact 檔名。
 
 ### request_context.json
@@ -44,6 +48,19 @@
   - warnings
   - has_context_pack
   - message_chars / history_turns
+- `warnings` 也可能包含 normalize / truncation / gate warning，例如 `usage_unavailable`、`output_truncated`、`control_chars_removed`。
+
+### validation_report.json
+- 保存 P7 文字版輕量 Gate 結果。
+- 包含：
+  - `passed`
+  - `reasons`
+  - `warnings`
+  - `removed_chars_count`
+  - `max_chars`
+  - `original_length`
+  - `sanitized_length`
+- 若本次為較舊 snapshot 或未經 gate 路徑，則可能不存在。
 
 ### context_pack.txt
 - 保存當次實際注入模型的 context pack 純文字。

@@ -129,6 +129,7 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert (snapshot_dir / "compressed_candidates.json").exists()
     assert (snapshot_dir / "drop_log.json").exists()
     assert (snapshot_dir / "request_context.json").exists()
+    assert (snapshot_dir / "validation_report.json").exists()
     assert (snapshot_dir / "lineage.json").exists()
 
     request_context = json.loads(
@@ -177,10 +178,13 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert meta["request_mode"] == "user_text"
     assert meta["demand_source"] == "explicit"
     assert meta["triggered_retrieval"] is True
+    assert meta["gate_status"] == "pass"
+    assert meta["gate_reasons"] == []
     assert meta["artifacts"] == [
         "raw_request.json",
         "raw_response.json",
         "request_context.json",
+        "validation_report.json",
         "context_pack.txt",
         "compressed_candidates.json",
         "drop_log.json",
@@ -221,6 +225,7 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     assert (snapshot_dir / "raw_response.json").exists()
     assert (snapshot_dir / "meta.json").exists()
     assert (snapshot_dir / "request_context.json").exists()
+    assert (snapshot_dir / "validation_report.json").exists()
     assert not (snapshot_dir / "context_pack.txt").exists()
     assert not (snapshot_dir / "compressed_candidates.json").exists()
     assert not (snapshot_dir / "drop_log.json").exists()
@@ -234,10 +239,13 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     assert request_context["categories"] == []
 
     meta = json.loads((snapshot_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["gate_status"] == "pass"
+    assert meta["gate_reasons"] == []
     assert meta["artifacts"] == [
         "raw_request.json",
         "raw_response.json",
         "request_context.json",
+        "validation_report.json",
         "meta.json",
     ]
 
@@ -286,6 +294,11 @@ def test_snapshot_request_context_reflects_truncation_warning(
         (snapshot_dir / "request_context.json").read_text(encoding="utf-8")
     )
     assert "output_truncated" in request_context["warnings"]
+    validation_report = json.loads(
+        (snapshot_dir / "validation_report.json").read_text(encoding="utf-8")
+    )
+    assert validation_report["passed"] is True
+    assert validation_report["reasons"] == []
 
 
 def test_chat_snapshot_inspect_cli_exit_codes(monkeypatch, tmp_path: Path, capsys) -> None:

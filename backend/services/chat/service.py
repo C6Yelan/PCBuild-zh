@@ -33,6 +33,7 @@ from backend.services.chat.context_pack import (
 )
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.demand_inference import infer_chat_demand
+from backend.services.chat.gate import TextValidationReport, validate_text_response
 from backend.services.chat.normalize import normalize_provider_success
 from backend.services.chat.prompt import build_prompt
 
@@ -339,6 +340,7 @@ def _persist_snapshot_artifacts(
     raw_request: dict[str, Any],
     raw_response: dict[str, Any],
     request_context: dict[str, Any],
+    validation_report: dict[str, Any] | None,
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
@@ -354,6 +356,10 @@ def _persist_snapshot_artifacts(
 
     _write_json_file(snapshot_dir / "request_context.json", request_context)
     artifacts.append("request_context.json")
+
+    if validation_report is not None:
+        _write_json_file(snapshot_dir / "validation_report.json", validation_report)
+        artifacts.append("validation_report.json")
 
     if context_pack_text:
         _write_text_file(snapshot_dir / "context_pack.txt", context_pack_text)
@@ -527,6 +533,7 @@ def _write_ai_snapshot(
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
+    validation_report: TextValidationReport | None = None,
     provider_result: _ProviderCallResult | None = None,
     provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
 ) -> str:
@@ -619,12 +626,26 @@ def _write_ai_snapshot(
         if compressed_candidates
         else None
     )
+    validation_payload = (
+        {
+            "passed": validation_report.passed,
+            "reasons": list(validation_report.reasons),
+            "warnings": list(validation_report.warnings),
+            "removed_chars_count": validation_report.removed_chars_count,
+            "max_chars": validation_report.max_chars,
+            "original_length": validation_report.original_length,
+            "sanitized_length": validation_report.sanitized_length,
+        }
+        if validation_report is not None
+        else None
+    )
 
     artifacts = _persist_snapshot_artifacts(
         snapshot_dir=snapshot_dir,
         raw_request=raw_request,
         raw_response=raw_response,
         request_context=request_context,
+        validation_report=validation_payload,
         context_pack_text=context_pack_text,
         compressed_candidates=compressed_candidates,
         drop_log=drop_log,
@@ -645,6 +666,12 @@ def _write_ai_snapshot(
         "request_mode": request_mode,
         "demand_source": demand_source,
         "triggered_retrieval": triggered_retrieval,
+        "gate_status": (
+            "pass"
+            if validation_report is None or validation_report.passed
+            else "fail"
+        ),
+        "gate_reasons": list(validation_report.reasons) if validation_report else [],
         "artifacts": [*artifacts, "meta.json"],
     }
 
@@ -675,6 +702,7 @@ def _persist_ai_snapshot(
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
+    validation_report: TextValidationReport | None = None,
     provider_result: _ProviderCallResult | None = None,
     provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
 ) -> str:
@@ -702,6 +730,7 @@ def _persist_ai_snapshot(
             context_pack_text=context_pack_text,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
+            validation_report=validation_report,
             provider_result=provider_result,
             provider_error=provider_error,
         )
@@ -876,6 +905,21 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             max_chars=settings.ai_max_output_chars,
             warnings=warnings,
         )
+        validation = validate_text_response(
+            response_text,
+            max_chars=settings.ai_max_output_chars,
+        )
+        for warning in validation.warnings:
+            if warning not in warnings:
+                warnings.append(warning)
+        response_text = validation.sanitized_text
+        response_error_type: str | None = None
+        response_ok = True
+        response_public_text = response_text
+        if not validation.passed:
+            response_error_type = "validation_failed"
+            response_ok = False
+            response_public_text = "目前 AI 回覆格式異常，請稍後再試。"
         snapshot_id = _persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
@@ -884,8 +928,8 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             model=settings.ai_model,
             context_pack_hash=context_pack_hash,
             latency_ms=latency_ms,
-            ok=True,
-            error_type="-",
+            ok=response_ok,
+            error_type=response_error_type or "-",
             messages=provider_messages,
             request_mode=request_mode,
             demand_source=resolved_demand.source,
@@ -898,6 +942,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             context_pack_text=context_pack_text,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
+            validation_report=validation,
             provider_result=provider_result,
         )
         _log_ai_call(
@@ -907,15 +952,16 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             context_pack_hash=context_pack_hash,
             snapshot_id=snapshot_id,
             latency_ms=latency_ms,
-            ok=True,
-            error_type="-",
+            ok=response_ok,
+            error_type=response_error_type or "-",
         )
         return ChatResponse(
             request_id=normalized.request_id,
             provider=normalized.provider,
             model=normalized.model,
-            text=response_text,
+            text=response_public_text,
             latency_ms=normalized.latency_ms,
+            error_type=response_error_type,
             warnings=warnings or None,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,

@@ -236,17 +236,146 @@ def _redact_snapshot_value(value: Any, *, key: str | None = None) -> Any:
     return value
 
 
-def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
+def _write_json_file(path: Path, payload: Any) -> None:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
 
 
+def _write_text_file(path: Path, payload: str) -> None:
+    path.write_text(payload, encoding="utf-8")
+
+
 def _snapshot_root(settings: AISettings) -> Path:
     raw_dir = getattr(settings, "ai_raw_snapshot_dir", _SNAPSHOT_DIR_FALLBACK)
     normalized = str(raw_dir or _SNAPSHOT_DIR_FALLBACK).strip() or _SNAPSHOT_DIR_FALLBACK
     return Path(normalized)
+
+
+def _request_mode(chat_request: ChatRequest) -> str:
+    return "messages" if chat_request.messages else "user_text"
+
+
+def _build_request_context_payload(
+    *,
+    request_id: str,
+    provider: str,
+    model: str,
+    snapshot_id: str,
+    context_pack_hash: str,
+    request_mode: str,
+    demand_source: str,
+    triggered_retrieval: bool,
+    categories: list[str],
+    top_k: int,
+    env: str,
+    warnings: list[str],
+    has_context_pack: bool,
+    message_chars: int,
+    history_turns: int,
+) -> dict[str, Any]:
+    return {
+        "request_id": request_id,
+        "provider": provider,
+        "model": model,
+        "snapshot_id": snapshot_id,
+        "context_pack_hash": context_pack_hash,
+        "request_mode": request_mode,
+        "demand_source": demand_source,
+        "triggered_retrieval": triggered_retrieval,
+        "categories": categories,
+        "top_k": top_k,
+        "env": env,
+        "warnings": list(warnings),
+        "has_context_pack": has_context_pack,
+        "message_chars": message_chars,
+        "history_turns": history_turns,
+    }
+
+
+def _build_lineage_payload(
+    *,
+    request_id: str,
+    context_pack_hash: str,
+    compressed_candidates: dict[str, list[dict[str, object]]],
+) -> dict[str, Any]:
+    def _optional_str(value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    categories: dict[str, list[dict[str, Any]]] = {}
+    for category, items in compressed_candidates.items():
+        category_items: list[dict[str, Any]] = []
+        for item in items:
+            category_items.append(
+                {
+                    "part_id": _optional_str(item.get("part_id")),
+                    "category": _optional_str(item.get("category")) or category,
+                    "display_name": _optional_str(item.get("display_name")),
+                    "source": _optional_str(item.get("source")),
+                    "source_url": _optional_str(item.get("source_url")),
+                    "snapshot_id": _optional_str(item.get("snapshot_id")),
+                    "run_id": _optional_str(item.get("run_id")),
+                }
+            )
+        categories[category] = category_items
+
+    return {
+        "request_id": request_id,
+        "context_pack_hash": context_pack_hash,
+        "categories": categories,
+    }
+
+
+def _persist_snapshot_artifacts(
+    *,
+    snapshot_dir: Path,
+    raw_request: dict[str, Any],
+    raw_response: dict[str, Any],
+    request_context: dict[str, Any],
+    context_pack_text: str | None,
+    compressed_candidates: dict[str, list[dict[str, object]]],
+    drop_log: dict[str, dict[str, object]],
+    lineage: dict[str, Any] | None,
+) -> list[str]:
+    artifacts: list[str] = []
+
+    _write_json_file(snapshot_dir / "raw_request.json", raw_request)
+    artifacts.append("raw_request.json")
+
+    _write_json_file(snapshot_dir / "raw_response.json", raw_response)
+    artifacts.append("raw_response.json")
+
+    _write_json_file(snapshot_dir / "request_context.json", request_context)
+    artifacts.append("request_context.json")
+
+    if context_pack_text:
+        _write_text_file(snapshot_dir / "context_pack.txt", context_pack_text)
+        artifacts.append("context_pack.txt")
+
+    if compressed_candidates:
+        _write_json_file(
+            snapshot_dir / "compressed_candidates.json",
+            _redact_snapshot_value(compressed_candidates),
+        )
+        artifacts.append("compressed_candidates.json")
+
+        _write_json_file(
+            snapshot_dir / "drop_log.json",
+            _redact_snapshot_value(drop_log),
+        )
+        artifacts.append("drop_log.json")
+
+        if lineage is not None:
+            _write_json_file(
+                snapshot_dir / "lineage.json",
+                _redact_snapshot_value(lineage),
+            )
+            artifacts.append("lineage.json")
+
+    return artifacts
 
 
 class _ProviderDispatchError(RuntimeError):
@@ -379,6 +508,18 @@ def _write_ai_snapshot(
     ok: bool,
     error_type: str | None,
     messages: list[dict[str, str]],
+    request_mode: str,
+    demand_source: str,
+    triggered_retrieval: bool,
+    categories: list[str],
+    top_k: int,
+    env: str,
+    warnings: list[str],
+    message_chars: int,
+    history_turns: int,
+    context_pack_text: str | None,
+    compressed_candidates: dict[str, list[dict[str, object]]],
+    drop_log: dict[str, dict[str, object]],
     provider_result: _ProviderCallResult | None = None,
     provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
 ) -> str:
@@ -445,6 +586,44 @@ def _write_ai_snapshot(
         "upstream_request_id": upstream_request_id,
     }
 
+    request_context = _build_request_context_payload(
+        request_id=request_id,
+        provider=provider,
+        model=model,
+        snapshot_id=snapshot_id,
+        context_pack_hash=context_pack_hash,
+        request_mode=request_mode,
+        demand_source=demand_source,
+        triggered_retrieval=triggered_retrieval,
+        categories=list(categories),
+        top_k=top_k,
+        env=env,
+        warnings=warnings,
+        has_context_pack=bool(context_pack_text),
+        message_chars=message_chars,
+        history_turns=history_turns,
+    )
+    lineage = (
+        _build_lineage_payload(
+            request_id=request_id,
+            context_pack_hash=context_pack_hash,
+            compressed_candidates=compressed_candidates,
+        )
+        if compressed_candidates
+        else None
+    )
+
+    artifacts = _persist_snapshot_artifacts(
+        snapshot_dir=snapshot_dir,
+        raw_request=raw_request,
+        raw_response=raw_response,
+        request_context=request_context,
+        context_pack_text=context_pack_text,
+        compressed_candidates=compressed_candidates,
+        drop_log=drop_log,
+        lineage=lineage,
+    )
+
     meta = {
         "request_id": request_id,
         "provider": provider,
@@ -454,10 +633,14 @@ def _write_ai_snapshot(
         "ok": ok,
         "error_type": error_type or "-",
         "snapshot_id": snapshot_id,
+        "upstream_request_id": upstream_request_id,
+        "status_code": status_code,
+        "request_mode": request_mode,
+        "demand_source": demand_source,
+        "triggered_retrieval": triggered_retrieval,
+        "artifacts": [*artifacts, "meta.json"],
     }
 
-    _write_json_file(snapshot_dir / "raw_request.json", raw_request)
-    _write_json_file(snapshot_dir / "raw_response.json", raw_response)
     _write_json_file(snapshot_dir / "meta.json", meta)
     return snapshot_id
 
@@ -474,6 +657,17 @@ def _persist_ai_snapshot(
     ok: bool,
     error_type: str | None,
     messages: list[dict[str, str]],
+    request_mode: str,
+    demand_source: str,
+    triggered_retrieval: bool,
+    categories: list[str],
+    top_k: int,
+    env: str,
+    message_chars: int,
+    history_turns: int,
+    context_pack_text: str | None,
+    compressed_candidates: dict[str, list[dict[str, object]]],
+    drop_log: dict[str, dict[str, object]],
     provider_result: _ProviderCallResult | None = None,
     provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
 ) -> str:
@@ -489,6 +683,18 @@ def _persist_ai_snapshot(
             ok=ok,
             error_type=error_type,
             messages=messages,
+            request_mode=request_mode,
+            demand_source=demand_source,
+            triggered_retrieval=triggered_retrieval,
+            categories=categories,
+            top_k=top_k,
+            env=env,
+            warnings=warnings,
+            message_chars=message_chars,
+            history_turns=history_turns,
+            context_pack_text=context_pack_text,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
             provider_result=provider_result,
             provider_error=provider_error,
         )
@@ -542,6 +748,9 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
     resolved_demand = _resolve_effective_demand(chat_request)
     categories, p1_top_k, p1_demand, p1_env = _extract_p1_inputs_from_demand(resolved_demand.raw_demand)
     message_for_inference, history_for_inference = _inference_inputs(chat_request)
+    request_mode = _request_mode(chat_request)
+    message_chars = len(message_for_inference)
+    history_turns = len(history_for_inference)
     triggered_retrieval = db is not None and bool(categories)
 
     log_operation(
@@ -551,8 +760,8 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
         categories=",".join(categories) if categories else "-",
         top_k=p1_top_k,
         env=p1_env,
-        message_chars=len(message_for_inference),
-        history_turns=len(history_for_inference),
+        message_chars=message_chars,
+        history_turns=history_turns,
         triggered_retrieval=triggered_retrieval,
     )
 
@@ -647,6 +856,11 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             request_id=request_id,
         )
         latency_ms = int((perf_counter() - started) * 1000)
+        response_text = _truncate_text(
+            provider_result.text,
+            max_chars=settings.ai_max_output_chars,
+            warnings=warnings,
+        )
         snapshot_id = _persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
@@ -658,12 +872,18 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             ok=True,
             error_type="-",
             messages=provider_messages,
+            request_mode=request_mode,
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
+            categories=categories,
+            top_k=p1_top_k,
+            env=p1_env,
+            message_chars=message_chars,
+            history_turns=history_turns,
+            context_pack_text=context_pack_text,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
             provider_result=provider_result,
-        )
-        response_text = _truncate_text(
-            provider_result.text,
-            max_chars=settings.ai_max_output_chars,
-            warnings=warnings,
         )
         _log_ai_call(
             request_id=request_id,
@@ -698,6 +918,17 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             ok=False,
             error_type=exc.error_type,
             messages=provider_messages,
+            request_mode=request_mode,
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
+            categories=categories,
+            top_k=p1_top_k,
+            env=p1_env,
+            message_chars=message_chars,
+            history_turns=history_turns,
+            context_pack_text=context_pack_text,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
             provider_error=exc,
         )
         _log_ai_call(
@@ -734,6 +965,17 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             ok=False,
             error_type=exc.error_type,
             messages=provider_messages,
+            request_mode=request_mode,
+            demand_source=resolved_demand.source,
+            triggered_retrieval=triggered_retrieval,
+            categories=categories,
+            top_k=p1_top_k,
+            env=p1_env,
+            message_chars=message_chars,
+            history_turns=history_turns,
+            context_pack_text=context_pack_text,
+            compressed_candidates=compressed_candidates,
+            drop_log=drop_log,
             provider_error=exc,
         )
         _log_ai_call(

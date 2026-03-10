@@ -1,3 +1,9 @@
+"""Deterministic chat acceptance harness.
+
+Keep the CLI module path stable for existing SOP/CI usage, but treat this file
+as test-harness surface rather than official runtime ops.
+"""
+
 # backend/tools/ops/chat_release_check.py
 from __future__ import annotations
 

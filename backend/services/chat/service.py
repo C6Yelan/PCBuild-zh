@@ -1,3 +1,12 @@
+"""Chat orchestration entrypoint.
+
+Round-1 public boundary:
+- keep ``generate_chat_reply`` importable from this module and from
+  ``backend.services.chat``.
+- treat all ``_`` helpers in this file as internal-only; do not add new
+  cross-module dependencies on them.
+"""
+
 # backend/services/chat/service.py
 from __future__ import annotations
 

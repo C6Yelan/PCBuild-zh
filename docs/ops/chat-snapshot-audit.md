@@ -3,6 +3,7 @@
 ## 目的
 - 這是 P5 的原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
 - 這不是 provider health check；provider smoke/health 仍看 `docs/ops/chat-provider-health.md`。
+- Chat round 1 的邊界凍結與 CLI 分類見 `docs/ops/chat-round1-boundary.md`；其中 `chat_release_check` 歸類為 acceptance harness。
 
 ## Snapshot 目錄結構範例
 

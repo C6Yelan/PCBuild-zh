@@ -1,3 +1,5 @@
+"""Official chat ops CLI: provider smoke and health check."""
+
 # backend/tools/ops/chat_provider_healthcheck.py
 from __future__ import annotations
 

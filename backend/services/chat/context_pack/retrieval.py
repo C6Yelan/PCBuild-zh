@@ -1,3 +1,10 @@
+"""Internal chat retrieval implementation.
+
+``retrieve_topk_candidates`` is the callable boundary used by chat orchestration.
+All ``_`` helpers in this module remain internal-only even if legacy tests still
+touch them during round 1.
+"""
+
 # backend/services/chat/context_pack/retrieval.py
 from __future__ import annotations
 

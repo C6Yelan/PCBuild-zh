@@ -1,3 +1,5 @@
+"""Official chat ops CLI: inspect staging and quarantine artifacts."""
+
 # backend/tools/ops/chat_staging_inspect.py
 from __future__ import annotations
 

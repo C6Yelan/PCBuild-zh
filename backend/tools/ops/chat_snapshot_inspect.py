@@ -1,3 +1,5 @@
+"""Official chat ops CLI: inspect snapshot artifacts by request ID."""
+
 # backend/tools/ops/chat_snapshot_inspect.py
 from __future__ import annotations
 

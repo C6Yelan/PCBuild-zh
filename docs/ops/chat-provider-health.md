@@ -3,6 +3,7 @@
 ## 目的
 - 這是 P4 的 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
+- Chat round 1 的邊界凍結與 CLI 分類見 `docs/ops/chat-round1-boundary.md`。
 
 ## 前置條件
 - `.env` 內的 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS` 已正確設定。

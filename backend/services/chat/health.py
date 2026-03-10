@@ -1,3 +1,9 @@
+"""Service-side support for official chat ops CLIs.
+
+This module is not the public API contract. Keep ``run_provider_health_check``
+stable for the current ops wrappers while round-1 internals are split later.
+"""
+
 # backend/services/chat/health.py
 from __future__ import annotations
 

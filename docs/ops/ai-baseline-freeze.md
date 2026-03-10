@@ -58,6 +58,30 @@
 - request 摘要：`<一句話描述，不貼完整敏感內容>`
 - 實際觀察：`<是否符合目前線上預期>`
 
+### 已填範例關鍵字（2026-03-10）
+以下為一筆已 staged 的真實 request 摘錄，可作為第 0 階段基線參考：
+
+| 欄位 | 值 |
+| --- | --- |
+| `request_id` | `db09422b014a472b9e9d9745a1fcdf39` |
+| `snapshot_dir` | `/app/data/ai_raw_snapshots/db09422b014a472b9e9d9745a1fcdf39` |
+| `staging_status` | `staged` |
+| `quarantine_status` | `not_quarantined` |
+| `context_pack_hash` | `5020d803163f5cc82b6c0873a55060b1147cb331db2b0dd5a3372b59bdc4cffd` |
+
+關鍵字摘錄：
+- provider / model：`openai_compat`、`llama-3.3-70b-versatile`
+- request 狀態：`ok=true`、`gate_status=pass`、`dq_status=pass`、`publish_reason=staged_pass`
+- request 上下文：`request_mode=user_text`、`demand_source=inferred`、`triggered_retrieval=true`、`env=prod`、`top_k=2`
+- 驗證摘要：`latency_ms=2050`、`validation_passed=true`、`dq_passed=true`、`keyword_hit_count=28`、`keyword_pool_size=125`
+- 類別關鍵字：`CPU`、`MB`、`RAM`、`SSD`、`PSU`、`CASE`
+- 需求關鍵字：`文書機`、`預算2萬內`、`內顯`、`性價比`
+- 零件關鍵字：`AMD R5 3400G`、`AMD R5 5500GT`、`華擎 B450M-HDV R4.0`、`華擎 H610M-H2/M.2`、`UMAX NB 8GB DDR3L-1600`、`UMAX S330 240GB`、`全漢 聖武士 350W`、`保銳 ENERPAZO EP237白`
+
+使用方式：
+- 若之後切 provider / model 或調整 context pack 生成規則，可先拿這組關鍵字檢查是否仍維持相同需求判讀、相同類別覆蓋與相近零件候選。
+- 若新基線出現 `gate_status`、`dq_status`、`staging_status` 或 `context_pack_hash` 明顯漂移，應先比對 regression report 與 snapshot artifact，再決定是否接受新基線。
+
 ## 7. 固定驗收指令
 先在 repo root 執行基線檢查腳本：
 

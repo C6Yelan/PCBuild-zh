@@ -1,32 +1,11 @@
 # backend/core/obs_events.py
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 from typing import Any
 
-_NEED_QUOTE = re.compile(r'[=\s"]')
-
-
-def _q(s: str) -> str:
-    s = s.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{s}"'
-
-
-def _lf(v: Any) -> str:
-    if v is None:
-        return "null"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, (int, float)):
-        return str(v)
-    if isinstance(v, (dict, list)):
-        s = json.dumps(v, ensure_ascii=False, separators=(",", ":"))
-        return _q(s)
-    s = str(v)
-    return _q(s) if _NEED_QUOTE.search(s) else s
+from backend.core.logfmt import render_logfmt_pairs
 
 
 def log_loki_event(
@@ -60,7 +39,11 @@ def log_loki_event(
             continue
         parts.append((k, v))
 
-    msg = " ".join(f"{k}={_lf(v)}" for k, v in parts)
+    msg = render_logfmt_pairs(
+        parts,
+        structured_json=True,
+        quote_mode="whitespace",
+    )
     logger.log(level, msg)
     # 在 docker compose exec 跑工具時，stdout 不一定會進 PID1 的 docker logs。
     # 若設了環境變數，額外把同一行寫到 /proc/1/fd/1，確保 Loki 收得到。

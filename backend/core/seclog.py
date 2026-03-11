@@ -4,31 +4,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from backend.core.log_redaction import (
+    DEFAULT_SENSITIVE_LOG_KEYS,
+    redact_log_mapping,
+)
+from backend.core.logfmt import render_logfmt_fields
+
 _logger = logging.getLogger("pcbuild.security")
 
 # 避免敏感資訊進 log（key 比對採 lower）
-_SENSITIVE_KEYS = {
-    "password",
-    "token",
-    "access_token",
-    "api_key",
-    "x_api_key",
-    "x-api-key",
-    "openai_api_key",
-    "gemini_api_key",
-    "google_api_key",
-    "ai_oai_api_key",
-    "ai_api_key",
-    "refresh_token",
-    "public_token",
-    "token_hash",
-    "csrf_token",
-    "authorization",
-    "cookie",
-    "set_cookie",
-    "session",
-    "session_id",
-}
+_SENSITIVE_KEYS = DEFAULT_SENSITIVE_LOG_KEYS
 
 # 事件分級：成功/預期流程 INFO；阻擋/可疑 WARNING；真正異常 ERROR
 # 未列出的事件預設 WARNING（保守）
@@ -81,29 +66,9 @@ _EVENT_LEVELS: dict[str, int] = {
     "csrf_block": logging.WARNING,
 }
 
-def _fmt_value(v: Any) -> str:
-    """
-    盡量符合 logfmt 可解析的 value：
-    - key=value 以空白分隔（含空白/等號/引號的 value 用雙引號包起來）
-    - 內部 " 與 反斜線 做基本跳脫
-    """
-    if v is None:
-        return "null"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, (int, float)):
-        return str(v)
-
-    s = str(v)
-    if any(ch in s for ch in (' ', '"', '=')):
-        s = s.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{s}"'
-    return s
-
-
 def log_security(event: str, **fields: Any) -> None:
     # 最小防呆：避免敏感資訊進入 log
-    safe_fields = {k: v for k, v in fields.items() if k.lower() not in _SENSITIVE_KEYS}
+    safe_fields = redact_log_mapping(fields, sensitive_keys=_SENSITIVE_KEYS, mode="drop")
 
     # 通用欄位（若呼叫端未提供）
     if "method" not in safe_fields:
@@ -114,7 +79,7 @@ def log_security(event: str, **fields: Any) -> None:
         safe_fields["path"] = "-"
 
     # 統一 key=value（logfmt 風格），便於 Alloy stage.logfmt 解析
-    kv = " ".join(f"{k}={_fmt_value(safe_fields[k])}" for k in sorted(safe_fields.keys()))
+    kv = render_logfmt_fields(safe_fields)
     msg = f"category=security event={event}" + (f" {kv}" if kv else "")
 
     level = _EVENT_LEVELS.get(event, logging.WARNING)

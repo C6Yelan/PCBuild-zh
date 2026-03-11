@@ -14,6 +14,7 @@ from backend.services.crawler import CrawlerHttpClient, CrawlerSettings
 from backend.services.crawler.part_registry import resolve_source_parts
 from backend.services.crawler.staging.conventions import get_crawler_env
 from backend.tools.crawler.artifact_io import write_json_file
+from backend.tools.ops.incremental_cli import incremental_cli_options_from_namespace
 from backend.tools.ops.incremental_execution import (
     run_dry_parse_steps,
     run_merge_and_publish,
@@ -72,14 +73,15 @@ def _log_event(
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
-    if int(args.max_items) < 0:
+    options = incremental_cli_options_from_namespace(args)
+    if int(options.max_items) < 0:
         raise SystemExit("--max-items must be >= 0")
 
     # Keep this module path stable for existing SOP/CLI usage; detailed steps live in sibling helpers.
-    src = str(args.source).strip().lower()
-    dry_run = bool(args.dry_run)
-    publish_requested = bool(args.publish)
-    publish_enabled = bool(args.publish and not dry_run)
+    src = options.source
+    dry_run = options.dry_run
+    publish_requested = options.publish
+    publish_enabled = bool(options.publish and not dry_run)
 
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
 
@@ -95,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         "dry_run": dry_run,
         "publish_requested": publish_requested,
         "publish_enabled": publish_enabled,
-        "max_items": int(args.max_items),
+        "max_items": int(options.max_items),
         "parts_requested": [],
         "parts": [],
         "counts": {
@@ -114,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         try:
-            targets = resolve_source_parts(src, args.parts)
+            targets = resolve_source_parts(src, options.parts)
             summary["parts_requested"] = [p for p, _ in targets]
             summary["counts"]["parts_total"] = len(targets)
         except Exception as e:
@@ -133,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             part_total=int(summary["counts"]["parts_total"]),
             dry_run=dry_run,
             publish_enabled=publish_enabled,
-            max_items=int(args.max_items),
+            max_items=int(options.max_items),
             requested_parts=summary["parts_requested"],
         )
 

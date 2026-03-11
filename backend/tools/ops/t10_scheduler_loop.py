@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import engine
 from backend.services.crawler.staging.conventions import get_crawler_env
+from backend.tools.ops.incremental_cli import build_incremental_argv, incremental_cli_options_from_namespace
 from backend.tools.ops.t10_run_incremental import main as run_incremental_main
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
@@ -80,40 +81,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if int(args.interval_seconds) <= 0:
         raise SystemExit("--interval-seconds must be > 0")
-    if int(args.max_items) < 0:
+    options = incremental_cli_options_from_namespace(args)
+    if int(options.max_items) < 0:
         raise SystemExit("--max-items must be >= 0")
 
-    source = str(args.source).strip().lower()
-    parts = str(args.parts).strip() or "all"
+    source = options.source
+    parts = options.parts
     interval_s = int(args.interval_seconds)
     lock_key = int(args.lock_key) if args.lock_key is not None else _build_lock_key(source, parts)
-
-    runner_argv = [
-        "--source",
-        source,
-        "--parts",
-        parts,
-        "--max-items",
-        str(int(args.max_items)),
-        "--t5-limit",
-        str(int(args.t5_limit)),
-        "--t5-min-interval-ms",
-        str(int(args.t5_min_interval_ms)),
-        "--t5-timeout-s",
-        str(float(args.t5_timeout_s)),
-        "--t5-max-redirects",
-        str(int(args.t5_max_redirects)),
-        "--t5-max-bytes",
-        str(int(args.t5_max_bytes)),
-    ]
-    for p in args.t5_block_pattern:
-        runner_argv.extend(["--t5-block-pattern", str(p)])
-    if bool(args.dry_run):
-        runner_argv.append("--dry-run")
-    if bool(args.publish):
-        runner_argv.append("--publish")
-    else:
-        runner_argv.append("--no-publish")
+    runner_argv = build_incremental_argv(options)
 
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
     _log_scheduler(
@@ -121,15 +97,15 @@ def main(argv: list[str] | None = None) -> int:
         source=source,
         parts=parts,
         interval_seconds=interval_s,
-        dry_run=bool(args.dry_run),
-        publish=bool(args.publish),
-        max_items=int(args.max_items),
-        t5_limit=int(args.t5_limit),
-        t5_min_interval_ms=int(args.t5_min_interval_ms),
-        t5_timeout_s=float(args.t5_timeout_s),
-        t5_max_redirects=int(args.t5_max_redirects),
-        t5_max_bytes=int(args.t5_max_bytes),
-        t5_block_pattern_count=int(len(args.t5_block_pattern)),
+        dry_run=options.dry_run,
+        publish=options.publish,
+        max_items=int(options.max_items),
+        t5_limit=int(options.t5_limit),
+        t5_min_interval_ms=int(options.t5_min_interval_ms),
+        t5_timeout_s=float(options.t5_timeout_s),
+        t5_max_redirects=int(options.t5_max_redirects),
+        t5_max_bytes=int(options.t5_max_bytes),
+        t5_block_pattern_count=int(len(options.t5_block_pattern)),
         lock_key=lock_key,
         started_at=datetime.now(timezone.utc).isoformat(),
     )

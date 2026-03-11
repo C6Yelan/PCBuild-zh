@@ -2,26 +2,15 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from pathlib import Path
-from typing import Any
 
 from backend.services.crawler.dq_gate import run_dq_gate
+from backend.tools.crawler.artifact_io import read_json_file
+from backend.tools.crawler.dq_reports import format_dq_gate_result_line, write_dq_artifacts
 
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+") # 允許字元：英文字母、數字、點、底線、連字號
-
-
-def _read_json(path: Path) -> Any: # 將 json 檔案反序列化成 Python 物件
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _write_json(path: Path, obj: Any) -> None: # 將 Python 物件序列化成 json 檔案，並保留中文原樣
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
 
 
 def _safe_part_name(s: str) -> str: # 將字串轉換成安全的檔案/目錄名稱
@@ -51,7 +40,7 @@ def main() -> int:
     any_errors = False
 
     for fpath in files:
-        data = _read_json(fpath)
+        data = read_json_file(fpath)
         if not isinstance(data, list): # 若不是 JSON 陣列，則報錯並退出
             raise SystemExit(f"input must be a JSON list: {fpath} (got {type(data).__name__})")
 
@@ -60,21 +49,18 @@ def main() -> int:
         part = _safe_part_name(rep.category) # 用報表 category 當資料夾名（但先做字元清理）
 
         out_dir = out_root / part
-        _write_json(out_dir / "dq_report.json", rep.to_dict())
-        _write_json(out_dir / "dq_pass.json", result.passed_items)
-        _write_json(out_dir / "dq_quarantine.json", result.quarantined_items)
+        write_dq_artifacts(
+            outdir=out_dir,
+            report=rep.to_dict(),
+            passed_items=result.passed_items,
+            quarantined_items=result.quarantined_items,
+        )
 
         print(
-            "category=dq event=dq_gate_result part=%s total=%d passed=%d quarantined=%d errors=%d warnings=%d infos=%d input=%s"
-            % (
-                rep.category,
-                rep.total,
-                rep.passed,
-                rep.quarantined,
-                rep.errors,
-                rep.warnings,
-                rep.infos,
-                str(fpath),
+            format_dq_gate_result_line(
+                report=rep,
+                location_key="input",
+                location_value=fpath,
             )
         )
 

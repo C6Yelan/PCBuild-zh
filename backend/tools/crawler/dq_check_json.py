@@ -2,22 +2,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
-from typing import Any
 
 from backend.services.crawler.dq_gate import run_dq_gate
-
-
-def _read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _write_json(path: Path, obj: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
+from backend.tools.crawler.artifact_io import read_json_file
+from backend.tools.crawler.dq_reports import format_dq_gate_result_line, write_dq_artifacts
 
 
 def main() -> int:
@@ -29,28 +18,25 @@ def main() -> int:
     in_path = Path(args.input).resolve()
     out_dir = Path(args.outdir).resolve()
 
-    data = _read_json(in_path)
+    data = read_json_file(in_path)
     if not isinstance(data, list):
         raise SystemExit(f"input must be a JSON list, got {type(data).__name__}")
 
     result = run_dq_gate(data)
 
-    _write_json(out_dir / "dq_report.json", result.report.to_dict())
-    _write_json(out_dir / "dq_pass.json", result.passed_items)
-    _write_json(out_dir / "dq_quarantine.json", result.quarantined_items)
+    write_dq_artifacts(
+        outdir=out_dir,
+        report=result.report.to_dict(),
+        passed_items=result.passed_items,
+        quarantined_items=result.quarantined_items,
+    )
 
     rep = result.report
     print(
-        "category=dq event=dq_gate_result part=%s total=%d passed=%d quarantined=%d errors=%d warnings=%d infos=%d input=%s"
-        % (
-            rep.category,
-            rep.total,
-            rep.passed,
-            rep.quarantined,
-            rep.errors,
-            rep.warnings,
-            rep.infos,
-            str(in_path),
+        format_dq_gate_result_line(
+            report=rep,
+            location_key="input",
+            location_value=in_path,
         )
     )
 

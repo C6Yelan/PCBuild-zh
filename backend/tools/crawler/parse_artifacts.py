@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.tools.crawler.artifact_io import write_json_atomic
+from backend.tools.crawler.dq_reports import write_dq_artifacts as write_shared_dq_artifacts
 
 
 @dataclass(frozen=True)
@@ -27,10 +28,13 @@ def write_dq_artifacts(
     passed_items: list[dict[str, Any]],
     quarantined_items: list[dict[str, Any]],
 ) -> None:
-    path = Path(outdir).resolve()
-    write_json_atomic(path / "dq_report.json", report)
-    write_json_atomic(path / "dq_pass.json", passed_items)
-    write_json_atomic(path / "dq_quarantine.json", quarantined_items)
+    write_shared_dq_artifacts(
+        outdir=outdir,
+        report=report,
+        passed_items=passed_items,
+        quarantined_items=quarantined_items,
+        atomic=True,
+    )
 
 
 def resolve_t5_artifact_paths(outdir: str) -> T5ArtifactPaths:

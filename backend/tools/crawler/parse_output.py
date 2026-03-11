@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from backend.tools.crawler.dq_reports import format_dq_gate_result_line
+
 
 def emit_schema_gate_error(report: Any) -> None:
     print(json.dumps(report, ensure_ascii=False, indent=2), file=sys.stderr)
@@ -15,16 +17,10 @@ def emit_schema_gate_error(report: Any) -> None:
 
 def emit_dq_gate_result(*, report: Any, snapshot_dir: Path) -> None:
     print(
-        "category=dq event=dq_gate_result part=%s total=%d passed=%d quarantined=%d errors=%d warnings=%d infos=%d snapshot_dir=%s"
-        % (
-            report.category,
-            report.total,
-            report.passed,
-            report.quarantined,
-            report.errors,
-            report.warnings,
-            report.infos,
-            str(snapshot_dir),
+        format_dq_gate_result_line(
+            report=report,
+            location_key="snapshot_dir",
+            location_value=snapshot_dir,
         ),
         file=sys.stderr,
     )

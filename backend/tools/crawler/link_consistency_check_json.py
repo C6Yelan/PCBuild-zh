@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from backend.services.crawler.link_consistency_gate.engine import LinkCheckEngine
@@ -15,6 +16,7 @@ from backend.services.crawler.link_consistency_gate.types import (
     ListingInput,
     PacingConfig,
 )
+from backend.tools.crawler.artifact_io import write_jsonl_objects
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -43,14 +45,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
 
     try:
-        with LinkCheckEngine(config) as engine, open(args.output, "w", encoding="utf-8") as out_f:
-            for obj, where in rows:
-                listing = _parse_listing(obj, where=where)
-                report = engine.check_one(listing)
-                payload = asdict(report)
-                if payload.get("error") is None:
-                    payload.pop("error", None)
-                out_f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        with LinkCheckEngine(config) as engine:
+            write_jsonl_objects(Path(args.output), _iter_output_payloads(rows, engine=engine))
     except ValueError as e:
         print(f"Input error: {e}", file=sys.stderr)
         return 2
@@ -107,6 +103,20 @@ def _peek_first_non_ws_char(f) -> str:
             return ""
         if not ch.isspace():
             return ch
+
+
+def _iter_output_payloads(
+    rows: Iterator[tuple[Any, str]],
+    *,
+    engine: LinkCheckEngine,
+) -> Iterator[dict[str, Any]]:
+    for obj, where in rows:
+        listing = _parse_listing(obj, where=where)
+        report = engine.check_one(listing)
+        payload = asdict(report)
+        if payload.get("error") is None:
+            payload.pop("error", None)
+        yield payload
 
 
 def _parse_listing(obj: Any, *, where: str) -> ListingInput:

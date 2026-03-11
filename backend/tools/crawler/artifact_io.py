@@ -8,7 +8,7 @@ import os
 import tempfile
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 
 
 def read_json_file(path: Path) -> Any:
@@ -54,6 +54,12 @@ def read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
                 raise ValueError(f"expected object at line {lineno}, got {type(row).__name__}")
             rows.append(row)
     return rows
+
+
+def write_jsonl_objects(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), ensure_ascii=False) + "\n")
 
 
 def build_artifact_metadata(path: Path, *, base_dir: Path) -> dict[str, Any]:

@@ -1,4 +1,10 @@
 # backend/services/crawler/staging/repo.py
+"""Crawler staging ORM repo surface.
+
+Keep this module as the stable persistence entrypoint for t7 callers while
+item payloads, row mapping, and event logging live in sibling helpers.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -7,25 +13,22 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from backend.core.obs_events import log_loki_event
 from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgGateResult, CrawlerStgItem
-from backend.services.crawler.staging.conventions import get_crawler_env, make_item_key
+from backend.services.crawler.staging.staging_events import (
+    log_gate_result_failure_transition,
+)
+from backend.services.crawler.staging.staging_payloads import (
+    build_staging_gate_payload,
+    build_staging_item_payload,
+)
+from backend.services.crawler.staging.staging_rows import (
+    apply_staging_gate_payload,
+    apply_staging_item_payload,
+    create_staging_gate_result_row,
+    create_staging_item_row,
+)
 
 _PCBUILD_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
-_RUN_SOURCE_CACHE: dict[str, str] = {}
-
-def _get_source(db, run_id) -> str:
-    # 只在首次看到 run_id 時查一次 DB，避免每筆 gate_result 都查
-    k = str(run_id)
-    if k in _RUN_SOURCE_CACHE:
-        return _RUN_SOURCE_CACHE[k]
-    try:
-        r = db.get(CrawlerIngestRun, run_id)
-        src = getattr(r, "source", None) or "unknown"
-    except Exception:
-        src = "unknown"
-    _RUN_SOURCE_CACHE[k] = src
-    return src
 
 
 def create_ingest_run(
@@ -66,35 +69,21 @@ def upsert_stg_items(
     inserted = 0
     updated = 0
 
-    for it in items:
-        _validate_item(it)
-
-        item_key = make_item_key(source, it)
-        pk = (run_id, item_key)
+    for item in items:
+        payload = build_staging_item_payload(source=source, item=item)
+        pk = (run_id, payload.item_key)
         row = db.get(CrawlerStgItem, pk)
 
         if row is None:
-            row = CrawlerStgItem(
-                run_id=run_id,
-                item_key=item_key,
-                category=str(it["category"]),
-                title=str(it["title"]),
-                url=str(it["url"]),
-                price=int(it["price"]),
-                currency=str(it["currency"]),
-                sku_hint=(str(it["sku_hint"]) if it.get("sku_hint") is not None else None),
-                canonical_json=it,
+            db.add(
+                create_staging_item_row(
+                    run_id=run_id,
+                    payload=payload,
+                )
             )
-            db.add(row)
             inserted += 1
         else:
-            row.category = str(it["category"])
-            row.title = str(it["title"])
-            row.url = str(it["url"])
-            row.price = int(it["price"])
-            row.currency = str(it["currency"])
-            row.sku_hint = (str(it["sku_hint"]) if it.get("sku_hint") is not None else None)
-            row.canonical_json = it
+            apply_staging_item_payload(row, payload=payload)
             updated += 1
 
     db.flush()
@@ -114,57 +103,36 @@ def upsert_stg_gate_result(
     Upsert 一筆 gate result（PK: run_id + item_key + gate_name）
     回傳 (inserted, updated)
     """
-    if status not in ("pass", "fail"):
-        raise ValueError("status 只能是 'pass' 或 'fail'")
-
-    pk = (run_id, item_key, gate_name)
+    payload = build_staging_gate_payload(
+        gate_name=gate_name,
+        status=status,
+        detail_json=detail_json,
+    )
+    pk = (run_id, item_key, payload.gate_name)
     row = db.get(CrawlerStgGateResult, pk)  # composite PK 可用 tuple 傳入
     prev_status = (row.status if row is not None else None)
 
-    if status == "fail" and prev_status != "fail":
-        log_loki_event(
-            _PCBUILD_PIPELINE_LOGGER,
-            level=logging.ERROR,
-            event="gate_result",
-            source=_get_source(db, run_id),
-            stage="staging",
-            gate_name=gate_name,
-            env=get_crawler_env(),
-            run_id=str(run_id),
+    if payload.status == "fail" and prev_status != "fail":
+        log_gate_result_failure_transition(
+            logger=_PCBUILD_PIPELINE_LOGGER,
+            db=db,
+            run_id=run_id,
             item_key=item_key,
-            status=status,
-            detail_json=detail_json,
+            gate_name=payload.gate_name,
+            status=payload.status,
+            detail_json=payload.detail_json,
         )
     if row is None:
         db.add(
-            CrawlerStgGateResult(
+            create_staging_gate_result_row(
                 run_id=run_id,
                 item_key=item_key,
-                gate_name=gate_name,
-                status=status,
-                detail_json=detail_json,
+                payload=payload,
             )
         )
         db.flush()
         return (1, 0)
 
-    row.status = status
-    row.detail_json = detail_json
+    apply_staging_gate_payload(row, payload=payload)
     db.flush()
     return (0, 1)
-
-
-def _validate_item(it: dict[str, Any]) -> None:
-    # 僅做最小必要欄位檢查，避免 DB constraint 才爆
-    required = ("category", "title", "url", "price", "currency")
-    missing = [k for k in required if it.get(k) in (None, "")]
-    if missing:
-        raise ValueError(f"staging item 缺必要欄位: {missing}")
-
-    price = it.get("price")
-    try:
-        price_i = int(price)
-    except Exception as e:
-        raise ValueError(f"price 無法轉成 int: {price!r}") from e
-    if price_i < 0:
-        raise ValueError(f"price 不可為負數: {price_i}")

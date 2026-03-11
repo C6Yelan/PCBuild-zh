@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import logging
-import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -22,6 +21,8 @@ from backend.db import SessionLocal
 from backend.services.crawler import CrawlerHttpClient, CrawlerSettings
 from backend.services.crawler.fetch_state_repo import get_fetch_state, upsert_fetch_state
 from backend.services.crawler.part_registry import resolve_source_parts
+from backend.services.crawler.staging.conventions import get_crawler_env
+from backend.tools.crawler.artifact_io import write_json_file
 from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
 from backend.tools.db.t7_stage_from_snapshot import main as t7_stage_main
 from backend.tools.db.t8_merge_from_staging import main as t8_merge_main
@@ -33,17 +34,8 @@ _T8_COUNTS_RE = re.compile(
 )
 
 
-def _get_env() -> str:
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
-
-
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _write_json(path: Path, obj: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _write_text(path: Path, text: str) -> None:
@@ -171,7 +163,7 @@ def _log_event(
         event=event,
         source=source,
         stage=stage,
-        env=_get_env(),
+        env=get_crawler_env(),
         run_id=run_id,
         **extra,
     )
@@ -410,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
                             snapshot_dir.mkdir(parents=True, exist_ok=True)
                             part_entry["snapshot_dir"] = str(snapshot_dir)
                             (snapshot_dir / "body.txt").write_text(result.text, encoding="utf-8", errors="replace")
-                            _write_json(
+                            write_json_file(
                                 snapshot_dir / "meta.json",
                                 {
                                     "retrieved_at_utc": now.strftime("%Y%m%dT%H%M%SZ"),
@@ -791,7 +783,7 @@ def main(argv: list[str] | None = None) -> int:
     summary["ended_at"] = ended_at.isoformat()
     summary["elapsed_ms"] = int((ended_at - started_at).total_seconds() * 1000)
     summary["exit_code"] = int(rc)
-    _write_json(summary_path, summary)
+    write_json_file(summary_path, summary)
 
     print(
         json.dumps(

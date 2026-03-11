@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -13,13 +12,10 @@ import sqlalchemy as sa
 
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import engine
+from backend.services.crawler.staging.conventions import get_crawler_env
 from backend.tools.ops.t10_run_incremental import main as run_incremental_main
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
-
-
-def _get_env() -> str:
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
 
 
 def _build_lock_key(source: str, parts: str) -> int:
@@ -34,7 +30,7 @@ def _log_scheduler(event: str, *, source: str, **fields: Any) -> None:
         event=event,
         source=source,
         stage="scheduler",
-        env=_get_env(),
+        env=get_crawler_env(),
         **fields,
     )
 

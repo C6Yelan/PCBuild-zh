@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import io
 import json
 import logging
@@ -14,37 +13,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
-from hashlib import sha256
 
 from sqlalchemy.orm import Session
 
-from backend.db import SessionLocal
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
+from backend.db import SessionLocal
+from backend.services.crawler.staging.conventions import get_crawler_env, make_item_key
 from backend.services.crawler.staging.repo import (
     create_ingest_run,
     upsert_stg_items,
     upsert_stg_gate_result,
 )
+from backend.tools.crawler.artifact_io import build_artifact_metadata, read_json_file
 from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
-
-
-def _get_env() -> str:
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
-
-
-def _make_item_key(source: str, it: dict[str, Any]) -> str:
-    seed = "|".join(
-        [
-            source,
-            str(it.get("category") or ""),
-            str(it.get("url") or ""),
-            str(it.get("title") or ""),
-            str(it.get("sku_hint") or ""),
-        ]
-    )
-    return hashlib.sha1(seed.encode("utf-8")).hexdigest()
 
 
 def _run_crawl_and_capture(argv: list[str]) -> tuple[int, str, str]:
@@ -62,26 +45,6 @@ def _run_crawl_and_capture(argv: list[str]) -> tuple[int, str, str]:
         return int(rc), out_buf.getvalue(), err_buf.getvalue()
     finally:
         sys.argv = old_argv
-
-
-def _load_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _file_meta(path: Path, *, base_dir: Path) -> dict[str, Any]:
-    data = path.read_bytes()
-    rel = str(path.relative_to(base_dir))
-    st = path.stat()
-    return {
-        "relpath": rel,                    # 相對於 artifact_dir
-        "sha256": sha256(data).hexdigest(),
-        "bytes": int(st.st_size),
-        "mtime": int(st.st_mtime),
-    }
-
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description="T7: stage from snapshot-dir (run crawl_parse_snapshot then ORM ingest)")
     ap.add_argument("--source", required=True)
@@ -118,7 +81,7 @@ def main() -> int:
         event="t7_stage_started",
         source=src,
         stage="stage",
-        env=_get_env(),
+        env=get_crawler_env(),
         run_id=str(run_id),
         app_git_sha=app_git_sha,
         snapshot_dir=str(args.snapshot_dir),
@@ -176,7 +139,7 @@ def main() -> int:
                 event="t7_stage_finished",
                 source=src,
                 stage="stage",
-                env=_get_env(),
+                env=get_crawler_env(),
                 run_id=str(run_id),
                 app_git_sha=app_git_sha,
                 status="no_items",
@@ -192,16 +155,20 @@ def main() -> int:
 
         # Gate 摘要：從 dq_report / t5.summary 讀進來（若存在）
         dq_report_path = dq_outdir / "dq_report.json"
-        dq_report = _load_json(dq_report_path) if dq_report_path.exists() else None
-        dq_meta = _file_meta(dq_report_path, base_dir=base_outdir) if dq_report_path.exists() else None
+        dq_report = read_json_file(dq_report_path) if dq_report_path.exists() else None
+        dq_meta = (
+            build_artifact_metadata(dq_report_path, base_dir=base_outdir)
+            if dq_report_path.exists()
+            else None
+        )
 
         t5_summary = None
         t5_meta = None
         if t5_outdir is not None:
             t5_summary_path = t5_outdir / "t5.summary.json"
             if t5_summary_path.exists():
-                t5_summary = _load_json(t5_summary_path)
-                t5_meta = _file_meta(t5_summary_path, base_dir=base_outdir)
+                t5_summary = read_json_file(t5_summary_path)
+                t5_meta = build_artifact_metadata(t5_summary_path, base_dir=base_outdir)
 
         # ORM 入庫：同一個交易（run + items + gate_results）
         with SessionLocal() as db:
@@ -214,7 +181,7 @@ def main() -> int:
 
                 for it in items:
                     url = str(it.get("url") or "")
-                    item_key = _make_item_key(args.source, it)
+                    item_key = make_item_key(args.source, it)
 
                     # T4 DQ gate（成功才會有 items）
                     ins, upd = upsert_stg_gate_result(
@@ -265,7 +232,7 @@ def main() -> int:
             event="t7_stage_finished",
             source=src,
             stage="stage",
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             status=status,
@@ -304,7 +271,7 @@ def main() -> int:
             event="t7_stage_failed",
             source=src,
             stage="stage",
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             snapshot_dir=str(args.snapshot_dir),

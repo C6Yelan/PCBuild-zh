@@ -1,15 +1,18 @@
 # backend/services/crawler/staging/repo.py
 from __future__ import annotations
+
 import logging
-import os
+from typing import Any
+from uuid import UUID, uuid4
+
+from sqlalchemy.orm import Session
+
 from backend.core.obs_events import log_loki_event
+from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgGateResult, CrawlerStgItem
+from backend.services.crawler.staging.conventions import get_crawler_env, make_item_key
 
 _PCBUILD_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 _RUN_SOURCE_CACHE: dict[str, str] = {}
-
-def _get_env() -> str:
-    # 服務環境（低基數），若沒設就視為 prod
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
 
 def _get_source(db, run_id) -> str:
     # 只在首次看到 run_id 時查一次 DB，避免每筆 gate_result 都查
@@ -17,22 +20,12 @@ def _get_source(db, run_id) -> str:
     if k in _RUN_SOURCE_CACHE:
         return _RUN_SOURCE_CACHE[k]
     try:
-        from backend.models.crawler_staging import CrawlerIngestRun
         r = db.get(CrawlerIngestRun, run_id)
         src = getattr(r, "source", None) or "unknown"
     except Exception:
         src = "unknown"
     _RUN_SOURCE_CACHE[k] = src
     return src
-
-
-import hashlib
-from typing import Any
-from uuid import UUID, uuid4
-
-from sqlalchemy.orm import Session
-
-from backend.models.crawler_staging import CrawlerIngestRun, CrawlerStgItem, CrawlerStgGateResult
 
 
 def create_ingest_run(
@@ -76,7 +69,7 @@ def upsert_stg_items(
     for it in items:
         _validate_item(it)
 
-        item_key = _make_item_key(source, it)
+        item_key = make_item_key(source, it)
         pk = (run_id, item_key)
         row = db.get(CrawlerStgItem, pk)
 
@@ -136,7 +129,7 @@ def upsert_stg_gate_result(
             source=_get_source(db, run_id),
             stage="staging",
             gate_name=gate_name,
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             item_key=item_key,
             status=status,
@@ -175,17 +168,3 @@ def _validate_item(it: dict[str, Any]) -> None:
         raise ValueError(f"price 無法轉成 int: {price!r}") from e
     if price_i < 0:
         raise ValueError(f"price 不可為負數: {price_i}")
-
-
-def _make_item_key(source: str, it: dict[str, Any]) -> str:
-    # 穩定、可重算；避免因為 dict key 順序而變動
-    seed = "|".join(
-        [
-            source,
-            str(it.get("category") or ""),
-            str(it.get("url") or ""),
-            str(it.get("title") or ""),
-            str(it.get("sku_hint") or ""),
-        ]
-    )
-    return hashlib.sha1(seed.encode("utf-8")).hexdigest()

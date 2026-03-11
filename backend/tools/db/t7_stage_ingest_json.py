@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
@@ -15,8 +14,9 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
-from backend.db import SessionLocal
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
+from backend.db import SessionLocal
+from backend.services.crawler.staging.conventions import get_crawler_env, make_item_key
 from backend.services.crawler.staging.repo import (
     create_ingest_run,
     upsert_stg_items,
@@ -24,23 +24,6 @@ from backend.services.crawler.staging.repo import (
 )
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
-
-
-def _get_env() -> str:
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
-
-
-def _make_item_key(source: str, it: dict[str, Any]) -> str:
-    seed = "|".join(
-        [
-            source,
-            str(it.get("category") or ""),
-            str(it.get("url") or ""),
-            str(it.get("title") or ""),
-            str(it.get("sku_hint") or ""),
-        ]
-    )
-    return hashlib.sha1(seed.encode("utf-8")).hexdigest()
 
 
 def _load_payload(path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -119,7 +102,7 @@ def main() -> int:
             event="t7_stage_ingest_started",
             source=src,
             stage="stage",
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             input=str(args.input),
@@ -153,7 +136,7 @@ def main() -> int:
                         it = by_url.get(str(gr["url"]))
                         if it is None:
                             raise ValueError(f"gate_results url 找不到對應 item: {gr['url']}")
-                        item_key = _make_item_key(args.source, it)
+                        item_key = make_item_key(args.source, it)
 
                     ins, upd = upsert_stg_gate_result(
                         db,
@@ -171,7 +154,7 @@ def main() -> int:
             event="t7_stage_ingest_finished",
             source=src,
             stage="stage",
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             input=str(args.input),
@@ -206,7 +189,7 @@ def main() -> int:
             event="t7_stage_ingest_failed",
             source=src,
             stage="stage",
-            env=_get_env(),
+            env=get_crawler_env(),
             run_id=str(run_id),
             app_git_sha=app_git_sha,
             input=str(args.input),

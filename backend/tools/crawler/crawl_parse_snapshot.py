@@ -1,4 +1,4 @@
-# backend/tools/crawl_parse_snapshot.py
+# backend/tools/crawler/crawl_parse_snapshot.py
 from __future__ import annotations
 
 import argparse
@@ -7,63 +7,21 @@ import json
 import logging
 import os
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
+from backend.services.crawler.staging.conventions import get_crawler_env
 from backend.services.crawler.sources import SourceId
 from backend.services.crawler.parsers import get_listing_parser
 from backend.services.crawler.schema_gate.validate import SchemaGateError, validate_payload_fail_fast
 from backend.services.crawler.dq_gate import run_dq_gate
+from backend.tools.crawler.artifact_io import read_jsonl_objects, write_json_atomic
 from backend.tools.crawler.link_consistency_check_json import main as run_link_consistency_check_json
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
-
-
-def _get_env() -> str:
-    return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
-
-
-def _write_json_atomic(path: Path, obj: Any) -> None:
-    """
-    原子寫入：先寫到同資料夾的 tmp，再用 os.replace 覆蓋目標檔，避免中途失敗留下半截檔。
-    注意：tmp 必須在同一個資料夾/檔案系統上，replace 才能達成原子替換語意。
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    finally:
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except OSError:
-            pass
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for lineno, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"invalid JSONL at line {lineno}: {e.msg}") from e
-            if not isinstance(row, dict):
-                raise ValueError(f"expected object at line {lineno}, got {type(row).__name__}")
-            rows.append(row)
-    return rows
 
 
 def _build_t5_summary(reports: list[dict[str, Any]]) -> dict[str, Any]:
@@ -156,9 +114,9 @@ def main() -> int:
     # 落檔（無論成功/失敗都落，方便追查）
     if args.dq_outdir:
         outdir = Path(args.dq_outdir).resolve()
-        _write_json_atomic(outdir / "dq_report.json", rep.to_dict())
-        _write_json_atomic(outdir / "dq_pass.json", dq.passed_items)
-        _write_json_atomic(outdir / "dq_quarantine.json", dq.quarantined_items)
+        write_json_atomic(outdir / "dq_report.json", rep.to_dict())
+        write_json_atomic(outdir / "dq_pass.json", dq.passed_items)
+        write_json_atomic(outdir / "dq_quarantine.json", dq.quarantined_items)
 
     # fail-fast：error-level findings 就阻斷
     if rep.errors > 0:
@@ -182,7 +140,7 @@ def main() -> int:
             event="t5_link_started",
             source=src,
             stage="t5_link",
-            env=_get_env(),
+            env=get_crawler_env(),
             gate_name="t5_link",
             run_id=args.run_id,
             app_git_sha=app_git_sha,
@@ -212,7 +170,7 @@ def main() -> int:
                 event="t5_link_failed",
                 source=src,
                 stage="t5_link",
-                env=_get_env(),
+                env=get_crawler_env(),
                 gate_name="t5_link",
                 run_id=args.run_id,
                 app_git_sha=app_git_sha,
@@ -227,7 +185,7 @@ def main() -> int:
             print(f"T5 input error: {e}", file=sys.stderr)
             return 2
 
-        _write_json_atomic(t5_input_path, t5_input_items)
+        write_json_atomic(t5_input_path, t5_input_items)
 
         t5_argv = [
             "--input",
@@ -254,7 +212,7 @@ def main() -> int:
                 event="t5_link_failed",
                 source=src,
                 stage="t5_link",
-                env=_get_env(),
+                env=get_crawler_env(),
                 gate_name="t5_link",
                 run_id=args.run_id,
                 app_git_sha=app_git_sha,
@@ -270,7 +228,7 @@ def main() -> int:
             return 2
 
         try:
-            reports = _read_jsonl(t5_report_path)
+            reports = read_jsonl_objects(t5_report_path)
         except (OSError, ValueError) as e:
             log_loki_event(
                 _PIPELINE_LOGGER,
@@ -278,7 +236,7 @@ def main() -> int:
                 event="t5_link_failed",
                 source=src,
                 stage="t5_link",
-                env=_get_env(),
+                env=get_crawler_env(),
                 gate_name="t5_link",
                 run_id=args.run_id,
                 app_git_sha=app_git_sha,
@@ -301,7 +259,7 @@ def main() -> int:
                 event="t5_link_failed",
                 source=src,
                 stage="t5_link",
-                env=_get_env(),
+                env=get_crawler_env(),
                 gate_name="t5_link",
                 run_id=args.run_id,
                 app_git_sha=app_git_sha,
@@ -329,9 +287,9 @@ def main() -> int:
                 t5_quarantine.append(item)
 
         summary = _build_t5_summary(reports)
-        _write_json_atomic(t5_summary_path, summary)
-        _write_json_atomic(t5_passed_path, t5_passed)
-        _write_json_atomic(t5_quarantine_path, t5_quarantine)
+        write_json_atomic(t5_summary_path, summary)
+        write_json_atomic(t5_passed_path, t5_passed)
+        write_json_atomic(t5_quarantine_path, t5_quarantine)
 
         print(
             "T5 status_counts=%s reason_counts=%s outdir=%s"
@@ -346,7 +304,7 @@ def main() -> int:
             event="t5_link_finished",
             source=src,
             stage="t5_link",
-            env=_get_env(),
+            env=get_crawler_env(),
             gate_name="t5_link",
             run_id=args.run_id,
             app_git_sha=app_git_sha,

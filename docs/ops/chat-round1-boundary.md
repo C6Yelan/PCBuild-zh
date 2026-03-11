@@ -75,12 +75,12 @@
 | 檔案 | 目前對外可見名稱 | 目前被誰引用 | round 1 狀態 | private helper 外溢 |
 | --- | --- | --- | --- | --- |
 | `backend/services/chat/__init__.py` | `generate_chat_reply` | `backend/api/routes/chat.py` | 保留正式 package public entrypoint | 否 |
-| `backend/services/chat/service.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、多數 `test_chat_service_*` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已下沉 | 是；只剩 compat `_generate_provider_result`、`_build_provider_messages`、`_persist_ai_snapshot` 等薄 wrapper |
+| `backend/services/chat/service.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、多數 `test_chat_service_*` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已直接接到 seam | 否；不再提供跨模組可見的 provider / snapshot private patch 點 |
 | `backend/services/chat/provider_caller.py` | `build_provider_messages`、`generate_provider_result`、`ProviderCallResult`、`ProviderDispatchError` | `service.py`、`chat_release_check.py`、多個 service tests | 已成 round-1 provider seam；先保留 path，不做 rename | 否 |
 | `backend/services/chat/snapshot_store.py` | `persist_ai_snapshot`、`update_snapshot_meta`、`snapshot_root`、`snapshot_dir`、`read_json_file`、`build_candidate_lineage_categories` | `service.py`、`staging.py`、inspect CLIs | 已成 round-1 snapshot persistence seam；保留 path | 否 |
 | `backend/services/chat/staging.py` | `ChatStagingRecord`、`persist_chat_staging_record`、`persist_chat_quarantine_entry`、`build_chat_staging_record`、`persist_chat_stage_or_quarantine` | `service.py` | 已成 round-1 staging/quarantine seam；保留 path | 否 |
 | `backend/services/chat/health.py` | `run_provider_health_check` | `backend/tools/ops/chat_provider_healthcheck.py`、`backend/tools/ops/chat_regression_report.py`、`test_chat_service_p4_health.py` | 保留 official ops 的 service-side support | 否 |
-| `backend/services/chat/context_pack/retrieval.py` | `P1Demand`、`CandidatePart`、`P1RetrievalResult`、`retrieve_topk_candidates` | `service.py`、`test_chat_p1_contracts.py`、`test_chat_p1_retrieval_ordering.py` | 路徑先保留；未來若改職責式命名，先加 compat alias 再搬 | 是；`_build_category_stmt` 仍被直接 import |
+| `backend/services/chat/context_pack/retrieval.py` | `P1Demand`、`CandidatePart`、`P1RetrievalResult`、`retrieve_topk_candidates`、`build_category_retrieval_stmt` | `service.py`、`test_chat_p1_contracts.py`、`test_chat_p1_retrieval_ordering.py` | 路徑先保留；`build_category_retrieval_stmt` 作為 SQL ordering contract seam | 否 |
 | `backend/services/chat/context_pack/compress.py` | `compress_candidates` | `service.py`、`test_chat_p2_compress_candidates.py` | 保留 | 否 |
 | `backend/services/chat/context_pack/render.py` | `build_context_pack`、`canonicalize_text_for_hash`、`hash_context_pack` | `service.py`、`test_chat_p3_context_pack_render.py` | 保留 | 否 |
 | `backend/services/chat/clients/openai_compat_client.py` | `generate_openai_compat_completion`、`generate_openai_compat_text`、`OpenAICompatError`、`OpenAICompatResult` | provider seam、tests | 保留 path | 否 |
@@ -133,13 +133,10 @@
 - `backend/services/chat/retry_policy.py`
 
 ## 目前剩餘的 private helper debt
-- `backend/tests/test_chat_p1_retrieval_ordering.py` 仍直接 import `_build_category_stmt`
-- `backend/tests/test_chat_service_demand_resolution.py` 仍 patch `chat_service._persist_ai_snapshot`，之後應改到 snapshot seam 或 fixture-level seam
-- `backend/services/chat/service.py` 仍保留薄 compat wrapper：
-  - `_generate_provider_result`
-  - `_build_provider_messages`
-  - `_persist_ai_snapshot`
-  - `_persist_chat_stage_or_quarantine`
+- chat round 1 既知的 private-helper test dependency 已清零。
+- `backend/tests/test_chat_p1_retrieval_ordering.py` 已改走 `build_category_retrieval_stmt`。
+- `backend/tests/test_chat_service_demand_resolution.py` 已改 patch `backend.services.chat.snapshot_store.persist_ai_snapshot`。
+- `backend/services/chat/service.py` 仍有 internal-only `_...` orchestration helpers，但它們不再作為跨模組 patch / import 點。
 
 ## 必須保留的 compat 點
 - import path 不能直接消失：
@@ -157,7 +154,18 @@
   - `backend.tools.ops.chat_staging_inspect`
   - `backend.tools.ops.chat_release_check`
 
-## 下一步仍需要的 seam
-- snapshot persistence test seam，取代 `chat_service._persist_ai_snapshot` 的測試 patch
-- retrieval SQL assertion seam 或 black-box query 驗證，取代 `_build_category_stmt`
-- service orchestration 進一步瘦身時，仍需保留 `service.py` 的 compat import path 與薄 wrapper
+## Compat 狀態
+- `service.py` 仍必須保留的 compat 只有正式 import path：`backend.services.chat.service.generate_chat_reply`。
+- 已移除且目前無外部依賴的 service-level wrapper：
+  - `_generate_provider_result`
+  - `_build_provider_messages`
+  - `_persist_ai_snapshot`
+  - `_persist_chat_stage_or_quarantine`
+- provider / snapshot / staging 的穩定 seam 現在分別在：
+  - `backend.services.chat.provider_caller`
+  - `backend.services.chat.snapshot_store`
+  - `backend.services.chat.staging`
+
+## Round 1 結論
+- chat round 1 architecture cleanup complete。
+- 下一步建議進入第 2 階段：AI log contract / Loki / Grafana dashboard。

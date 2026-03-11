@@ -4,6 +4,7 @@ Round-1 scope:
 - build request-context / lineage / validation / dq payloads
 - write snapshot artifacts and meta.json without changing file names or shape
 - expose minimal snapshot-root / JSON-loading helpers for inspect CLIs
+- serve as the stable snapshot patch point for service-level tests
 """
 # backend/services/chat/snapshot_store.py
 from __future__ import annotations

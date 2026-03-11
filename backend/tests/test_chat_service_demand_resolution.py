@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
+import backend.services.chat.snapshot_store as chat_snapshot_store
 from backend.services.chat.contracts import ChatRequest
 
 
@@ -99,7 +100,7 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
         "log_operation",
         lambda event, **fields: events.append((event, fields)),
     )
-    monkeypatch.setattr(chat_service, "_persist_ai_snapshot", lambda **kwargs: "file:test")
+    monkeypatch.setattr(chat_snapshot_store, "persist_ai_snapshot", lambda **kwargs: "file:test")
 
     response = chat_service.generate_chat_reply(
         ChatRequest(
@@ -162,7 +163,7 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
         "log_operation",
         lambda event, **fields: events.append((event, fields)),
     )
-    monkeypatch.setattr(chat_service, "_persist_ai_snapshot", lambda **kwargs: "file:test")
+    monkeypatch.setattr(chat_snapshot_store, "persist_ai_snapshot", lambda **kwargs: "file:test")
 
     response = chat_service.generate_chat_reply(
         ChatRequest(user_text="幫我推薦 2 萬內文書機"),
@@ -211,7 +212,7 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monk
         "log_operation",
         lambda event, **fields: events.append((event, fields)),
     )
-    monkeypatch.setattr(chat_service, "_persist_ai_snapshot", lambda **kwargs: "file:test")
+    monkeypatch.setattr(chat_snapshot_store, "persist_ai_snapshot", lambda **kwargs: "file:test")
 
     response = chat_service.generate_chat_reply(
         ChatRequest(user_text="你好"),

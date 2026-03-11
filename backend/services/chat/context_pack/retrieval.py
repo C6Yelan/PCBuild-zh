@@ -1,8 +1,8 @@
-"""Internal chat retrieval implementation.
+"""Chat retrieval implementation.
 
 ``retrieve_topk_candidates`` is the callable boundary used by chat orchestration.
-All ``_`` helpers in this module remain internal-only even if legacy tests still
-touch them during round 1.
+``build_category_retrieval_stmt`` is a stable SQL seam for ordering-contract
+tests and future refactors without reaching into private helpers.
 """
 
 # backend/services/chat/context_pack/retrieval.py
@@ -145,7 +145,7 @@ def _build_count_stmt(
     return _apply_demand_filters(stmt, demand=demand)
 
 
-def _build_category_stmt(
+def build_category_retrieval_stmt(
     *,
     category: str,
     top_k: int,
@@ -214,7 +214,7 @@ def retrieve_topk_candidates(
 
         rows = list(
             db.execute(
-                _build_category_stmt(
+                build_category_retrieval_stmt(
                     category=category,
                     top_k=normalized_top_k,
                     demand=demand,

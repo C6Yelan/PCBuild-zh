@@ -1,6 +1,7 @@
+# backend/tests/test_chat_p1_retrieval_ordering.py
 from sqlalchemy.dialects import postgresql
 
-from backend.services.chat.context_pack.retrieval import P1Demand, _build_category_stmt
+from backend.services.chat.context_pack.retrieval import P1Demand, build_category_retrieval_stmt
 
 
 def _normalize_sql(sql: str) -> str:
@@ -10,12 +11,12 @@ def _normalize_sql(sql: str) -> str:
 def test_p1_query_has_deterministic_order_by() -> None:
     demand = P1Demand(min_price=1000, max_price=5000)
 
-    stmt1 = _build_category_stmt(
+    stmt1 = build_category_retrieval_stmt(
         category="CPU",
         top_k=3,
         demand=demand,
     )
-    stmt2 = _build_category_stmt(
+    stmt2 = build_category_retrieval_stmt(
         category="CPU",
         top_k=3,
         demand=demand,

@@ -25,7 +25,6 @@ from backend.services.chat.clients.openai_compat_client import (
     generate_openai_compat_text,
 )
 from backend.services.chat.config import (
-    AISettings,
     get_ai_settings,
 )
 from backend.services.chat.context_pack import (
@@ -37,11 +36,10 @@ from backend.services.chat.context_pack import (
 from backend.services.chat.contracts import ChatRequest, ChatResponse
 from backend.services.chat.demand_inference import infer_chat_demand
 from backend.services.chat.dq import DQReport, evaluate_text_dq
-from backend.services.chat.gate import TextValidationReport, validate_text_response
+from backend.services.chat.gate import validate_text_response
 from backend.services.chat.normalize import normalize_provider_success
 from backend.services.chat.provider_caller import (
-    ProviderCallResult as _ProviderCallResult,
-    ProviderDispatchError as _ProviderDispatchError,
+    ProviderDispatchError,
 )
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.snapshot_store as chat_snapshot_store
@@ -50,7 +48,6 @@ from backend.services.chat.staging import (
 )
 
 _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
-_build_provider_messages = chat_provider_caller.build_provider_messages
 
 
 @dataclass(slots=True)
@@ -189,138 +186,6 @@ def _extract_p1_inputs_from_demand(
 
 def _request_mode(chat_request: ChatRequest) -> str:
     return "messages" if chat_request.messages else "user_text"
-
-
-def _generate_provider_result(
-    *,
-    settings: AISettings,
-    messages: list[dict[str, str]],
-    request_id: str,
-) -> _ProviderCallResult:
-    # Compat wrapper: keep the service-local patch point available while the
-    # main orchestration path moves to backend.services.chat.provider_caller.
-    return chat_provider_caller.generate_provider_result(
-        settings=settings,
-        messages=messages,
-        request_id=request_id,
-        text_generator=generate_openai_compat_text,
-        completion_generator=generate_openai_compat_completion,
-        original_text_generator=_ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT,
-    )
-
-
-def _persist_ai_snapshot(
-    *,
-    settings: AISettings,
-    warnings: list[str],
-    request_id: str,
-    provider: str,
-    model: str,
-    context_pack_hash: str,
-    latency_ms: int,
-    ok: bool,
-    error_type: str | None,
-    messages: list[dict[str, str]],
-    request_mode: str,
-    demand_source: str,
-    triggered_retrieval: bool,
-    categories: list[str],
-    top_k: int,
-    env: str,
-    message_chars: int,
-    history_turns: int,
-    context_pack_text: str | None,
-    compressed_candidates: dict[str, list[dict[str, object]]],
-    drop_log: dict[str, dict[str, object]],
-    validation_report: TextValidationReport | None = None,
-    dq_report: DQReport | None = None,
-    provider_result: _ProviderCallResult | None = None,
-    provider_error: OpenAICompatError | _ProviderDispatchError | None = None,
-) -> str:
-    # Compat wrapper: keep the service-local patch point while snapshot
-    # persistence lives in backend.services.chat.snapshot_store.
-    return chat_snapshot_store.persist_ai_snapshot(
-        settings=settings,
-        warnings=warnings,
-        request_id=request_id,
-        provider=provider,
-        model=model,
-        context_pack_hash=context_pack_hash,
-        latency_ms=latency_ms,
-        ok=ok,
-        error_type=error_type,
-        messages=messages,
-        request_mode=request_mode,
-        demand_source=demand_source,
-        triggered_retrieval=triggered_retrieval,
-        categories=categories,
-        top_k=top_k,
-        env=env,
-        message_chars=message_chars,
-        history_turns=history_turns,
-        context_pack_text=context_pack_text,
-        compressed_candidates=compressed_candidates,
-        drop_log=drop_log,
-        validation_report=validation_report,
-        dq_report=dq_report,
-        provider_result=provider_result,
-        provider_error=provider_error,
-    )
-
-
-def _persist_chat_stage_or_quarantine(
-    *,
-    settings: AISettings,
-    warnings: list[str],
-    request_id: str,
-    snapshot_id: str,
-    provider: str,
-    model: str,
-    context_pack_hash: str,
-    normalized_text: str,
-    public_text: str,
-    latency_ms: int,
-    gate_status: str,
-    dq_status: str,
-    gate_reasons: list[str],
-    dq_reasons: list[str],
-    demand_source: str,
-    triggered_retrieval: bool,
-    categories: list[str],
-    top_k: int,
-    env: str,
-    has_context_pack: bool,
-    compressed_candidates: dict[str, list[dict[str, object]]],
-    publish_reason: str,
-    error_type: str | None,
-) -> None:
-    # Compat wrapper: keep the orchestration call site stable while stage /
-    # quarantine persistence lives in backend.services.chat.staging.
-    persist_chat_stage_or_quarantine_seam(
-        settings=settings,
-        warnings=warnings,
-        request_id=request_id,
-        snapshot_id=snapshot_id,
-        provider=provider,
-        model=model,
-        context_pack_hash=context_pack_hash,
-        normalized_text=normalized_text,
-        public_text=public_text,
-        latency_ms=latency_ms,
-        gate_status=gate_status,
-        dq_status=dq_status,
-        gate_reasons=gate_reasons,
-        dq_reasons=dq_reasons,
-        demand_source=demand_source,
-        triggered_retrieval=triggered_retrieval,
-        categories=categories,
-        top_k=top_k,
-        env=env,
-        has_context_pack=has_context_pack,
-        compressed_candidates=compressed_candidates,
-        publish_reason=publish_reason,
-        error_type=error_type,
-    )
 
 
 def _log_ai_call(
@@ -535,7 +400,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             if dq_report.passed
             else "fail"
         )
-        snapshot_id = _persist_ai_snapshot(
+        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
             request_id=request_id,
@@ -561,7 +426,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             dq_report=dq_report,
             provider_result=provider_result,
         )
-        _persist_chat_stage_or_quarantine(
+        persist_chat_stage_or_quarantine_seam(
             settings=settings,
             warnings=warnings,
             request_id=request_id,
@@ -620,7 +485,7 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
         )
     except OpenAICompatError as exc:
         latency_ms = int((perf_counter() - started) * 1000)
-        snapshot_id = _persist_ai_snapshot(
+        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
             request_id=request_id,
@@ -677,9 +542,9 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
         )
-    except _ProviderDispatchError as exc:
+    except ProviderDispatchError as exc:
         latency_ms = int((perf_counter() - started) * 1000)
-        snapshot_id = _persist_ai_snapshot(
+        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
             settings=settings,
             warnings=warnings,
             request_id=request_id,

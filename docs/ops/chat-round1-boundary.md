@@ -1,5 +1,9 @@
 # Chat Round 1 Boundary Status
 
+> 角色：歷史 / 過渡治理文件。這份文件保存 chat round 1 架構整理時的 boundary 與 compat 決策，不作為當前 chat ops 的唯一操作入口。
+>
+> 目前正式入口請先看 `docs/ops/chat-ops-index.md`，再依主題進入 `chat-provider-health.md`、`chat-snapshot-audit.md`、`ai-baseline-freeze.md`。
+
 ## 目的
 - 記錄 chat round 1 目前已凍結的 public boundary 與 compat 點。
 - 這份文件反映 Step 1、Step 2A、Step 2B 的現況，不改 `generate_chat_reply` 簽名，不改 `/api/chat` contract，不改 CLI stdout JSON shape / exit code。
@@ -189,4 +193,4 @@
 ## Round 1 結論
 - chat round 1 architecture cleanup complete。
 - chat 測試已完成責任式命名與 `backend/tests/chat/*` 歸位整理。
-- 下一步建議進入第 2 階段：AI log contract / Loki / Grafana dashboard。
+- 後續正式 chat ops / baseline / 稽核入口已移到 `docs/ops/chat-ops-index.md`。

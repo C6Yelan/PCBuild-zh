@@ -1,9 +1,11 @@
 # Chat Provider Health Check
 
+> 角色：正式操作文件。這份文件負責 provider smoke / health check 的日常操作與判讀。
+
 ## 目的
 - 這是 P4 的 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
-- Chat round 1 的邊界凍結與 CLI 分類見 `docs/ops/chat-round1-boundary.md`。
+- chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
 ## 前置條件
 - `.env` 內的 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS` 已正確設定。
@@ -59,3 +61,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
    - 回退 `.env`
    - 重新啟動 `fastapi`
    - 再重跑一次 health check
+
+## 相關文件
+- 若要追單筆 request 的 snapshot artifact：看 `docs/ops/chat-snapshot-audit.md`
+- 若要做基線凍結 / regression / release acceptance：看 `docs/ops/ai-baseline-freeze.md`

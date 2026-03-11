@@ -1,9 +1,12 @@
 # AI 基線凍結紀錄模板
 
+> 角色：治理 / baseline 文件。這份文件負責保存 provider health、regression、release acceptance 與回退依據，不是日常單一步驟 SOP 入口。
+
 ## 1. 目的
 - 用於在第 0 階段凍結目前 AI 行為基線，建立後續比對與回退依據。
 - 本文件只記錄營運驗收與環境指紋，不修改 backend 主邏輯，不涉及 API 契約變更。
 - 填寫時禁止寫入 API key、Authorization header、完整 `AI_OAI_BASE_URL` 明文。
+- chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
 ## 2. 基線日期
 - 日期：`<YYYY-MM-DD>`
@@ -102,6 +105,10 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --
 ```bash
 docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect --request-id <REQUEST_ID>
 ```
+
+補充：
+- 若只做 provider smoke / health，不必整份重跑，直接看 `docs/ops/chat-provider-health.md`
+- 若只做 snapshot / quarantine 稽核，直接看 `docs/ops/chat-snapshot-audit.md`
 
 ## 8. 回退 SOP
 1. 先找出上一份已確認可接受的基線紀錄，確認其 `git commit SHA` 與 AI 設定指紋。

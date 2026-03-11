@@ -1,9 +1,11 @@
 # Chat Snapshot Audit
 
+> 角色：正式操作文件。這份文件負責 snapshot / staging / quarantine artifact 稽核與 inspect 流程。
+
 ## 目的
 - 這是 P5 的原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
 - 這不是 provider health check；provider smoke/health 仍看 `docs/ops/chat-provider-health.md`。
-- Chat round 1 的邊界凍結與 CLI 分類見 `docs/ops/chat-round1-boundary.md`；其中 `chat_release_check` 歸類為 acceptance harness。
+- chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
 ## Snapshot 目錄結構範例
 
@@ -150,6 +152,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
   - provider error
   - retry/backoff
 - 這是營運驗收工具，不是正式服務路徑。
+- 若要保存 release 驗收與 regression 結果，正式治理入口請看 `docs/ops/ai-baseline-freeze.md`。
 
 ```bash
 docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10

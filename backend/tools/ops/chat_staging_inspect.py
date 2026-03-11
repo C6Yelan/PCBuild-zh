@@ -9,14 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from backend.services.chat.config import get_ai_settings
-
-
-def _snapshot_root() -> Path:
-    return Path(get_ai_settings().ai_raw_snapshot_dir)
-
-
-def _load_json(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))
+from backend.services.chat.snapshot_store import read_json_file, snapshot_root
 
 
 def _tail_jsonl(path: Path, limit: int) -> list[dict[str, object]]:
@@ -38,7 +31,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=20)
     args = parser.parse_args(argv)
 
-    root = _snapshot_root()
+    root = snapshot_root(get_ai_settings())
 
     if args.list_quarantine:
         payload = {
@@ -61,11 +54,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "artifacts": sorted(path.name for path in snapshot_dir.iterdir() if path.is_file()),
     }
     if (snapshot_dir / "meta.json").is_file():
-        payload["meta"] = _load_json(snapshot_dir / "meta.json")
+        payload["meta"] = read_json_file(snapshot_dir / "meta.json")
     if (snapshot_dir / "staging_record.json").is_file():
-        payload["staging_record"] = _load_json(snapshot_dir / "staging_record.json")
+        payload["staging_record"] = read_json_file(snapshot_dir / "staging_record.json")
     if (snapshot_dir / "quarantine_entry.json").is_file():
-        payload["quarantine_entry"] = _load_json(snapshot_dir / "quarantine_entry.json")
+        payload["quarantine_entry"] = read_json_file(snapshot_dir / "quarantine_entry.json")
 
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 

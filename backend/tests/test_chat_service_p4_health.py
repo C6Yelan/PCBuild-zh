@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import backend.services.chat.health as chat_health
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 from backend.services.chat.config import SYSTEM_PROMPT
 from backend.services.chat.contracts import ChatRequest, ChatResponse
@@ -137,7 +138,7 @@ def test_build_provider_messages_prepends_internal_system_prompt_for_messages_mo
         ]
     )
 
-    provider_messages = chat_service._build_provider_messages(request)
+    provider_messages = chat_provider_caller.build_provider_messages(request)
 
     assert provider_messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
     assert provider_messages[1] == {"role": "system", "content": "原始 system"}
@@ -147,7 +148,7 @@ def test_build_provider_messages_prepends_internal_system_prompt_for_messages_mo
 def test_build_provider_messages_prepends_internal_system_prompt_for_user_text_mode() -> None:
     request = ChatRequest(user_text="幫我推薦文書機")
 
-    provider_messages = chat_service._build_provider_messages(request)
+    provider_messages = chat_provider_caller.build_provider_messages(request)
 
     assert provider_messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
     assert provider_messages[1]["role"] == "user"

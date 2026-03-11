@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 
 import backend.services.chat.clients.openai_compat_client as oai_client
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.tools.ops.chat_regression_report as chat_regression_report
 from backend.services.chat.clients.openai_compat_client import (
@@ -35,8 +36,8 @@ def _provider_result(
     *,
     text: str,
     request_id: str,
-) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -64,8 +65,8 @@ def test_publish_staged_response_keeps_public_text_and_logs_statuses(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(
             text="這是一段正常的建議內容，包含 CPU 與主機板。",
             request_id=kwargs["request_id"],
@@ -100,8 +101,8 @@ def test_publish_validation_failed_includes_request_id_and_quarantine_reason(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -127,8 +128,8 @@ def test_publish_dq_failed_includes_request_id_and_quarantine_reason(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="短", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -155,8 +156,8 @@ def test_publish_provider_error_keeps_request_id_and_skips_stage_and_quarantine(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: (_ for _ in ()).throw(
             OpenAICompatError("network_error", endpoint="https://example.invalid/v1")
         ),
@@ -410,4 +411,3 @@ def test_chat_regression_report_writes_file_and_returns_exit_code(
     assert payload["dq_fail_cases"] == 1
     assert payload["failed_cases"] == 1
     assert Path(payload["report_path"]).exists()
-

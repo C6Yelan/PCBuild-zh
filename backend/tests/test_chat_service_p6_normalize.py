@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.normalize import normalize_provider_success
@@ -29,8 +30,8 @@ def _provider_result(
     finish_reason: str | None = "stop",
     usage: dict[str, int] | None = None,
     upstream_request_id: str | None = "up-1",
-) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -135,8 +136,8 @@ def test_generate_chat_reply_snapshot_keeps_normalize_warnings(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(finish_reason="length", usage=None),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)

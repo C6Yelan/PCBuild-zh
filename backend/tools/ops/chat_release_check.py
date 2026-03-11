@@ -12,13 +12,13 @@ import json
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Sequence
 from unittest.mock import patch
 
 import httpx
 
 import backend.services.chat.clients.openai_compat_client as oai_client
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 from backend.services.chat.clients.openai_compat_client import OpenAICompatError
 from backend.services.chat.config import get_ai_settings
@@ -38,9 +38,9 @@ def _isolated_settings(snapshot_root: Path) -> Any:
     return settings.model_copy(update={"ai_raw_snapshot_dir": str(snapshot_root)})
 
 
-def _provider_result(*, request_id: str, text: str) -> SimpleNamespace:
+def _provider_result(*, request_id: str, text: str) -> chat_provider_caller.ProviderCallResult:
     payload = {"choices": [{"message": {"content": text}}]}
-    return SimpleNamespace(
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -91,7 +91,9 @@ def _run_service_case(
     with ExitStack() as stack:
         stack.enter_context(patch.object(chat_service, "get_ai_settings", lambda: settings))
         stack.enter_context(patch.object(chat_service, "infer_chat_demand", lambda *args, **kwargs: None))
-        stack.enter_context(patch.object(chat_service, "_generate_provider_result", _fake_provider_result))
+        stack.enter_context(
+            patch.object(chat_provider_caller, "generate_provider_result", _fake_provider_result)
+        )
         stack.enter_context(patch.object(chat_service, "log_operation", lambda *args, **kwargs: None))
         response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=None)
 

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.tools.ops.chat_staging_inspect as chat_staging_inspect
 from backend.services.chat.contracts import ChatRequest
@@ -24,8 +25,8 @@ class _FakeSettings:
         self.p2_spec_whitelist_by_category = {}
 
 
-def _provider_result(*, text: str, request_id: str) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+def _provider_result(*, text: str, request_id: str) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -50,8 +51,8 @@ def test_generate_chat_reply_stages_successful_response(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(
             text="這是一段正常且可用的電腦建議內容。",
             request_id=kwargs["request_id"],
@@ -84,8 +85,8 @@ def test_generate_chat_reply_quarantines_dq_fail(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="短", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -124,8 +125,8 @@ def test_generate_chat_reply_quarantines_validation_fail(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -157,10 +158,10 @@ def test_provider_error_path_skips_staging_and_quarantine(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: (_ for _ in ()).throw(
-            chat_service._ProviderDispatchError(
+            chat_provider_caller.ProviderDispatchError(
                 "provider_not_ready",
                 "not ready",
                 request_json={"model": settings.ai_model, "messages": kwargs["messages"]},

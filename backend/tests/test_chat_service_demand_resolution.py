@@ -1,6 +1,7 @@
 # backend/tests/test_chat_service_demand_resolution.py
 from types import SimpleNamespace
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 
@@ -34,8 +35,32 @@ def _sample_compressed_candidates() -> dict[str, list[dict[str, object]]]:
     }
 
 
+def _provider_result(
+    *,
+    request_id: str,
+    messages: list[dict[str, str]],
+    text: str,
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
+        text=text,
+        endpoint="https://example.invalid/v1/chat/completions",
+        status_code=200,
+        request_headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Client-Request-Id": request_id,
+        },
+        request_json={"model": "gpt-4o-mini", "messages": messages},
+        response_headers={"x-request-id": "up-1"},
+        response_json={"choices": [{"message": {"content": text}}]},
+        raw_response_text='{"choices":[{"message":{"content":"ok"}}]}',
+        upstream_request_id="up-1",
+    )
+
+
 def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
     captured_retrieve: dict[str, object] = {}
+    captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
@@ -60,7 +85,15 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
         "build_context_pack",
         lambda **kwargs: SimpleNamespace(text="ctx", hash="ctx-hash"),
     )
-    monkeypatch.setattr(chat_service, "generate_openai_compat_text", lambda **kwargs: "ok")
+    def fake_provider_call(**kwargs):
+        captured_provider.update(kwargs)
+        return _provider_result(
+            request_id=kwargs["request_id"],
+            messages=kwargs["messages"],
+            text="這是一段正常且足夠長的建議內容，包含 CPU 1 的文書機配置建議。",
+        )
+
+    monkeypatch.setattr(chat_provider_caller, "generate_provider_result", fake_provider_call)
     monkeypatch.setattr(
         chat_service,
         "log_operation",
@@ -76,8 +109,9 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
         db=object(),
     )
 
-    assert response.text == "ok"
+    assert response.text == "這是一段正常且足夠長的建議內容，包含 CPU 1 的文書機配置建議。"
     assert captured_retrieve["categories"] == ["CPU"]
+    assert captured_provider["request_id"] == response.request_id
 
     demand_events = [fields for event, fields in events if event == "demand_resolution"]
     assert len(demand_events) == 1
@@ -88,7 +122,7 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
 
 def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) -> None:
     captured_retrieve: dict[str, object] = {}
-    captured_openai: dict[str, object] = {}
+    captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
@@ -114,11 +148,15 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
         lambda **kwargs: SimpleNamespace(text="CTX BODY", hash="ctx-hash"),
     )
 
-    def fake_openai(**kwargs):
-        captured_openai.update(kwargs)
-        return "ok"
+    def fake_provider_call(**kwargs):
+        captured_provider.update(kwargs)
+        return _provider_result(
+            request_id=kwargs["request_id"],
+            messages=kwargs["messages"],
+            text="建議先看 CPU 1，這是一段正常且足夠長的文書機配置建議內容。",
+        )
 
-    monkeypatch.setattr(chat_service, "generate_openai_compat_text", fake_openai)
+    monkeypatch.setattr(chat_provider_caller, "generate_provider_result", fake_provider_call)
     monkeypatch.setattr(
         chat_service,
         "log_operation",
@@ -131,10 +169,10 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
         db=object(),
     )
 
-    assert response.text == "ok"
+    assert response.text == "建議先看 CPU 1，這是一段正常且足夠長的文書機配置建議內容。"
     assert response.compressed_candidates is not None
     assert captured_retrieve["categories"] == ["CPU"]
-    user_messages = [m["content"] for m in captured_openai["messages"] if m["role"] == "user"]
+    user_messages = [m["content"] for m in captured_provider["messages"] if m["role"] == "user"]
     assert any("## CONTEXT_PACK" in content for content in user_messages)
 
     demand_events = [fields for event, fields in events if event == "demand_resolution"]
@@ -148,7 +186,7 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
 
 
 def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monkeypatch) -> None:
-    captured_openai: dict[str, object] = {}
+    captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
@@ -159,11 +197,15 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monk
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("retrieval should not run")),
     )
 
-    def fake_openai(**kwargs):
-        captured_openai.update(kwargs)
-        return "ok"
+    def fake_provider_call(**kwargs):
+        captured_provider.update(kwargs)
+        return _provider_result(
+            request_id=kwargs["request_id"],
+            messages=kwargs["messages"],
+            text="這是一段正常且足夠長的通用聊天回覆，不需要額外 context pack。",
+        )
 
-    monkeypatch.setattr(chat_service, "generate_openai_compat_text", fake_openai)
+    monkeypatch.setattr(chat_provider_caller, "generate_provider_result", fake_provider_call)
     monkeypatch.setattr(
         chat_service,
         "log_operation",
@@ -176,10 +218,10 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monk
         db=object(),
     )
 
-    assert response.text == "ok"
+    assert response.text == "這是一段正常且足夠長的通用聊天回覆，不需要額外 context pack。"
     assert response.compressed_candidates == {}
     assert response.drop_log == {}
-    user_messages = [m["content"] for m in captured_openai["messages"] if m["role"] == "user"]
+    user_messages = [m["content"] for m in captured_provider["messages"] if m["role"] == "user"]
     assert user_messages
     assert all("## CONTEXT_PACK" not in content for content in user_messages)
 

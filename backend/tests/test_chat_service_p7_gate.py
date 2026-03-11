@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
@@ -29,8 +30,8 @@ def _provider_result(
     *,
     text: str,
     request_id: str,
-) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -88,8 +89,8 @@ def test_generate_chat_reply_sanitizes_control_chars_and_writes_validation_repor
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="abc\0\u200bdef", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -120,8 +121,8 @@ def test_generate_chat_reply_rejects_empty_after_sanitize(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)

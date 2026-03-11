@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
@@ -60,8 +61,8 @@ def _provider_result(
     *,
     text: str,
     request_id: str,
-) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -204,8 +205,8 @@ def test_generate_chat_reply_returns_dq_failed_for_low_quality_text(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="短", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -234,8 +235,8 @@ def test_generate_chat_reply_keeps_success_when_dq_passes(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(
             text="這是一段正常的回覆內容，包含足夠資訊。",
             request_id=kwargs["request_id"],
@@ -264,8 +265,8 @@ def test_generate_chat_reply_skips_dq_when_gate_fails(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)

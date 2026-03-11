@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
@@ -28,8 +29,8 @@ def _provider_result(
     request_id: str,
     *,
     text: str = "ok",
-) -> chat_service._ProviderCallResult:
-    return chat_service._ProviderCallResult(
+) -> chat_provider_caller.ProviderCallResult:
+    return chat_provider_caller.ProviderCallResult(
         text=text,
         endpoint="https://example.invalid/v1/chat/completions",
         status_code=200,
@@ -111,8 +112,8 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
         lambda **kwargs: SimpleNamespace(text="CTX BODY", hash="ctx-hash"),
     )
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(
             kwargs["request_id"],
             text="建議選 CPU 1 搭配 MB 1，這樣的處理器與主機板組合比較穩定。",
@@ -233,8 +234,8 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("retrieval should not run")),
     )
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
+        chat_provider_caller,
+        "generate_provider_result",
         lambda **kwargs: _provider_result(kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -295,9 +296,9 @@ def test_snapshot_request_context_reflects_truncation_warning(
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
-        chat_service,
-        "_generate_provider_result",
-        lambda **kwargs: chat_service._ProviderCallResult(
+        chat_provider_caller,
+        "generate_provider_result",
+        lambda **kwargs: chat_provider_caller.ProviderCallResult(
             text="abcdefghij",
             endpoint="https://example.invalid/v1/chat/completions",
             status_code=200,

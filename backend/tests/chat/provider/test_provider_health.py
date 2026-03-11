@@ -1,4 +1,4 @@
-# backend/tests/test_chat_service_p4_health.py
+# backend/tests/chat/provider/test_provider_health.py
 from __future__ import annotations
 
 from pathlib import Path

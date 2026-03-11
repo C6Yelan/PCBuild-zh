@@ -1,4 +1,4 @@
-# backend/tests/test_chat_service_p6_normalize.py
+# backend/tests/chat/provider/test_provider_normalization.py
 from __future__ import annotations
 
 import json

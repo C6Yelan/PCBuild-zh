@@ -1,4 +1,4 @@
-# backend/tests/test_chat_demand_inference.py
+# backend/tests/chat/inference/test_demand_inference.py
 from backend.services.chat.contracts import ChatMessage
 from backend.services.chat.demand_inference import infer_chat_demand
 

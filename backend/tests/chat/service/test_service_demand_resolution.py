@@ -1,4 +1,4 @@
-# backend/tests/test_chat_service_demand_resolution.py
+# backend/tests/chat/service/test_service_demand_resolution.py
 from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller

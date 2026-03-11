@@ -1,4 +1,4 @@
-# backend/tests/test_chat_p1_contracts.py
+# backend/tests/chat/context_pack/test_retrieval_contracts.py
 import pytest
 from pydantic import ValidationError
 

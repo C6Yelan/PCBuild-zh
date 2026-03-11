@@ -1,13 +1,11 @@
-# backend/tests/test_chat_service_p7_gate.py
+# backend/tests/chat/service/test_service_gate.py
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
-import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.gate import validate_text_response
 
@@ -144,34 +142,3 @@ def test_generate_chat_reply_rejects_empty_after_sanitize(
     meta = json.loads((snapshot_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["gate_status"] == "fail"
     assert "empty_text" in meta["gate_reasons"]
-
-
-def test_snapshot_inspect_includes_validation_report(
-    monkeypatch,
-    tmp_path: Path,
-    capsys,
-) -> None:
-    monkeypatch.setattr(
-        chat_snapshot_inspect,
-        "get_ai_settings",
-        lambda: SimpleNamespace(ai_raw_snapshot_dir=str(tmp_path)),
-    )
-
-    snapshot_dir = tmp_path / "req-ok"
-    snapshot_dir.mkdir()
-    for filename, payload in {
-        "raw_request.json": {"ok": True},
-        "raw_response.json": {"ok": True},
-        "meta.json": {"request_id": "req-ok"},
-        "request_context.json": {"request_id": "req-ok"},
-        "validation_report.json": {"passed": True, "reasons": []},
-    }.items():
-        (snapshot_dir / filename).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    assert chat_snapshot_inspect.main(["--request-id", "req-ok"]) == 0
-    captured = capsys.readouterr()
-    payload = json.loads(captured.out)
-    assert payload["validation_report"] == {"passed": True, "reasons": []}

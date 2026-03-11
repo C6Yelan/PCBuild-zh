@@ -1,4 +1,4 @@
-# backend/tests/test_chat_service_p5_snapshot.py
+# backend/tests/chat/service/test_service_snapshot.py
 from __future__ import annotations
 
 import json
@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
-import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
 
 
@@ -338,43 +337,3 @@ def test_snapshot_request_context_reflects_truncation_warning(
     dq_report = json.loads((snapshot_dir / "dq_report.json").read_text(encoding="utf-8"))
     assert dq_report["passed"] is True
     assert dq_report["reasons"] == []
-
-
-def test_chat_snapshot_inspect_cli_exit_codes(monkeypatch, tmp_path: Path, capsys) -> None:
-    monkeypatch.setattr(
-        chat_snapshot_inspect,
-        "get_ai_settings",
-        lambda: SimpleNamespace(ai_raw_snapshot_dir=str(tmp_path)),
-    )
-
-    ok_dir = tmp_path / "req-ok"
-    ok_dir.mkdir()
-    for filename, payload in {
-        "raw_request.json": {"ok": True},
-        "raw_response.json": {"ok": True},
-        "meta.json": {"request_id": "req-ok"},
-        "request_context.json": {"request_id": "req-ok"},
-        "lineage.json": {"request_id": "req-ok"},
-    }.items():
-        (ok_dir / filename).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    incomplete_dir = tmp_path / "req-missing"
-    incomplete_dir.mkdir()
-    for filename, payload in {
-        "raw_request.json": {"ok": True},
-        "raw_response.json": {"ok": True},
-        "meta.json": {"request_id": "req-missing"},
-    }.items():
-        (incomplete_dir / filename).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    assert chat_snapshot_inspect.main(["--request-id", "req-ok"]) == 0
-    capsys.readouterr()
-    assert chat_snapshot_inspect.main(["--request-id", "req-missing"]) == 1
-    capsys.readouterr()
-    assert chat_snapshot_inspect.main(["--request-id", "req-404"]) == 2

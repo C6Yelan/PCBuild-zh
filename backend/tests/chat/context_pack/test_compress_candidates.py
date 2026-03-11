@@ -1,4 +1,4 @@
-# backend/tests/test_chat_p2_compress_candidates.py
+# backend/tests/chat/context_pack/test_compress_candidates.py
 from __future__ import annotations
 
 from copy import deepcopy

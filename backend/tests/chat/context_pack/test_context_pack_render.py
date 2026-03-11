@@ -1,4 +1,4 @@
-# backend/tests/test_chat_p3_context_pack_render.py
+# backend/tests/chat/context_pack/test_context_pack_render.py
 from __future__ import annotations
 
 from copy import deepcopy

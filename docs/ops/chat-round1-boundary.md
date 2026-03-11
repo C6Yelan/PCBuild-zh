@@ -32,14 +32,17 @@
 
 ### Test Harness / Acceptance 入口
 - `python -m backend.tools.ops.chat_release_check --mode p10`
-- `backend/tests/test_chat_release_check.py`
-- `backend/tests/test_chat_service_*.py`
-- `backend/tests/test_chat_p1_retrieval_ordering.py`
-- `backend/tests/test_chat_p2_compress_candidates.py`
-- `backend/tests/test_chat_p3_context_pack_render.py`
-- `backend/tests/test_chat_demand_inference.py`
-- `backend/tests/test_chat_p0_contracts.py`
-- `backend/tests/test_chat_a1_provider_config.py`
+- `backend/tests/chat/harness/test_release_check.py`
+- `backend/tests/chat/service/*.py`
+- `backend/tests/chat/context_pack/*.py`
+- `backend/tests/chat/provider/*.py`
+- `backend/tests/chat/inference/*.py`
+- `backend/tests/chat/contracts/*.py`
+
+## 測試命名規則
+- chat 測試統一放在 `backend/tests/chat/<group>/`。
+- 檔名以責任或行為命名，例如 `test_service_snapshot.py`、`test_retrieval_ordering.py`。
+- 階段代號僅保留在歷史文件、CLI mode、migration 與治理語彙，不再作為測試主檔名。
 
 ## Step 2 現況
 
@@ -75,16 +78,16 @@
 | 檔案 | 目前對外可見名稱 | 目前被誰引用 | round 1 狀態 | private helper 外溢 |
 | --- | --- | --- | --- | --- |
 | `backend/services/chat/__init__.py` | `generate_chat_reply` | `backend/api/routes/chat.py` | 保留正式 package public entrypoint | 否 |
-| `backend/services/chat/service.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、多數 `test_chat_service_*` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已直接接到 seam | 否；不再提供跨模組可見的 provider / snapshot private patch 點 |
-| `backend/services/chat/provider_caller.py` | `build_provider_messages`、`generate_provider_result`、`ProviderCallResult`、`ProviderDispatchError` | `service.py`、`chat_release_check.py`、多個 service tests | 已成 round-1 provider seam；先保留 path，不做 rename | 否 |
+| `backend/services/chat/service.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、`backend/tests/chat/service/*.py` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已直接接到 seam | 否；不再提供跨模組可見的 provider / snapshot private patch 點 |
+| `backend/services/chat/provider_caller.py` | `build_provider_messages`、`generate_provider_result`、`ProviderCallResult`、`ProviderDispatchError` | `service.py`、`chat_release_check.py`、`backend/tests/chat/provider/*.py`、`backend/tests/chat/service/*.py` | 已成 round-1 provider seam；先保留 path，不做 rename | 否 |
 | `backend/services/chat/snapshot_store.py` | `persist_ai_snapshot`、`update_snapshot_meta`、`snapshot_root`、`snapshot_dir`、`read_json_file`、`build_candidate_lineage_categories` | `service.py`、`staging.py`、inspect CLIs | 已成 round-1 snapshot persistence seam；保留 path | 否 |
 | `backend/services/chat/staging.py` | `ChatStagingRecord`、`persist_chat_staging_record`、`persist_chat_quarantine_entry`、`build_chat_staging_record`、`persist_chat_stage_or_quarantine` | `service.py` | 已成 round-1 staging/quarantine seam；保留 path | 否 |
-| `backend/services/chat/health.py` | `run_provider_health_check` | `backend/tools/ops/chat_provider_healthcheck.py`、`backend/tools/ops/chat_regression_report.py`、`test_chat_service_p4_health.py` | 保留 official ops 的 service-side support | 否 |
-| `backend/services/chat/context_pack/retrieval.py` | `P1Demand`、`CandidatePart`、`P1RetrievalResult`、`retrieve_topk_candidates`、`build_category_retrieval_stmt` | `service.py`、`test_chat_p1_contracts.py`、`test_chat_p1_retrieval_ordering.py` | 路徑先保留；`build_category_retrieval_stmt` 作為 SQL ordering contract seam | 否 |
-| `backend/services/chat/context_pack/compress.py` | `compress_candidates` | `service.py`、`test_chat_p2_compress_candidates.py` | 保留 | 否 |
-| `backend/services/chat/context_pack/render.py` | `build_context_pack`、`canonicalize_text_for_hash`、`hash_context_pack` | `service.py`、`test_chat_p3_context_pack_render.py` | 保留 | 否 |
+| `backend/services/chat/health.py` | `run_provider_health_check` | `backend/tools/ops/chat_provider_healthcheck.py`、`backend/tools/ops/chat_regression_report.py`、`backend/tests/chat/provider/test_provider_health.py` | 保留 official ops 的 service-side support | 否 |
+| `backend/services/chat/context_pack/retrieval.py` | `P1Demand`、`CandidatePart`、`P1RetrievalResult`、`retrieve_topk_candidates`、`build_category_retrieval_stmt` | `service.py`、`backend/tests/chat/context_pack/test_retrieval_contracts.py`、`backend/tests/chat/context_pack/test_retrieval_ordering.py` | 路徑先保留；`build_category_retrieval_stmt` 作為 SQL ordering contract seam | 否 |
+| `backend/services/chat/context_pack/compress.py` | `compress_candidates` | `service.py`、`backend/tests/chat/context_pack/test_compress_candidates.py`、`backend/tests/chat/service/test_service_compress_logging.py` | 保留 | 否 |
+| `backend/services/chat/context_pack/render.py` | `build_context_pack`、`canonicalize_text_for_hash`、`hash_context_pack` | `service.py`、`backend/tests/chat/context_pack/test_context_pack_render.py` | 保留 | 否 |
 | `backend/services/chat/clients/openai_compat_client.py` | `generate_openai_compat_completion`、`generate_openai_compat_text`、`OpenAICompatError`、`OpenAICompatResult` | provider seam、tests | 保留 path | 否 |
-| `backend/services/chat/demand_inference.py` | `infer_chat_demand` | `service.py`、`test_chat_demand_inference.py` | 保留 | 否 |
+| `backend/services/chat/demand_inference.py` | `infer_chat_demand` | `service.py`、`backend/tests/chat/inference/test_demand_inference.py`、`backend/tests/chat/service/test_service_demand_resolution.py` | 保留 | 否 |
 | `backend/services/chat/prompt.py` | `build_prompt` | `provider_caller.py` | internal-only module | 否 |
 | `backend/services/chat/gate.py` | `validate_text_response`、`TextValidationReport` | `service.py`、gate tests | internal-only module | 否 |
 | `backend/services/chat/dq.py` | `evaluate_text_dq`、`DQReport` | `service.py`、DQ tests | internal-only module | 否 |
@@ -96,10 +99,10 @@
 | 檔案 | 目前對外可見名稱 | 目前被誰引用 | round 1 狀態 | private helper 外溢 |
 | --- | --- | --- | --- | --- |
 | `backend/tools/ops/chat_provider_healthcheck.py` | CLI `python -m backend.tools.ops.chat_provider_healthcheck`、`main()` | `docs/ops/chat-provider-health.md`、`docs/ops/ai-baseline-freeze.md` | official ops | 否 |
-| `backend/tools/ops/chat_regression_report.py` | CLI `python -m backend.tools.ops.chat_regression_report`、`main()` | `docs/ops/ai-baseline-freeze.md`、`test_chat_service_p10_publish.py` | official ops | 否 |
-| `backend/tools/ops/chat_snapshot_inspect.py` | CLI `python -m backend.tools.ops.chat_snapshot_inspect`、`main()` | `docs/ops/chat-snapshot-audit.md`、snapshot/gate/dq tests | official ops；已共用 `snapshot_store` loader | 否 |
-| `backend/tools/ops/chat_staging_inspect.py` | CLI `python -m backend.tools.ops.chat_staging_inspect`、`main()` | `test_chat_service_p9_staging.py` | official ops；已共用 `snapshot_store` loader | 否 |
-| `backend/tools/ops/chat_release_check.py` | CLI `python -m backend.tools.ops.chat_release_check --mode p10`、`run_p10_release_check()`、`main()` | `docs/ops/chat-snapshot-audit.md`、`docs/ops/ai-baseline-freeze.md`、`test_chat_release_check.py` | test harness / acceptance surface；保留 CLI 名稱與 summary shape | 否；已改 patch provider seam |
+| `backend/tools/ops/chat_regression_report.py` | CLI `python -m backend.tools.ops.chat_regression_report`、`main()` | `docs/ops/ai-baseline-freeze.md`、`backend/tests/chat/ops/test_regression_report.py` | official ops | 否 |
+| `backend/tools/ops/chat_snapshot_inspect.py` | CLI `python -m backend.tools.ops.chat_snapshot_inspect`、`main()` | `docs/ops/chat-snapshot-audit.md`、`backend/tests/chat/ops/test_snapshot_inspect.py` | official ops；已共用 `snapshot_store` loader | 否 |
+| `backend/tools/ops/chat_staging_inspect.py` | CLI `python -m backend.tools.ops.chat_staging_inspect`、`main()` | `backend/tests/chat/ops/test_staging_inspect.py` | official ops；已共用 `snapshot_store` loader | 否 |
+| `backend/tools/ops/chat_release_check.py` | CLI `python -m backend.tools.ops.chat_release_check --mode p10`、`run_p10_release_check()`、`main()` | `docs/ops/chat-snapshot-audit.md`、`docs/ops/ai-baseline-freeze.md`、`backend/tests/chat/harness/test_release_check.py` | test harness / acceptance surface；保留 CLI 名稱與 summary shape | 否；已改 patch provider seam |
 
 ## 檔案分類
 
@@ -113,10 +116,27 @@
 
 ### Test Harness
 - `backend/tools/ops/chat_release_check.py`
-- `backend/tests/test_chat_release_check.py`
-- `backend/tests/test_chat_service_p5_snapshot.py` 內的 snapshot inspect CLI contract 測試
-- `backend/tests/test_chat_service_p9_staging.py` 內的 staging inspect CLI contract 測試
-- `backend/tests/test_chat_service_p10_publish.py` 內的 release-like publish / retry 驗證
+- `backend/tests/chat/harness/test_release_check.py`
+
+### Ops Contract Tests
+- `backend/tests/chat/ops/test_snapshot_inspect.py`
+- `backend/tests/chat/ops/test_staging_inspect.py`
+- `backend/tests/chat/ops/test_regression_report.py`
+
+### Service Behavior Tests
+- `backend/tests/chat/service/*.py`
+
+### Context Pack Tests
+- `backend/tests/chat/context_pack/*.py`
+
+### Provider Tests
+- `backend/tests/chat/provider/*.py`
+
+### Inference Tests
+- `backend/tests/chat/inference/*.py`
+
+### Contracts Tests
+- `backend/tests/chat/contracts/*.py`
 
 ### Internal Support Seams
 - `backend/services/chat/provider_caller.py`
@@ -134,8 +154,8 @@
 
 ## 目前剩餘的 private helper debt
 - chat round 1 既知的 private-helper test dependency 已清零。
-- `backend/tests/test_chat_p1_retrieval_ordering.py` 已改走 `build_category_retrieval_stmt`。
-- `backend/tests/test_chat_service_demand_resolution.py` 已改 patch `backend.services.chat.snapshot_store.persist_ai_snapshot`。
+- `backend/tests/chat/context_pack/test_retrieval_ordering.py` 已改走 `build_category_retrieval_stmt`。
+- `backend/tests/chat/service/test_service_demand_resolution.py` 已改 patch `backend.services.chat.snapshot_store.persist_ai_snapshot`。
 - `backend/services/chat/service.py` 仍有 internal-only `_...` orchestration helpers，但它們不再作為跨模組 patch / import 點。
 
 ## 必須保留的 compat 點
@@ -168,4 +188,5 @@
 
 ## Round 1 結論
 - chat round 1 architecture cleanup complete。
+- chat 測試已完成責任式命名與 `backend/tests/chat/*` 歸位整理。
 - 下一步建議進入第 2 階段：AI log contract / Loki / Grafana dashboard。

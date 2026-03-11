@@ -1,4 +1,4 @@
-# backend/tests/test_chat_p0_contracts.py
+# backend/tests/chat/contracts/test_chat_contracts.py
 import pytest
 from pydantic import SecretStr, ValidationError
 

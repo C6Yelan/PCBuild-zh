@@ -1,4 +1,4 @@
-# backend/tests/test_chat_service_p2_log.py
+# backend/tests/chat/service/test_service_compress_logging.py
 import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 

@@ -1,4 +1,4 @@
-# backend/tests/test_chat_release_check.py
+# backend/tests/chat/harness/test_release_check.py
 from __future__ import annotations
 
 import json

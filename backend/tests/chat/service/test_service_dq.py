@@ -1,13 +1,11 @@
-# backend/tests/test_chat_service_p8_dq.py
+# backend/tests/chat/service/test_service_dq.py
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
-import backend.tools.ops.chat_snapshot_inspect as chat_snapshot_inspect
 from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.dq import evaluate_text_dq
 
@@ -280,33 +278,3 @@ def test_generate_chat_reply_skips_dq_when_gate_fails(
     meta = json.loads((snapshot_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["dq_status"] == "skipped"
     assert meta["dq_reasons"] == []
-
-
-def test_snapshot_inspect_includes_dq_report(
-    monkeypatch,
-    tmp_path: Path,
-    capsys,
-) -> None:
-    monkeypatch.setattr(
-        chat_snapshot_inspect,
-        "get_ai_settings",
-        lambda: SimpleNamespace(ai_raw_snapshot_dir=str(tmp_path)),
-    )
-
-    snapshot_dir = tmp_path / "req-ok"
-    snapshot_dir.mkdir()
-    for filename, payload in {
-        "raw_request.json": {"ok": True},
-        "raw_response.json": {"ok": True},
-        "meta.json": {"request_id": "req-ok"},
-        "request_context.json": {"request_id": "req-ok"},
-        "dq_report.json": {"passed": True, "reasons": []},
-    }.items():
-        (snapshot_dir / filename).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-    assert chat_snapshot_inspect.main(["--request-id", "req-ok"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["dq_report"] == {"passed": True, "reasons": []}

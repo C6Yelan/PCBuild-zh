@@ -1,4 +1,4 @@
-# backend/tests/test_chat_p1_retrieval_ordering.py
+# backend/tests/chat/context_pack/test_retrieval_ordering.py
 from sqlalchemy.dialects import postgresql
 
 from backend.services.chat.context_pack.retrieval import P1Demand, build_category_retrieval_stmt

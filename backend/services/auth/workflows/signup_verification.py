@@ -1,4 +1,4 @@
-# backend/services/workflows/signup_verification.py
+# backend/auth/services/workflows/signup_verification.py
 from __future__ import annotations
 
 from datetime import timedelta
@@ -68,15 +68,14 @@ def send_signup_verification_for_user(
     return str(verify_url)
 
 
-def resend_signup_verification_for_email(
+def resend_signup_verification_for_candidate(
     db: Session,
-    email: str,
+    user: User | None,
     *,
     request: Request,
 ) -> None:
     min_interval_minutes = RESEND_MIN_INTERVAL_MINUTES[VerificationPurpose.SIGNUP]
 
-    user = db.query(User).filter(User.email == email).first()
     if user is None or user.is_active:
         return
 
@@ -93,3 +92,13 @@ def resend_signup_verification_for_email(
             )
 
     send_signup_verification_for_user(db=db, user=user, request=request)
+
+
+def resend_signup_verification_for_email(
+    db: Session,
+    email: str,
+    *,
+    request: Request,
+) -> None:
+    user = db.query(User).filter(User.email == email).first()
+    resend_signup_verification_for_candidate(db=db, user=user, request=request)

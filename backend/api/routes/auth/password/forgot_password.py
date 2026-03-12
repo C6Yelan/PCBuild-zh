@@ -3,14 +3,14 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
-from backend.api.auth.config import EMAIL_ADAPTER, RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS
-from backend.api.auth.utils import raise_400
+from backend.api.auth.config import RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS
 from backend.api.routes.auth._shared.email_action_guards import (
     build_email_action_log_fields,
-    build_rate_limited_exception,
     compute_retry_after_seconds,
+    find_user_by_email,
+    raise_email_action_rate_limited,
+    validate_email_action_email,
 )
-from backend.models import User
 from backend.schemas.auth import ForgotPasswordIn
 from backend.services.auth.workflows.password_reset import send_password_reset_for_user
 from backend.services.auth.verification.core import (
@@ -40,17 +40,13 @@ def forgot_password(
     - 若帳號存在，才實際發 PASSWORD_RESET token 並寄信
     - 若請求過於頻繁，回 429 告知稍後再試
     """
-    try:
-        EMAIL_ADAPTER.validate_python(body.email)
-    except Exception:
-        log_security(
-            "authn_input_invalid",
-            reason="email_format",
-            **build_email_action_log_fields(request, endpoint="forgot_password"),
-        )
-        raise_400({"email": "Email 格式不正確。"})
+    validate_email_action_email(
+        request,
+        email=body.email,
+        endpoint="forgot_password",
+    )
 
-    user = db.query(User).filter(User.email == body.email).first()
+    user = find_user_by_email(db, email=body.email)
     if not user:
         log_security(
             "password_reset_request_unknown",
@@ -67,15 +63,12 @@ def forgot_password(
             purpose=VerificationPurpose.PASSWORD_RESET,
             cooldown_seconds=RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS,
         )
-
-        log_security(
-            "password_reset_rate_limited",
-            **build_email_action_log_fields(request, user_id=user.id, retry_after=retry_after),
-        )
-
-        raise build_rate_limited_exception(
+        raise_email_action_rate_limited(
+            request,
+            event="password_reset_rate_limited",
             message="重設密碼請求太頻繁，請稍後再試。",
             retry_after=retry_after,
+            user_id=user.id,
         )
 
     log_security(

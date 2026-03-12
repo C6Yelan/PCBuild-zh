@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import math
 from datetime import timedelta
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from backend.api.auth.config import EMAIL_ADAPTER
+from backend.api.auth.utils import raise_400
 from backend.models import User
-from backend.core.seclog import security_ctx
+from backend.core.seclog import log_security, security_ctx
 from backend.services.auth.verification.core import (
     VerificationPurpose,
     get_latest_token_for_user,
@@ -45,6 +47,32 @@ def build_email_action_log_fields(
     return fields
 
 
+def validate_email_action_email(
+    request: Request,
+    *,
+    email: str,
+    endpoint: str,
+) -> str:
+    try:
+        EMAIL_ADAPTER.validate_python(email)
+    except Exception:
+        log_security(
+            "authn_input_invalid",
+            reason="email_format",
+            **build_email_action_log_fields(request, endpoint=endpoint),
+        )
+        raise_400({"email": "Email 格式不正確。"})
+    return email
+
+
+def find_user_by_email(
+    db: Session,
+    *,
+    email: str,
+) -> User | None:
+    return db.query(User).filter(User.email == email).first()
+
+
 def compute_retry_after_seconds(
     db: Session,
     *,
@@ -74,4 +102,28 @@ def build_rate_limited_exception(*, message: str, retry_after: int) -> HTTPExcep
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         detail={"errors": {"_global": message}},
         headers={"Retry-After": str(int(retry_after))},
+    )
+
+
+def raise_email_action_rate_limited(
+    request: Request,
+    *,
+    event: str,
+    message: str,
+    retry_after: int,
+    email: str | None = None,
+    user_id: Any | None = None,
+) -> NoReturn:
+    log_security(
+        event,
+        **build_email_action_log_fields(
+            request,
+            email=email,
+            user_id=user_id,
+            retry_after=retry_after,
+        ),
+    )
+    raise build_rate_limited_exception(
+        message=message,
+        retry_after=retry_after,
     )

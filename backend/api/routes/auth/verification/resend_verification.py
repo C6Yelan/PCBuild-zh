@@ -3,17 +3,17 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session as OrmSession
 
 from backend.api.dependencies.db import get_db
-from backend.api.auth.config import EMAIL_ADAPTER, RESEND_SIGNUP_MIN_INTERVAL_SECONDS
-from backend.api.auth.utils import raise_400
+from backend.api.auth.config import RESEND_SIGNUP_MIN_INTERVAL_SECONDS
 from backend.api.routes.auth._shared.email_action_guards import (
     build_email_action_log_fields,
-    build_rate_limited_exception,
     compute_retry_after_seconds,
+    find_user_by_email,
+    raise_email_action_rate_limited,
+    validate_email_action_email,
 )
 from backend.api.dependencies.auth import try_get_current_user
-from backend.models import User
 from backend.schemas.auth import ResendVerificationIn
-from backend.services.auth.workflows.signup_verification import resend_signup_verification_for_email
+from backend.services.auth.workflows.signup_verification import resend_signup_verification_for_candidate
 from backend.services.auth.verification.core import (
     VerificationEmailRateLimitedError,
     VerificationPurpose,
@@ -48,46 +48,32 @@ def resend_verification(
         email = current_user.email
 
     # B) 有 email（或從 session 推到 email）：才做格式檢查與寄送
-    try:
-        EMAIL_ADAPTER.validate_python(email)
-    except Exception:
-        log_security(
-            "authn_input_invalid",
-            reason="email_format",
-            **build_email_action_log_fields(request, endpoint="resend_verification"),
-        )
-        raise_400({"email": "Email 格式不正確。"})
+    validate_email_action_email(
+        request,
+        email=email,
+        endpoint="resend_verification",
+    )
 
     # 先查 user（用於 429 時精準算剩餘秒數；不存在/已啟用也不暴露）
-    user = db.query(User).filter(User.email == email).first()
+    user = find_user_by_email(db, email=email)
 
     try:
-        resend_signup_verification_for_email(db=db, email=email, request=request)
+        resend_signup_verification_for_candidate(db=db, user=user, request=request)
     except VerificationEmailRateLimitedError:
-        retry_after = RESEND_SIGNUP_MIN_INTERVAL_SECONDS
-
-        # 若查得到 user（且尚未啟用），用最新 token.created_at 精準計算剩餘秒數
-        if user is not None and not user.is_active:
-            retry_after = compute_retry_after_seconds(
-                db,
-                user=user,
-                purpose=VerificationPurpose.SIGNUP,
-                cooldown_seconds=RESEND_SIGNUP_MIN_INTERVAL_SECONDS,
-            )
-
-        log_security(
-            "email_verification_resend_rate_limited",
-            **build_email_action_log_fields(
-                request,
-                email=email,
-                user_id=(user.id if (user is not None) else "-"),
-                retry_after=retry_after,
-            ),
+        retry_after = compute_retry_after_seconds(
+            db,
+            user=(user if user is not None and not user.is_active else None),
+            purpose=VerificationPurpose.SIGNUP,
+            cooldown_seconds=RESEND_SIGNUP_MIN_INTERVAL_SECONDS,
         )
-        raise build_rate_limited_exception(
+        raise_email_action_rate_limited(
+            request,
+            event="email_verification_resend_rate_limited",
             # 重要：不要放到 email 欄位，避免前端把輸入框標紅
             message="驗證信寄送太頻繁，請稍後再試。",
             retry_after=retry_after,
+            email=email,
+            user_id=(user.id if (user is not None) else "-"),
         )
 
     log_security(

@@ -6,25 +6,21 @@ from __future__ import annotations
 from collections.abc import Mapping, Set as AbstractSet
 from typing import Any
 
+from backend.core.sensitive_redaction_policy import (
+    SHARED_SENSITIVE_KEY_NAMES,
+    matches_sensitive_key,
+)
+
 REDACTED = "[REDACTED]"
 
-DEFAULT_SENSITIVE_LOG_KEYS = {
+DEFAULT_SENSITIVE_LOG_KEYS = SHARED_SENSITIVE_KEY_NAMES | {
     "password",
     "token",
     "access_token",
-    "api_key",
-    "x_api_key",
-    "x-api-key",
-    "openai_api_key",
-    "gemini_api_key",
-    "google_api_key",
-    "ai_oai_api_key",
-    "ai_api_key",
     "refresh_token",
     "public_token",
     "token_hash",
     "csrf_token",
-    "authorization",
     "cookie",
     "set_cookie",
     "session",
@@ -37,9 +33,7 @@ def is_sensitive_log_key(
     *,
     sensitive_keys: AbstractSet[str] = DEFAULT_SENSITIVE_LOG_KEYS,
 ) -> bool:
-    if not key:
-        return False
-    return key.strip().lower() in sensitive_keys
+    return matches_sensitive_key(key, sensitive_keys=sensitive_keys)
 
 
 def redact_log_value(

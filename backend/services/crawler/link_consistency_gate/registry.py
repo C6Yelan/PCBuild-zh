@@ -2,6 +2,7 @@
 # Link Consistency Gate 策略路由表
 from __future__ import annotations
 
+from backend.services.crawler.registry_primitives import lookup_registry_entry, register_aliases
 from .strategies.base import NotImplementedStrategy, Strategy
 from .strategies.case import CaseStrategy
 from .strategies.case_fan import CaseFanStrategy
@@ -17,27 +18,26 @@ from .strategies.ram import RamStrategy
 from .strategies.ssd import SsdStrategy
 
 
-REGISTRY: dict[str, Strategy] = {} # NotImplementedStrategy 作為預設回應
+REGISTRY: dict[str, Strategy] = { # NotImplementedStrategy 作為預設回應
+    "CPU": CpuStrategy(),
+    "HDD": HddStrategy(),
+    "MB": MbStrategy(),
+    "RAM": RamStrategy(),
+    "SSD": SsdStrategy(),
+    "COOLER": CoolerStrategy(),
+    "LIQUID_COOLING": LiquidCoolingStrategy(),
+    "GPU": GpuStrategy(),
+    "VGA": GpuStrategy(),
+    "CASE": CaseStrategy(),
+    "CASE_FAN": CaseFanStrategy(),
+    "EXPANSION_CARD": ExpansionCardStrategy(),
+}
 _DEFAULT_STRATEGY: Strategy = NotImplementedStrategy() # 預設策略，當沒有找到對應類別的策略時使用
 
-# Explicit registry only; no category-specific branching here.
-REGISTRY["CPU"] = CpuStrategy()
-REGISTRY["HDD"] = HddStrategy()
-REGISTRY["MB"] = MbStrategy()
-REGISTRY["RAM"] = RamStrategy()
-REGISTRY["SSD"] = SsdStrategy()
-REGISTRY["COOLER"] = CoolerStrategy()
-REGISTRY["LIQUID_COOLING"] = LiquidCoolingStrategy()
-REGISTRY["GPU"] = GpuStrategy()
-REGISTRY["VGA"] = GpuStrategy()
-REGISTRY["CASE"] = CaseStrategy()
-REGISTRY["CASE_FAN"] = CaseFanStrategy()
-REGISTRY["EXPANSION_CARD"] = ExpansionCardStrategy()
 _psu = PsuStrategy()
-REGISTRY["POWER"] = _psu
-REGISTRY["PSU"] = _psu
+register_aliases(REGISTRY, ("POWER", "PSU"), _psu)
 
 
 def get_strategy(category: str) -> Strategy: # 根據類別名稱從註冊表中獲取對應的策略實例
     # Explicit registry only; no category-specific branching here.
-    return REGISTRY.get(category, _DEFAULT_STRATEGY)
+    return lookup_registry_entry(REGISTRY, category, default=_DEFAULT_STRATEGY)

@@ -1,6 +1,11 @@
 # backend/services/crawler/part_registry.py
 from __future__ import annotations
 
+from backend.services.crawler.registry_primitives import (
+    lookup_registry_entry,
+    normalize_registry_key,
+)
+
 
 _SOURCE_PART_URLS: dict[str, dict[str, str]] = {
     "coolpc": {
@@ -21,26 +26,32 @@ _SOURCE_PART_URLS: dict[str, dict[str, str]] = {
 
 
 def get_source_part_urls(source: str) -> dict[str, str]:
-    key = (source or "").strip().lower()
-    urls = _SOURCE_PART_URLS.get(key)
-    if urls is None:
-        raise KeyError(f"unsupported source for incremental refresh: {source!r}")
+    key = normalize_registry_key(source, case="lower")
+    urls = lookup_registry_entry(
+        _SOURCE_PART_URLS,
+        key,
+        missing_factory=lambda _key: KeyError(f"unsupported source for incremental refresh: {source!r}"),
+    )
     return dict(urls)
 
 
 def resolve_source_parts(source: str, parts: str | None) -> list[tuple[str, str]]:
     urls = get_source_part_urls(source)
-    if parts is None or (parts.strip().lower() in ("", "all")):
+    normalized_parts = normalize_registry_key(parts, case="lower")
+    if parts is None or normalized_parts in ("", "all"):
         return [(part, urls[part]) for part in urls.keys()]
 
     selected: list[str] = []
+    allowed = ",".join(urls.keys())
     for raw in parts.split(","):
-        token = raw.strip().lower().replace("-", "_")
+        token = normalize_registry_key(raw, case="lower", hyphen_to_underscore=True)
         if not token:
             continue
-        if token not in urls:
-            allowed = ",".join(urls.keys())
-            raise ValueError(f"unknown part={token!r}, allowed={allowed}")
+        lookup_registry_entry(
+            urls,
+            token,
+            missing_factory=lambda _key: ValueError(f"unknown part={token!r}, allowed={allowed}"),
+        )
         if token not in selected:
             selected.append(token)
 

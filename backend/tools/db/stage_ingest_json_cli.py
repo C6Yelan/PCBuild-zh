@@ -4,24 +4,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy.orm import Session
-
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import SessionLocal
-from backend.services.crawler.staging.conventions import get_crawler_env, make_item_key
+from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env, make_item_key
 from backend.services.crawler.staging.repo import (
     create_ingest_run,
     upsert_stg_items,
     upsert_stg_gate_result,
 )
+from backend.tools.crawler.artifact_io import read_json_input, require_json_object_list
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
@@ -32,36 +29,32 @@ def _load_payload(path: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
     1) list: 視為 items
     2) object: {"items":[...], "gate_results":[...]}，gate_results 可省略
     """
-    if path == "-":
-        data = json.load(sys.stdin)
-    else:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    data = read_json_input(path)
 
     if isinstance(data, list):
-        items = data
+        items = require_json_object_list(
+            data,
+            type_error='輸入 JSON 格式不符：預期為 list，或 {"items":[...], "gate_results":[...]}。',
+            item_error="items 第 {index} 筆不是 object/dict。",
+        )
         gate_results: list[dict[str, Any]] = []
     elif isinstance(data, dict) and isinstance(data.get("items"), list):
-        items = data["items"]
+        items = require_json_object_list(
+            data["items"],
+            type_error='輸入 JSON 格式不符：預期為 list，或 {"items":[...], "gate_results":[...]}。',
+            item_error="items 第 {index} 筆不是 object/dict。",
+        )
         gate_results = data.get("gate_results") or []
         if not isinstance(gate_results, list):
             raise SystemExit('gate_results 必須是 list（或省略）。')
+        gate_results = require_json_object_list(
+            gate_results,
+            type_error='gate_results 必須是 list（或省略）。',
+            item_error="gate_results 第 {index} 筆不是 object/dict。",
+        )
     else:
         raise SystemExit('輸入 JSON 格式不符：預期為 list，或 {"items":[...], "gate_results":[...]}。')
-
-    out_items: list[dict[str, Any]] = []
-    for i, it in enumerate(items):
-        if not isinstance(it, dict):
-            raise SystemExit(f"items 第 {i} 筆不是 object/dict。")
-        out_items.append(it)
-
-    out_gates: list[dict[str, Any]] = []
-    for i, gr in enumerate(gate_results):
-        if not isinstance(gr, dict):
-            raise SystemExit(f"gate_results 第 {i} 筆不是 object/dict。")
-        out_gates.append(gr)
-
-    return out_items, out_gates
+    return items, gate_results
 
 
 def _validate_gate(gr: dict[str, Any]) -> None:
@@ -87,7 +80,7 @@ def main() -> int:
 
     src = str(args.source)
     input_name = "stdin" if args.input == "-" else Path(args.input).name
-    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    app_git_sha = get_app_git_sha()
     item_total: int | None = None
     gate_total: int | None = None
     t0 = time.monotonic()

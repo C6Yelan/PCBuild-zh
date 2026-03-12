@@ -12,6 +12,10 @@ def get_crawler_env() -> str:
     return os.getenv("APP_ENV") or os.getenv("ENV") or "prod"
 
 
+def get_app_git_sha() -> str:
+    return (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+
+
 def make_item_key(source: str, item: dict[str, Any]) -> str:
     seed = "|".join(
         [

@@ -18,7 +18,7 @@ def build_crawl_parse_argv(
     *,
     source: str,
     snapshot_dir: str,
-    run_id: UUID,
+    run_id: str | UUID,
     dq_outdir: Path,
     t5_outdir: Path | None,
     t5_limit: int,
@@ -59,6 +59,45 @@ def build_crawl_parse_argv(
         for pattern in t5_block_pattern:
             argv.extend(["--t5-block-pattern", pattern])
 
+    return argv
+
+
+def build_stage_from_snapshot_argv(
+    *,
+    source: str,
+    snapshot_dir: str,
+    run_id: str,
+    artifact_dir: Path,
+    t5_limit: int,
+    t5_min_interval_ms: int,
+    t5_timeout_s: float,
+    t5_max_redirects: int,
+    t5_max_bytes: int,
+    t5_block_pattern: list[str],
+) -> list[str]:
+    argv = [
+        "--source",
+        source,
+        "--snapshot-dir",
+        snapshot_dir,
+        "--run-id",
+        str(run_id),
+        "--artifact-dir",
+        str(artifact_dir),
+        "--enable-t5",
+        "--t5-limit",
+        str(int(t5_limit)),
+        "--t5-min-interval-ms",
+        str(int(t5_min_interval_ms)),
+        "--t5-timeout-s",
+        str(float(t5_timeout_s)),
+        "--t5-max-redirects",
+        str(int(t5_max_redirects)),
+        "--t5-max-bytes",
+        str(int(t5_max_bytes)),
+    ]
+    for pattern in t5_block_pattern:
+        argv.extend(["--t5-block-pattern", str(pattern)])
     return argv
 
 

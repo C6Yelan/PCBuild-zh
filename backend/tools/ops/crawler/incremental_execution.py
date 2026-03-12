@@ -11,6 +11,7 @@ from backend.services.crawler.fetch_state_repo import get_fetch_state
 from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
 from backend.tools.db.stage_from_snapshot_cli import main as t7_stage_main
 from backend.tools.db.merge_from_staging_cli import main as t8_merge_main
+from backend.tools.db.staging_capture import build_crawl_parse_argv, build_stage_from_snapshot_argv
 from backend.tools.ops.crawler.incremental_fetch import record_fetch_state, utc_now
 from backend.tools.ops.crawler.incremental_parsing import (
     extract_json_array,
@@ -39,16 +40,19 @@ def run_dry_parse_steps(
         part_entry = part["entry_ref"]
         part_logs = run_dir / "parts" / part_type / "logs"
 
-        parse_argv = [
-            "--source",
-            source,
-            "--snapshot-dir",
-            snapshot_dir,
-            "--run-id",
-            run_id,
-            "--dq-outdir",
-            str(run_dir / "parts" / part_type / "dq"),
-        ]
+        parse_argv = build_crawl_parse_argv(
+            source=source,
+            snapshot_dir=snapshot_dir,
+            run_id=run_id,
+            dq_outdir=run_dir / "parts" / part_type / "dq",
+            t5_outdir=None,
+            t5_limit=0,
+            t5_min_interval_ms=0,
+            t5_timeout_s=0.0,
+            t5_max_redirects=0,
+            t5_max_bytes=0,
+            t5_block_pattern=[],
+        )
         parse_rc, parse_stdout, parse_stderr = run_cli_main(crawl_parse_main, parse_argv)
         write_text_file(part_logs / "parse.stdout.log", parse_stdout)
         write_text_file(part_logs / "parse.stderr.log", parse_stderr)
@@ -113,29 +117,18 @@ def run_stage_steps(
             part_logs = run_dir / "parts" / part_type / "logs"
             part_t7_artifact_dir = run_dir / "parts" / part_type / "t7_artifacts"
 
-            stage_argv = [
-                "--source",
-                source,
-                "--snapshot-dir",
-                snapshot_dir,
-                "--run-id",
-                run_id,
-                "--artifact-dir",
-                str(part_t7_artifact_dir),
-                "--enable-t5",
-                "--t5-limit",
-                str(int(args.t5_limit)),
-                "--t5-min-interval-ms",
-                str(int(args.t5_min_interval_ms)),
-                "--t5-timeout-s",
-                str(float(args.t5_timeout_s)),
-                "--t5-max-redirects",
-                str(int(args.t5_max_redirects)),
-                "--t5-max-bytes",
-                str(int(args.t5_max_bytes)),
-            ]
-            for value in args.t5_block_pattern:
-                stage_argv.extend(["--t5-block-pattern", str(value)])
+            stage_argv = build_stage_from_snapshot_argv(
+                source=source,
+                snapshot_dir=snapshot_dir,
+                run_id=run_id,
+                artifact_dir=part_t7_artifact_dir,
+                t5_limit=int(args.t5_limit),
+                t5_min_interval_ms=int(args.t5_min_interval_ms),
+                t5_timeout_s=float(args.t5_timeout_s),
+                t5_max_redirects=int(args.t5_max_redirects),
+                t5_max_bytes=int(args.t5_max_bytes),
+                t5_block_pattern=[str(value) for value in args.t5_block_pattern],
+            )
             stage_rc, stage_stdout, stage_stderr = run_cli_main(t7_stage_main, stage_argv)
             write_text_file(part_logs / "stage.stdout.log", stage_stdout)
             write_text_file(part_logs / "stage.stderr.log", stage_stderr)

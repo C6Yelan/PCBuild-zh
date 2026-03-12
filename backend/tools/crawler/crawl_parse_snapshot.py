@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 
 from backend.core.obs_events import ensure_cli_logging
+from backend.services.crawler.staging.conventions import get_app_git_sha
 from backend.services.crawler.sources import SourceId
 from backend.services.crawler.schema_gate.validate import SchemaGateError
 from backend.tools.crawler.parse_artifacts import (
@@ -51,7 +51,7 @@ def main() -> int:
     ap.add_argument("--t5-block-pattern", action="append", default=[])
     args = ap.parse_args()
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
-    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    app_git_sha = get_app_git_sha()
     src = str(args.source)
 
     # Keep this module path stable for existing pipeline callers; detailed parse/gate steps live in sibling helpers.

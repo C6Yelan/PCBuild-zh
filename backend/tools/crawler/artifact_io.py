@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from hashlib import sha256
 from pathlib import Path
@@ -14,6 +15,33 @@ from typing import Any, Iterable, Mapping
 def read_json_file(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def read_json_input(path: str | Path) -> Any:
+    if str(path) == "-":
+        return json.load(sys.stdin)
+    return read_json_file(Path(path))
+
+
+def require_json_list(payload: Any, *, type_error: str) -> list[Any]:
+    if not isinstance(payload, list):
+        raise SystemExit(type_error.format(type_name=type(payload).__name__))
+    return payload
+
+
+def require_json_object_list(
+    payload: Any,
+    *,
+    type_error: str,
+    item_error: str,
+) -> list[dict[str, Any]]:
+    rows = require_json_list(payload, type_error=type_error)
+    objects: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise SystemExit(item_error.format(index=index, type_name=type(row).__name__))
+        objects.append(row)
+    return objects
 
 
 def write_json_file(path: Path, payload: Any) -> None:

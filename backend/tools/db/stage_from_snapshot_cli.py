@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ from uuid import UUID, uuid4
 
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import SessionLocal
-from backend.services.crawler.staging.conventions import get_crawler_env
+from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env
 from backend.tools.db.staging_artifacts import (
     load_gate_artifacts,
     resolve_artifact_paths,
@@ -55,7 +54,7 @@ def main() -> int:
     run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
     src = str(args.source)
-    app_git_sha = (os.getenv("APP_GIT_SHA") or "unknown").strip() or "unknown"
+    app_git_sha = get_app_git_sha()
     artifact_dir = None
     t0 = time.monotonic()
 

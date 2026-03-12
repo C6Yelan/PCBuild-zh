@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 from backend.services.crawler.dq_gate import run_dq_gate
-from backend.tools.crawler.artifact_io import read_json_file
+from backend.tools.crawler.artifact_io import read_json_file, require_json_list
 from backend.tools.crawler.dq_reports import format_dq_gate_result_line, write_dq_artifacts
 
 
@@ -40,9 +40,10 @@ def main() -> int:
     any_errors = False
 
     for fpath in files:
-        data = read_json_file(fpath)
-        if not isinstance(data, list): # 若不是 JSON 陣列，則報錯並退出
-            raise SystemExit(f"input must be a JSON list: {fpath} (got {type(data).__name__})")
+        data = require_json_list(
+            read_json_file(fpath),
+            type_error=f"input must be a JSON list: {fpath} (got {{type_name}})",
+        )
 
         result = run_dq_gate(data) # 執行 DQ Gate，取得結果
         rep = result.report

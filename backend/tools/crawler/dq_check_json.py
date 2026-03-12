@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 
 from backend.services.crawler.dq_gate import run_dq_gate
-from backend.tools.crawler.artifact_io import read_json_file
+from backend.tools.crawler.artifact_io import read_json_file, require_json_list
 from backend.tools.crawler.dq_reports import format_dq_gate_result_line, write_dq_artifacts
 
 
@@ -18,9 +18,10 @@ def main() -> int:
     in_path = Path(args.input).resolve()
     out_dir = Path(args.outdir).resolve()
 
-    data = read_json_file(in_path)
-    if not isinstance(data, list):
-        raise SystemExit(f"input must be a JSON list, got {type(data).__name__}")
+    data = require_json_list(
+        read_json_file(in_path),
+        type_error="input must be a JSON list, got {type_name}",
+    )
 
     result = run_dq_gate(data)
 

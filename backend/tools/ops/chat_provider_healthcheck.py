@@ -1,17 +1,13 @@
-"""Official chat ops CLI: provider smoke and health check."""
-
-# backend/tools/ops/chat_provider_healthcheck.py
+"""Compatibility wrapper for the stable chat provider healthcheck CLI module path."""
 from __future__ import annotations
 
-import json
-
 from backend.services.chat.health import run_provider_health_check
+from backend.tools.ops.chat import chat_provider_healthcheck as _impl
 
 
 def main() -> int:
-    report = run_provider_health_check()
-    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if bool(report.get("pass")) else 2
+    _impl.run_provider_health_check = run_provider_health_check
+    return _impl.main()
 
 
 if __name__ == "__main__":

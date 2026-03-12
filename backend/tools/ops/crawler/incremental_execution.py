@@ -11,11 +11,14 @@ from backend.services.crawler.fetch_state_repo import get_fetch_state
 from backend.tools.crawler.parse.cli import main as crawl_parse_main
 from backend.tools.db.stage_from_snapshot_cli import main as t7_stage_main
 from backend.tools.db.merge_from_staging_cli import main as t8_merge_main
-from backend.tools.db.staging_capture import build_crawl_parse_argv, build_stage_from_snapshot_argv
+from backend.tools.db.staging_capture import (
+    build_crawl_parse_argv,
+    build_stage_from_snapshot_argv,
+    load_stage_summary,
+)
 from backend.tools.ops.crawler.incremental_fetch import record_fetch_state, utc_now
 from backend.tools.ops.crawler.incremental_parsing import (
     extract_json_array,
-    extract_last_json_object,
     parse_t8_counts,
 )
 from backend.tools.ops.crawler.incremental_subprocess import run_cli_main, write_text_file
@@ -133,20 +136,9 @@ def run_stage_steps(
             write_text_file(part_logs / "stage.stdout.log", stage_stdout)
             write_text_file(part_logs / "stage.stderr.log", stage_stderr)
 
-            stage_obj = extract_last_json_object(stage_stdout)
-            staged_total: int | None = None
-            if isinstance(stage_obj, dict):
-                raw_item_total = stage_obj.get("item_total")
-                if raw_item_total is not None:
-                    try:
-                        staged_total = int(raw_item_total)
-                    except (TypeError, ValueError):
-                        staged_total = None
-
-            if staged_total is None:
-                staged_total = int((stage_obj or {}).get("item_inserted") or 0) + int(
-                    (stage_obj or {}).get("item_updated") or 0
-                )
+            stage_summary = load_stage_summary(stage_stdout)
+            stage_obj = stage_summary.result
+            staged_total = int(stage_summary.item_total)
 
             over_limit = bool(args.max_items > 0 and staged_total > int(args.max_items))
             part_entry["parse"] = {
@@ -182,10 +174,10 @@ def run_stage_steps(
                 part_type=part_type,
                 rc=int(stage_rc),
                 item_total=staged_total,
-                item_inserted=int((stage_obj or {}).get("item_inserted") or 0),
-                item_updated=int((stage_obj or {}).get("item_updated") or 0),
-                gate_inserted=int((stage_obj or {}).get("gate_inserted") or 0),
-                gate_updated=int((stage_obj or {}).get("gate_updated") or 0),
+                item_inserted=int(stage_summary.item_inserted),
+                item_updated=int(stage_summary.item_updated),
+                gate_inserted=int(stage_summary.gate_inserted),
+                gate_updated=int(stage_summary.gate_updated),
             )
 
             if stage_rc != 0 or over_limit:

@@ -7,6 +7,7 @@ item payloads, row mapping, and event logging live in sibling helpers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any
 from uuid import UUID, uuid4
@@ -29,6 +30,14 @@ from backend.services.crawler.staging.staging_rows import (
 )
 
 _PCBUILD_PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
+
+
+@dataclass(frozen=True)
+class StagingGateResultWrite:
+    item_key: str
+    gate_name: str
+    status: str
+    detail_json: dict[str, Any] | None = None
 
 
 def create_ingest_run(
@@ -136,3 +145,27 @@ def upsert_stg_gate_result(
     apply_staging_gate_payload(row, payload=payload)
     db.flush()
     return (0, 1)
+
+
+def upsert_stg_gate_results(
+    db: Session,
+    *,
+    run_id: UUID,
+    gate_results: list[StagingGateResultWrite],
+) -> tuple[int, int]:
+    inserted = 0
+    updated = 0
+
+    for gate_result in gate_results:
+        ins, upd = upsert_stg_gate_result(
+            db,
+            run_id=run_id,
+            item_key=gate_result.item_key,
+            gate_name=gate_result.gate_name,
+            status=gate_result.status,
+            detail_json=gate_result.detail_json,
+        )
+        inserted += ins
+        updated += upd
+
+    return inserted, updated

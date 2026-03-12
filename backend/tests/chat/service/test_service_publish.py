@@ -12,48 +12,13 @@ from backend.services.chat.clients.openai_compat_client import (
 from backend.services.chat.contracts import ChatRequest
 
 
-class _FakeSettings:
-    def __init__(self, raw_snapshot_dir: str) -> None:
-        self.ai_oai_base_url = "https://example.invalid/v1"
-        self.ai_oai_api_key = None
-        self.ai_model = "gpt-4o-mini"
-        self.ai_timeout_seconds = 10.0
-        self.ai_max_output_chars = 200
-        self.ai_provider = "openai_compat"
-        self.ai_raw_snapshot_dir = raw_snapshot_dir
-        self.p2_max_value_len = 120
-        self.p2_max_specs_per_part = 12
-        self.p2_spec_whitelist_by_category = {}
-
-
-def _provider_result(
-    *,
-    text: str,
-    request_id: str,
-) -> chat_provider_caller.ProviderCallResult:
-    return chat_provider_caller.ProviderCallResult(
-        text=text,
-        endpoint="https://example.invalid/v1/chat/completions",
-        status_code=200,
-        request_headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Client-Request-Id": request_id,
-        },
-        request_json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
-        response_headers={"x-request-id": "up-1"},
-        response_json={"choices": [{"message": {"content": text}}]},
-        raw_response_text=json.dumps({"choices": [{"message": {"content": text}}]}, ensure_ascii=False),
-        upstream_request_id="up-1",
-        usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
-    )
-
-
 def test_publish_staged_response_keeps_public_text_and_logs_statuses(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=200)
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
@@ -61,9 +26,10 @@ def test_publish_staged_response_keeps_public_text_and_logs_statuses(
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(
+        lambda **kwargs: provider_result_factory(
             text="這是一段正常的建議內容，包含 CPU 與主機板。",
             request_id=kwargs["request_id"],
+            usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
         ),
     )
     monkeypatch.setattr(
@@ -88,16 +54,22 @@ def test_publish_staged_response_keeps_public_text_and_logs_statuses(
 
 def test_publish_validation_failed_includes_request_id_and_quarantine_reason(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=200)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
+        lambda **kwargs: provider_result_factory(
+            text="\0\u200b \t\n",
+            request_id=kwargs["request_id"],
+            usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
@@ -107,7 +79,9 @@ def test_publish_validation_failed_includes_request_id_and_quarantine_reason(
     assert f"request_id={response.request_id}" in response.text
 
     quarantine_entry = json.loads(
-        (tmp_path / response.request_id / "quarantine_entry.json").read_text(encoding="utf-8")
+        (snapshot_temp_dir / response.request_id / "quarantine_entry.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert quarantine_entry["publish_blocked"] is True
     assert quarantine_entry["publish_reason"] == "validation_failed"
@@ -115,16 +89,22 @@ def test_publish_validation_failed_includes_request_id_and_quarantine_reason(
 
 def test_publish_dq_failed_includes_request_id_and_quarantine_reason(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=200)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(text="短", request_id=kwargs["request_id"]),
+        lambda **kwargs: provider_result_factory(
+            text="短",
+            request_id=kwargs["request_id"],
+            usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
@@ -134,7 +114,9 @@ def test_publish_dq_failed_includes_request_id_and_quarantine_reason(
     assert f"request_id={response.request_id}" in response.text
 
     quarantine_entry = json.loads(
-        (tmp_path / response.request_id / "quarantine_entry.json").read_text(encoding="utf-8")
+        (snapshot_temp_dir / response.request_id / "quarantine_entry.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert quarantine_entry["publish_blocked"] is True
     assert quarantine_entry["publish_reason"] == "dq_failed"
@@ -142,9 +124,10 @@ def test_publish_dq_failed_includes_request_id_and_quarantine_reason(
 
 def test_publish_provider_error_keeps_request_id_and_skips_stage_and_quarantine(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=200)
     events: list[tuple[str, dict[str, object]]] = []
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
@@ -166,7 +149,7 @@ def test_publish_provider_error_keeps_request_id_and_skips_stage_and_quarantine(
 
     assert response.error_type == "network_error"
     assert f"request_id={response.request_id}" in response.text
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     assert not (snapshot_dir / "staging_record.json").exists()
     assert not (snapshot_dir / "quarantine_entry.json").exists()
 

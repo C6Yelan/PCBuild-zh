@@ -3,19 +3,7 @@ import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 
 
-class _FakeSettings:
-    ai_oai_base_url = "https://example.invalid/v1"
-    ai_oai_api_key = None
-    ai_model = "gpt-4o-mini"
-    ai_timeout_seconds = 10.0
-    ai_max_output_chars = 4000
-    ai_provider = "openai_compat"
-    p2_max_value_len = 120
-    p2_max_specs_per_part = 12
-    p2_spec_whitelist_by_category = {}
-
-
-def test_generate_chat_reply_emits_p2_compress_log(monkeypatch) -> None:
+def test_generate_chat_reply_emits_p2_compress_log(monkeypatch, fake_chat_settings) -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
     compressed_candidates = {
@@ -59,7 +47,7 @@ def test_generate_chat_reply_emits_p2_compress_log(monkeypatch) -> None:
         },
     }
 
-    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: fake_chat_settings())
     monkeypatch.setattr(chat_service, "retrieve_topk_candidates", lambda *args, **kwargs: object())
     monkeypatch.setattr(
         chat_service,

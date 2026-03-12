@@ -3,17 +3,9 @@ import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 
 
-class _FakeSettings:
-    ai_oai_base_url = "https://example.invalid/v1"
-    ai_oai_api_key = None
-    ai_model = "gpt-4o-mini"
-    ai_timeout_seconds = 10.0
-    ai_max_output_chars = 4000
-    ai_provider = "openai_compat"
-
-
 def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     monkeypatch,
+    fake_chat_settings,
 ) -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
@@ -26,7 +18,7 @@ def test_generate_chat_reply_keeps_running_when_p1_retrieval_fails(
     def fake_log_operation(event: str, **fields):
         events.append((event, fields))
 
-    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: fake_chat_settings())
     monkeypatch.setattr(chat_service, "retrieve_topk_candidates", fake_retrieve_topk_candidates)
     monkeypatch.setattr(chat_service, "generate_openai_compat_text", fake_generate_openai_compat_text)
     monkeypatch.setattr(chat_service, "log_operation", fake_log_operation)

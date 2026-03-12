@@ -10,47 +10,9 @@ from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.normalize import normalize_provider_success
 
 
-class _FakeSettings:
-    def __init__(self, raw_snapshot_dir: str) -> None:
-        self.ai_oai_base_url = "https://example.invalid/v1"
-        self.ai_oai_api_key = None
-        self.ai_model = "gpt-4o-mini"
-        self.ai_timeout_seconds = 10.0
-        self.ai_max_output_chars = 4000
-        self.ai_provider = "openai_compat"
-        self.ai_raw_snapshot_dir = raw_snapshot_dir
-        self.p2_max_value_len = 120
-        self.p2_max_specs_per_part = 12
-        self.p2_spec_whitelist_by_category = {}
-
-
-def _provider_result(
-    *,
-    text: str = "ok",
-    finish_reason: str | None = "stop",
-    usage: dict[str, int] | None = None,
-    upstream_request_id: str | None = "up-1",
-) -> chat_provider_caller.ProviderCallResult:
-    return chat_provider_caller.ProviderCallResult(
-        text=text,
-        endpoint="https://example.invalid/v1/chat/completions",
-        status_code=200,
-        request_headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Client-Request-Id": "req-1",
-        },
-        request_json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
-        response_headers={"x-request-id": upstream_request_id or ""},
-        response_json={"choices": [{"message": {"content": text}}]},
-        raw_response_text='{"choices":[{"message":{"content":"ok"}}]}',
-        upstream_request_id=upstream_request_id,
-        finish_reason=finish_reason,
-        usage=usage,
-    )
-
-
-def test_normalize_provider_success_keeps_usage_and_stop_finish_reason() -> None:
+def test_normalize_provider_success_keeps_usage_and_stop_finish_reason(
+    provider_result_factory,
+) -> None:
     warnings: list[str] = []
 
     normalized = normalize_provider_success(
@@ -58,7 +20,7 @@ def test_normalize_provider_success_keeps_usage_and_stop_finish_reason() -> None
         model="gpt-4o-mini",
         request_id="req-1",
         latency_ms=123,
-        provider_result=_provider_result(
+        provider_result=provider_result_factory(
             usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
         ),
         warnings=warnings,
@@ -74,7 +36,9 @@ def test_normalize_provider_success_keeps_usage_and_stop_finish_reason() -> None
     assert warnings == []
 
 
-def test_normalize_provider_success_warns_when_usage_missing() -> None:
+def test_normalize_provider_success_warns_when_usage_missing(
+    provider_result_factory,
+) -> None:
     warnings: list[str] = []
 
     normalized = normalize_provider_success(
@@ -82,7 +46,7 @@ def test_normalize_provider_success_warns_when_usage_missing() -> None:
         model="gpt-4o-mini",
         request_id="req-1",
         latency_ms=123,
-        provider_result=_provider_result(usage=None),
+        provider_result=provider_result_factory(usage=None),
         warnings=warnings,
     )
 
@@ -91,7 +55,9 @@ def test_normalize_provider_success_warns_when_usage_missing() -> None:
     assert "usage_unavailable" in warnings
 
 
-def test_normalize_provider_success_warns_on_length_finish_reason() -> None:
+def test_normalize_provider_success_warns_on_length_finish_reason(
+    provider_result_factory,
+) -> None:
     warnings: list[str] = []
 
     normalize_provider_success(
@@ -99,7 +65,7 @@ def test_normalize_provider_success_warns_on_length_finish_reason() -> None:
         model="gpt-4o-mini",
         request_id="req-1",
         latency_ms=123,
-        provider_result=_provider_result(
+        provider_result=provider_result_factory(
             finish_reason="length",
             usage={"prompt_tokens": 1},
         ),
@@ -109,7 +75,9 @@ def test_normalize_provider_success_warns_on_length_finish_reason() -> None:
     assert "provider_finish_reason_length" in warnings
 
 
-def test_normalize_provider_success_warns_on_content_filter_finish_reason() -> None:
+def test_normalize_provider_success_warns_on_content_filter_finish_reason(
+    provider_result_factory,
+) -> None:
     warnings: list[str] = []
 
     normalize_provider_success(
@@ -117,7 +85,7 @@ def test_normalize_provider_success_warns_on_content_filter_finish_reason() -> N
         model="gpt-4o-mini",
         request_id="req-1",
         latency_ms=123,
-        provider_result=_provider_result(
+        provider_result=provider_result_factory(
             finish_reason="content_filter",
             usage={"prompt_tokens": 1},
         ),
@@ -129,16 +97,18 @@ def test_normalize_provider_success_warns_on_content_filter_finish_reason() -> N
 
 def test_generate_chat_reply_snapshot_keeps_normalize_warnings(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(finish_reason="length", usage=None),
+        lambda **kwargs: provider_result_factory(finish_reason="length", usage=None),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
@@ -151,7 +121,7 @@ def test_generate_chat_reply_snapshot_keeps_normalize_warnings(
     assert "usage_unavailable" in response.warnings
     assert "provider_finish_reason_length" in response.warnings
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     assert (snapshot_dir / "raw_request.json").exists()
     assert (snapshot_dir / "raw_response.json").exists()
     assert (snapshot_dir / "meta.json").exists()
@@ -166,9 +136,10 @@ def test_generate_chat_reply_snapshot_keeps_normalize_warnings(
 
 def test_generate_chat_reply_fallback_text_path_still_works(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "generate_openai_compat_text", lambda **kwargs: "fallback-ok")

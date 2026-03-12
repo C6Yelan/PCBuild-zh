@@ -10,42 +10,6 @@ from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.gate import validate_text_response
 
 
-class _FakeSettings:
-    def __init__(self, raw_snapshot_dir: str) -> None:
-        self.ai_oai_base_url = "https://example.invalid/v1"
-        self.ai_oai_api_key = None
-        self.ai_model = "gpt-4o-mini"
-        self.ai_timeout_seconds = 10.0
-        self.ai_max_output_chars = 20
-        self.ai_provider = "openai_compat"
-        self.ai_raw_snapshot_dir = raw_snapshot_dir
-        self.p2_max_value_len = 120
-        self.p2_max_specs_per_part = 12
-        self.p2_spec_whitelist_by_category = {}
-
-
-def _provider_result(
-    *,
-    text: str,
-    request_id: str,
-) -> chat_provider_caller.ProviderCallResult:
-    return chat_provider_caller.ProviderCallResult(
-        text=text,
-        endpoint="https://example.invalid/v1/chat/completions",
-        status_code=200,
-        request_headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Client-Request-Id": request_id,
-        },
-        request_json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
-        response_headers={"x-request-id": "up-1"},
-        response_json={"choices": [{"message": {"content": text}}]},
-        raw_response_text=json.dumps({"choices": [{"message": {"content": text}}]}, ensure_ascii=False),
-        upstream_request_id="up-1",
-    )
-
-
 def test_validate_text_response_passes_for_normal_text() -> None:
     report = validate_text_response("你好\n世界\tok", max_chars=20)
 
@@ -80,16 +44,21 @@ def test_validate_text_response_removes_control_chars_but_keeps_newlines() -> No
 
 def test_generate_chat_reply_sanitizes_control_chars_and_writes_validation_report(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=20)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(text="abc\0\u200bdef", request_id=kwargs["request_id"]),
+        lambda **kwargs: provider_result_factory(
+            text="abc\0\u200bdef",
+            request_id=kwargs["request_id"],
+        ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
@@ -99,7 +68,7 @@ def test_generate_chat_reply_sanitizes_control_chars_and_writes_validation_repor
     assert response.warnings is not None
     assert "control_chars_removed" in response.warnings
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     request_context = json.loads((snapshot_dir / "request_context.json").read_text(encoding="utf-8"))
     assert "control_chars_removed" in request_context["warnings"]
 
@@ -112,16 +81,21 @@ def test_generate_chat_reply_sanitizes_control_chars_and_writes_validation_repor
 
 def test_generate_chat_reply_rejects_empty_after_sanitize(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=20)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(text="\0\u200b \t\n", request_id=kwargs["request_id"]),
+        lambda **kwargs: provider_result_factory(
+            text="\0\u200b \t\n",
+            request_id=kwargs["request_id"],
+        ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
@@ -132,7 +106,7 @@ def test_generate_chat_reply_rejects_empty_after_sanitize(
     assert response.warnings is not None
     assert "control_chars_removed" in response.warnings
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     validation_report = json.loads(
         (snapshot_dir / "validation_report.json").read_text(encoding="utf-8")
     )

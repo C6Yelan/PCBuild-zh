@@ -10,48 +10,6 @@ import backend.services.chat.service as chat_service
 from backend.services.chat.contracts import ChatRequest
 
 
-class _FakeSettings:
-    def __init__(self, raw_snapshot_dir: str) -> None:
-        self.ai_oai_base_url = "https://example.invalid/v1"
-        self.ai_oai_api_key = None
-        self.ai_model = "gpt-4o-mini"
-        self.ai_timeout_seconds = 10.0
-        self.ai_max_output_chars = 4000
-        self.ai_provider = "openai_compat"
-        self.ai_raw_snapshot_dir = raw_snapshot_dir
-        self.p2_max_value_len = 120
-        self.p2_max_specs_per_part = 12
-        self.p2_spec_whitelist_by_category = {}
-
-
-def _provider_result(
-    request_id: str,
-    *,
-    text: str = "ok",
-) -> chat_provider_caller.ProviderCallResult:
-    return chat_provider_caller.ProviderCallResult(
-        text=text,
-        endpoint="https://example.invalid/v1/chat/completions",
-        status_code=200,
-        request_headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": "Bearer secret-value",
-            "X-Client-Request-Id": request_id,
-            "x-api-key": "top-secret",
-        },
-        request_json={
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": "hi"}],
-            "api_key": "never-log-me",
-        },
-        response_headers={"x-request-id": "up-1"},
-        response_json={"choices": [{"message": {"content": text}}]},
-        raw_response_text=json.dumps({"choices": [{"message": {"content": text}}]}, ensure_ascii=False),
-        upstream_request_id="up-1",
-    )
-
-
 def _sample_candidates() -> dict[str, list[dict[str, object]]]:
     return {
         "CPU": [
@@ -85,9 +43,11 @@ def _sample_candidates() -> dict[str, list[dict[str, object]]]:
 
 def test_snapshot_writes_extended_artifacts_with_retrieval(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir)
     compressed_candidates = _sample_candidates()
     drop_log = {
         "cpu-1": {
@@ -113,9 +73,21 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(
-            kwargs["request_id"],
+        lambda **kwargs: provider_result_factory(
+            request_id=kwargs["request_id"],
             text="建議選 CPU 1 搭配 MB 1，這樣的處理器與主機板組合比較穩定。",
+            request_headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": "Bearer secret-value",
+                "X-Client-Request-Id": kwargs["request_id"],
+                "x-api-key": "top-secret",
+            },
+            request_json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "hi"}],
+                "api_key": "never-log-me",
+            },
         ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -128,7 +100,7 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
         db=object(),
     )
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     assert (snapshot_dir / "raw_request.json").exists()
     assert (snapshot_dir / "raw_response.json").exists()
     assert (snapshot_dir / "meta.json").exists()
@@ -221,9 +193,11 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
 
 def test_snapshot_writes_minimal_artifacts_without_retrieval(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
@@ -235,13 +209,13 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: _provider_result(kwargs["request_id"]),
+        lambda **kwargs: provider_result_factory(request_id=kwargs["request_id"]),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
 
     response = chat_service.generate_chat_reply(ChatRequest(user_text="你好"), db=object())
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     assert (snapshot_dir / "raw_request.json").exists()
     assert (snapshot_dir / "raw_response.json").exists()
     assert (snapshot_dir / "meta.json").exists()
@@ -287,30 +261,21 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
 
 def test_snapshot_request_context_reflects_truncation_warning(
     monkeypatch,
-    tmp_path: Path,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
 ) -> None:
-    settings = _FakeSettings(str(tmp_path))
-    settings.ai_max_output_chars = 5
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir, max_output_chars=5)
 
     monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         chat_provider_caller,
         "generate_provider_result",
-        lambda **kwargs: chat_provider_caller.ProviderCallResult(
+        lambda **kwargs: provider_result_factory(
+            request_id=kwargs["request_id"],
             text="abcdefghij",
-            endpoint="https://example.invalid/v1/chat/completions",
-            status_code=200,
-            request_headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-Client-Request-Id": kwargs["request_id"],
-            },
-            request_json={"model": "gpt-4o-mini", "messages": kwargs["messages"]},
-            response_headers={"x-request-id": "up-1"},
-            response_json={"choices": [{"message": {"content": "abcdefghij"}}]},
-            raw_response_text='{"choices":[{"message":{"content":"abcdefghij"}}]}',
-            upstream_request_id="up-1",
+            messages=kwargs["messages"],
         ),
     )
     monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
@@ -324,7 +289,7 @@ def test_snapshot_request_context_reflects_truncation_warning(
     assert response.warnings is not None
     assert "output_truncated" in response.warnings
 
-    snapshot_dir = tmp_path / response.request_id
+    snapshot_dir = snapshot_temp_dir / response.request_id
     request_context = json.loads(
         (snapshot_dir / "request_context.json").read_text(encoding="utf-8")
     )

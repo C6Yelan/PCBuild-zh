@@ -7,18 +7,6 @@ import backend.services.chat.snapshot_store as chat_snapshot_store
 from backend.services.chat.contracts import ChatRequest
 
 
-class _FakeSettings:
-    ai_oai_base_url = "https://example.invalid/v1"
-    ai_oai_api_key = None
-    ai_model = "gpt-4o-mini"
-    ai_timeout_seconds = 10.0
-    ai_max_output_chars = 4000
-    ai_provider = "openai_compat"
-    p2_max_value_len = 120
-    p2_max_specs_per_part = 12
-    p2_spec_whitelist_by_category = {}
-
-
 def _sample_compressed_candidates() -> dict[str, list[dict[str, object]]]:
     return {
         "CPU": [
@@ -36,35 +24,16 @@ def _sample_compressed_candidates() -> dict[str, list[dict[str, object]]]:
     }
 
 
-def _provider_result(
-    *,
-    request_id: str,
-    messages: list[dict[str, str]],
-    text: str,
-) -> chat_provider_caller.ProviderCallResult:
-    return chat_provider_caller.ProviderCallResult(
-        text=text,
-        endpoint="https://example.invalid/v1/chat/completions",
-        status_code=200,
-        request_headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-Client-Request-Id": request_id,
-        },
-        request_json={"model": "gpt-4o-mini", "messages": messages},
-        response_headers={"x-request-id": "up-1"},
-        response_json={"choices": [{"message": {"content": text}}]},
-        raw_response_text='{"choices":[{"message":{"content":"ok"}}]}',
-        upstream_request_id="up-1",
-    )
-
-
-def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
+def test_generate_chat_reply_prefers_explicit_demand(
+    monkeypatch,
+    fake_chat_settings,
+    provider_result_factory,
+) -> None:
     captured_retrieve: dict[str, object] = {}
     captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
-    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: fake_chat_settings())
     monkeypatch.setattr(
         chat_service,
         "infer_chat_demand",
@@ -86,9 +55,10 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
         "build_context_pack",
         lambda **kwargs: SimpleNamespace(text="ctx", hash="ctx-hash"),
     )
+
     def fake_provider_call(**kwargs):
         captured_provider.update(kwargs)
-        return _provider_result(
+        return provider_result_factory(
             request_id=kwargs["request_id"],
             messages=kwargs["messages"],
             text="這是一段正常且足夠長的建議內容，包含 CPU 1 的文書機配置建議。",
@@ -121,12 +91,16 @@ def test_generate_chat_reply_prefers_explicit_demand(monkeypatch) -> None:
     assert demand_events[0]["triggered_retrieval"] is True
 
 
-def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) -> None:
+def test_generate_chat_reply_uses_inferred_demand_for_context_pack(
+    monkeypatch,
+    fake_chat_settings,
+    provider_result_factory,
+) -> None:
     captured_retrieve: dict[str, object] = {}
     captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
-    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: fake_chat_settings())
     monkeypatch.setattr(
         chat_service,
         "infer_chat_demand",
@@ -151,7 +125,7 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
 
     def fake_provider_call(**kwargs):
         captured_provider.update(kwargs)
-        return _provider_result(
+        return provider_result_factory(
             request_id=kwargs["request_id"],
             messages=kwargs["messages"],
             text="建議先看 CPU 1，這是一段正常且足夠長的文書機配置建議內容。",
@@ -186,11 +160,15 @@ def test_generate_chat_reply_uses_inferred_demand_for_context_pack(monkeypatch) 
     assert ai_events[0]["context_pack_hash"] == "ctx-hash"
 
 
-def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monkeypatch) -> None:
+def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(
+    monkeypatch,
+    fake_chat_settings,
+    provider_result_factory,
+) -> None:
     captured_provider: dict[str, object] = {}
     events: list[tuple[str, dict[str, object]]] = []
 
-    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: _FakeSettings())
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: fake_chat_settings())
     monkeypatch.setattr(chat_service, "infer_chat_demand", lambda message, history=None: None)
     monkeypatch.setattr(
         chat_service,
@@ -200,7 +178,7 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(monk
 
     def fake_provider_call(**kwargs):
         captured_provider.update(kwargs)
-        return _provider_result(
+        return provider_result_factory(
             request_id=kwargs["request_id"],
             messages=kwargs["messages"],
             text="這是一段正常且足夠長的通用聊天回覆，不需要額外 context pack。",

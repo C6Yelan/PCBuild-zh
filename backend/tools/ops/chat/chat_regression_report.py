@@ -5,21 +5,22 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
 from backend.services.chat.config import get_ai_settings
 from backend.services.chat.health import run_provider_health_check
+from backend.services.chat.reporting import (
+    REPORT_FILENAME_SAFE_RE,
+    build_timestamped_report_path,
+    sanitize_report_filename_component,
+    write_report_payload,
+)
 
 
-_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def _sanitize_filename_component(value: str, fallback: str) -> str:
-    normalized = _FILENAME_SAFE_RE.sub("_", value).strip("._")
-    return normalized or fallback
+_FILENAME_SAFE_RE = REPORT_FILENAME_SAFE_RE
+_sanitize_filename_component = sanitize_report_filename_component
 
 
 def _build_regression_report(health_report: dict[str, object]) -> dict[str, object]:
@@ -55,12 +56,7 @@ def _build_regression_report(health_report: dict[str, object]) -> dict[str, obje
     }
 
 
-def _write_report(path: Path, report: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+_write_report = write_report_payload
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -73,13 +69,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     health_report = run_provider_health_check()
     regression_report = _build_regression_report(health_report)
 
-    ran_at = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    safe_provider = _sanitize_filename_component(settings.ai_provider, "unknown-provider")
-    safe_model = _sanitize_filename_component(settings.ai_model, "unknown-model")
-    report_path = (
-        Path(settings.ai_raw_snapshot_dir)
-        / "regression_reports"
-        / f"{ran_at}__{safe_provider}__{safe_model}.json"
+    report_path = build_timestamped_report_path(
+        root_dir=Path(settings.ai_raw_snapshot_dir),
+        report_dir_name="regression_reports",
+        provider=settings.ai_provider,
+        model=settings.ai_model,
+        ran_at=datetime.now(timezone.utc),
     )
     regression_report["report_path"] = str(report_path)
     _write_report(report_path, regression_report)

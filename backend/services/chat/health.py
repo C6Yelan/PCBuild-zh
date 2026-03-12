@@ -7,8 +7,6 @@ stable for the current ops wrappers while round-1 internals are split later.
 # backend/services/chat/health.py
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import ceil
@@ -20,10 +18,12 @@ from sqlalchemy.orm import Session
 from backend.core.oplog import log_operation
 from backend.services.chat.config import get_ai_settings
 from backend.services.chat.contracts import ChatRequest
+from backend.services.chat.reporting import (
+    build_timestamped_report_path,
+    sanitize_report_filename_component,
+    write_report_payload,
+)
 from backend.services.chat.service import generate_chat_reply
-
-
-_REPORT_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +76,7 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _sanitize_filename_component(value: str, fallback: str) -> str:
-    normalized = _REPORT_FILENAME_SAFE_RE.sub("_", value).strip("._")
-    return normalized or fallback
+_sanitize_filename_component = sanitize_report_filename_component
 
 
 def _percentile_nearest_rank(latencies: list[int], percentile: float) -> int:
@@ -90,22 +88,16 @@ def _percentile_nearest_rank(latencies: list[int], percentile: float) -> int:
 
 
 def _report_path(*, root_dir: Path, provider: str, model: str, ran_at: datetime) -> Path:
-    timestamp = ran_at.strftime("%Y%m%dT%H%M%SZ")
-    safe_provider = _sanitize_filename_component(provider, "unknown-provider")
-    safe_model = _sanitize_filename_component(model, "unknown-model")
-    return (
-        root_dir
-        / "provider_health_reports"
-        / f"{timestamp}__{safe_provider}__{safe_model}.json"
+    return build_timestamped_report_path(
+        root_dir=root_dir,
+        report_dir_name="provider_health_reports",
+        provider=provider,
+        model=model,
+        ran_at=ran_at,
     )
 
 
-def _write_report(path: Path, report: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+_write_report = write_report_payload
 
 
 def run_provider_health_check(*, db: Session | None = None) -> dict[str, object]:

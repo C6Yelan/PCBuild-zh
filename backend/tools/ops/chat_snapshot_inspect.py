@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 from typing import Sequence
 
 from backend.services.chat.config import get_ai_settings
-from backend.services.chat.snapshot_store import (
-    read_json_file,
-    snapshot_dir as snapshot_dir_for_request,
+from backend.services.chat.snapshot_store import snapshot_dir as snapshot_dir_for_request
+from backend.tools.ops.chat_artifact_helpers import (
+    build_request_snapshot_payload,
+    emit_json_payload,
 )
 
 
@@ -19,6 +19,16 @@ _REQUIRED_FILES = (
     "raw_response.json",
     "meta.json",
     "request_context.json",
+)
+
+_SNAPSHOT_ARTIFACT_SPECS = (
+    ("meta", "meta.json"),
+    ("request_context", "request_context.json"),
+    ("lineage", "lineage.json"),
+    ("validation_report", "validation_report.json"),
+    ("dq_report", "dq_report.json"),
+    ("staging_record", "staging_record.json"),
+    ("quarantine_entry", "quarantine_entry.json"),
 )
 
 
@@ -35,30 +45,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     missing_files = [
         filename for filename in _REQUIRED_FILES if not (snapshot_dir / filename).is_file()
     ]
-    artifacts = sorted(path.name for path in snapshot_dir.iterdir() if path.is_file())
+    payload = build_request_snapshot_payload(
+        request_id=args.request_id,
+        snapshot_dir=snapshot_dir,
+        artifact_specs=_SNAPSHOT_ARTIFACT_SPECS,
+    )
 
-    payload: dict[str, object] = {
-        "request_id": args.request_id,
-        "snapshot_dir": str(snapshot_dir),
-        "artifacts": artifacts,
-    }
-
-    if (snapshot_dir / "meta.json").is_file():
-        payload["meta"] = read_json_file(snapshot_dir / "meta.json")
-    if (snapshot_dir / "request_context.json").is_file():
-        payload["request_context"] = read_json_file(snapshot_dir / "request_context.json")
-    if (snapshot_dir / "lineage.json").is_file():
-        payload["lineage"] = read_json_file(snapshot_dir / "lineage.json")
-    if (snapshot_dir / "validation_report.json").is_file():
-        payload["validation_report"] = read_json_file(snapshot_dir / "validation_report.json")
-    if (snapshot_dir / "dq_report.json").is_file():
-        payload["dq_report"] = read_json_file(snapshot_dir / "dq_report.json")
-    if (snapshot_dir / "staging_record.json").is_file():
-        payload["staging_record"] = read_json_file(snapshot_dir / "staging_record.json")
-    if (snapshot_dir / "quarantine_entry.json").is_file():
-        payload["quarantine_entry"] = read_json_file(snapshot_dir / "quarantine_entry.json")
-
-    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    emit_json_payload(payload)
 
     if missing_files:
         return 1

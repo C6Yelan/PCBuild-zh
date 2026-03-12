@@ -23,6 +23,7 @@ import backend.services.chat.service as chat_service
 from backend.services.chat.clients.openai_compat_client import OpenAICompatError
 from backend.services.chat.config import get_ai_settings
 from backend.services.chat.contracts import ChatRequest
+from backend.tools.ops.chat_artifact_helpers import emit_json_payload, read_json_artifact
 
 
 def _isolated_snapshot_root() -> Path:
@@ -63,10 +64,6 @@ def _provider_result(*, request_id: str, text: str) -> chat_provider_caller.Prov
     )
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _assert(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -105,7 +102,7 @@ def _check_staged_success(snapshot_root: Path) -> dict[str, Any]:
         snapshot_root=snapshot_root,
         provider_result_text="這是一段正常且可發布的建議內容，包含處理器與主機板。",
     )
-    meta = _read_json(snapshot_dir / "meta.json")
+    meta = read_json_artifact(snapshot_dir / "meta.json")
     _assert(response.error_type is None, "expected staged success error_type=None")
     _assert((snapshot_dir / "staging_record.json").is_file(), "missing staging_record.json")
     _assert(meta["staging_status"] == "staged", "staging_status should be staged")
@@ -121,7 +118,7 @@ def _check_validation_failed(snapshot_root: Path) -> dict[str, Any]:
         snapshot_root=snapshot_root,
         provider_result_text="\0\u200b \t\n",
     )
-    meta = _read_json(snapshot_dir / "meta.json")
+    meta = read_json_artifact(snapshot_dir / "meta.json")
     _assert(
         response.error_type == "validation_failed",
         "expected validation_failed error_type",
@@ -144,7 +141,7 @@ def _check_dq_failed(snapshot_root: Path) -> dict[str, Any]:
         snapshot_root=snapshot_root,
         provider_result_text="短",
     )
-    meta = _read_json(snapshot_dir / "meta.json")
+    meta = read_json_artifact(snapshot_dir / "meta.json")
     _assert(response.error_type == "dq_failed", "expected dq_failed error_type")
     _assert(f"request_id={response.request_id}" in response.text, "missing request_id in text")
     _assert(
@@ -167,7 +164,7 @@ def _check_provider_error(snapshot_root: Path) -> dict[str, Any]:
         snapshot_root=snapshot_root,
         provider_error=OpenAICompatError("network_error", endpoint="https://example.invalid/v1"),
     )
-    meta = _read_json(snapshot_dir / "meta.json")
+    meta = read_json_artifact(snapshot_dir / "meta.json")
     _assert(response.error_type == "network_error", "expected network_error")
     _assert(f"request_id={response.request_id}" in response.text, "missing request_id in text")
     _assert(
@@ -303,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
             },
         }
-    print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
+    emit_json_payload(summary)
     if not summary["failed_checks"]:
         print("P10_CHECK_OK")
         return 0

@@ -9,7 +9,17 @@ from pathlib import Path
 from typing import Sequence
 
 from backend.services.chat.config import get_ai_settings
-from backend.services.chat.snapshot_store import read_json_file, snapshot_root
+from backend.services.chat.snapshot_store import snapshot_root
+from backend.tools.ops.chat_artifact_helpers import (
+    build_request_snapshot_payload,
+    emit_json_payload,
+)
+
+_STAGING_ARTIFACT_SPECS = (
+    ("meta", "meta.json"),
+    ("staging_record", "staging_record.json"),
+    ("quarantine_entry", "quarantine_entry.json"),
+)
 
 
 def _tail_jsonl(path: Path, limit: int) -> list[dict[str, object]]:
@@ -37,7 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = {
             "entries": _tail_jsonl(root / "_quarantine" / "quarantine_index.jsonl", args.limit),
         }
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        emit_json_payload(payload)
         return 0
 
     if not args.request_id:
@@ -48,19 +58,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"snapshot not found: {snapshot_dir}")
         return 2
 
-    payload: dict[str, object] = {
-        "request_id": args.request_id,
-        "snapshot_dir": str(snapshot_dir),
-        "artifacts": sorted(path.name for path in snapshot_dir.iterdir() if path.is_file()),
-    }
-    if (snapshot_dir / "meta.json").is_file():
-        payload["meta"] = read_json_file(snapshot_dir / "meta.json")
-    if (snapshot_dir / "staging_record.json").is_file():
-        payload["staging_record"] = read_json_file(snapshot_dir / "staging_record.json")
-    if (snapshot_dir / "quarantine_entry.json").is_file():
-        payload["quarantine_entry"] = read_json_file(snapshot_dir / "quarantine_entry.json")
+    payload = build_request_snapshot_payload(
+        request_id=args.request_id,
+        snapshot_dir=snapshot_dir,
+        artifact_specs=_STAGING_ARTIFACT_SPECS,
+    )
 
-    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    emit_json_payload(payload)
 
     if "staging_record" in payload or "quarantine_entry" in payload:
         return 0

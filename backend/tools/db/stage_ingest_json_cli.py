@@ -1,4 +1,4 @@
-# backend/tools/db/t7_stage_ingest_json.py
+# backend/tools/db/stage_ingest_json_cli.py
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,4 @@
-# backend/tools/ops/t9_list_publications.py
+# backend/tools/ops/crawler/list_publications_cli.py
 from __future__ import annotations
 
 import argparse

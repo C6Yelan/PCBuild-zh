@@ -1,4 +1,4 @@
-# backend/tools/db/t7_stage_from_snapshot.py
+# backend/tools/db/stage_from_snapshot_cli.py
 from __future__ import annotations
 
 import argparse

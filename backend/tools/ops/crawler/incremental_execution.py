@@ -9,8 +9,8 @@ from typing import Any, Callable
 from backend.db import SessionLocal
 from backend.services.crawler.fetch_state_repo import get_fetch_state
 from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
-from backend.tools.db.t7_stage_from_snapshot import main as t7_stage_main
-from backend.tools.db.t8_merge_from_staging import main as t8_merge_main
+from backend.tools.db.stage_from_snapshot_cli import main as t7_stage_main
+from backend.tools.db.merge_from_staging_cli import main as t8_merge_main
 from backend.tools.ops.crawler.incremental_fetch import record_fetch_state, utc_now
 from backend.tools.ops.crawler.incremental_parsing import (
     extract_json_array,
@@ -18,7 +18,7 @@ from backend.tools.ops.crawler.incremental_parsing import (
     parse_t8_counts,
 )
 from backend.tools.ops.crawler.incremental_subprocess import run_cli_main, write_text_file
-from backend.tools.ops.crawler.t9_publish_publication import main as t9_publish_main
+from backend.tools.ops.crawler.publish_publication_cli import main as t9_publish_main
 
 
 def run_dry_parse_steps(

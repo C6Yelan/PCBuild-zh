@@ -1,4 +1,4 @@
-# backend/tools/ops/t10_scheduler_loop.py
+# backend/tools/ops/crawler/scheduler_loop_cli.py
 from __future__ import annotations
 
 import argparse
@@ -17,7 +17,7 @@ from backend.tools.ops.crawler.incremental_cli import (
     build_incremental_argv,
     incremental_cli_options_from_namespace,
 )
-from backend.tools.ops.crawler.t10_run_incremental import main as run_incremental_main
+from backend.tools.ops.crawler.run_incremental_cli import main as run_incremental_main
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 

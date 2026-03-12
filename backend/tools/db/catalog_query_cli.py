@@ -1,4 +1,4 @@
-# backend/tools/db/t8_catalog_query.py
+# backend/tools/db/catalog_query_cli.py
 from __future__ import annotations
 
 import argparse

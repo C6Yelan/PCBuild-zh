@@ -1,4 +1,4 @@
-# backend/tools/db/t8_merge_from_staging.py
+# backend/tools/db/merge_from_staging_cli.py
 from __future__ import annotations
 
 import argparse

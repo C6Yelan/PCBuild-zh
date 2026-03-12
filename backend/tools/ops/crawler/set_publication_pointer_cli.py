@@ -1,4 +1,4 @@
-# backend/tools/ops/t9_set_publication_pointer.py
+# backend/tools/ops/crawler/set_publication_pointer_cli.py
 from __future__ import annotations
 
 import argparse

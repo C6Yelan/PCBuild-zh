@@ -1,4 +1,4 @@
-# backend/tools/ops/t9_db_retention.py
+# backend/tools/ops/maintenance/db_retention_cli.py
 from __future__ import annotations
 
 """T9 DB retention cleanup tool.

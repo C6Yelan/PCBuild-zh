@@ -1,10 +1,13 @@
+# backend/services/crawler/parsers/sku_hints/psu.py
 from __future__ import annotations
 
 import re
 
-from .common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
-
-_LEADING_BRACKET_TAGS_RE = re.compile(r"^(?:【[^】]{1,80}】\s*)+") # 移除開頭的中括號標籤，例如【限量】【新品】等。
+from .common import head_before_brackets, normalize_spaces
+from .shared_specs import extract_warranty_years as _extract_warranty_years
+from .shared_specs import normalize_nonempty_lines as _normalize_lines
+from .shared_specs import normalized_title_line
+from .shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
 _WATT_RE = re.compile(r"(?<![A-Za-z0-9])(\d{2,4})\s*W(?![A-Za-z0-9])", flags=re.IGNORECASE) # 用於抓取瓦數，例如 650W、1200 W 等。
 _ATX_VERSION_RE = re.compile(r"ATX\s*3\.(0|1)", flags=re.IGNORECASE) # 用於抓取 ATX 版本，例如 ATX 3.0、ATX3.1 等。
@@ -56,35 +59,6 @@ _SPEC_CLEAN_RE = re.compile( # 用於清理型號中的多餘規格字樣。
     r"|\d+\s*年(?:保固|保)?|全日系|主日系|智慧停轉|停轉|0\s*RPM",
     flags=re.IGNORECASE,
 )
-
-_WARRANTY_NUM_RE = re.compile(r"(\d+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?") # 用於抓取數字形式的保固年限字樣。
-_WARRANTY_ZH_RE = re.compile(r"([一二三四五六七八九十]+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?") # 用於抓取中文數字形式的保固年限字樣。
-
-_CHINESE_NUM = { # 用於將中文數字轉換為阿拉伯數字。
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
-
-
-def _strip_leading_bracket_tags(text: str) -> str: # 移除開頭的中括號標籤，例如【限量】【新品】等。
-    return _LEADING_BRACKET_TAGS_RE.sub("", (text or "")).lstrip()
-
-
-def _normalize_lines(lines: list[str] | None) -> list[str]: # 正規化描述行，移除空行並整理空白。
-    out: list[str] = []
-    for line in lines or []:
-        line = normalize_spaces(line)
-        if line:
-            out.append(line)
-    return out
 
 
 def _extract_watt(texts: list[str]) -> int | None: # 抓取最大瓦數。
@@ -189,32 +163,6 @@ def _extract_color(text: str) -> str | None: # 抓取顏色字樣。
     return None
 
 
-def _parse_zh_number(raw: str) -> int | None: # 將中文數字轉換為阿拉伯數字。
-    if not raw:
-        return None
-    if raw.isdigit():
-        return int(raw)
-    if raw in _CHINESE_NUM:
-        return _CHINESE_NUM[raw]
-    if raw.startswith("十") and len(raw) == 2 and raw[1] in _CHINESE_NUM:
-        return 10 + _CHINESE_NUM[raw[1]]
-    if len(raw) == 2 and raw[0] in _CHINESE_NUM and raw[1] == "十":
-        return _CHINESE_NUM[raw[0]] * 10
-    return None
-
-
-def _extract_warranty_years(texts: list[str]) -> int | None: # 抓取保固年限字樣。
-    candidates: list[int] = []
-    for text in texts:
-        for m in _WARRANTY_NUM_RE.finditer(text or ""):
-            candidates.append(int(m.group(1)))
-        for m in _WARRANTY_ZH_RE.finditer(text or ""):
-            yrs = _parse_zh_number(m.group(1))
-            if yrs is not None:
-                candidates.append(yrs)
-    return max(candidates) if candidates else None
-
-
 def _extract_caps_hint(text: str) -> str | None: # 抓取日系電容字樣。
     if _CAPS_ALL_RE.search(text or ""):
         return "all_japanese"
@@ -237,7 +185,7 @@ def _clean_model_head(text: str) -> str:  # 清理並正規化型號開頭字樣
 
 
 def extract_psu_sku_hint(title: str) -> str | None: # 抓取 PSU 型號提示字樣。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     head = _clean_model_head(line)
     if head:
         return head
@@ -246,7 +194,7 @@ def extract_psu_sku_hint(title: str) -> str | None: # 抓取 PSU 型號提示字
 
 
 def extract_psu_hints(title: str, desc_lines: list[str] | None = None) -> tuple[str | None, dict[str, object]]: # 抓取 PSU 型號提示字樣及其他提示字樣。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     desc = _normalize_lines(desc_lines)
     texts = [line] + desc
 

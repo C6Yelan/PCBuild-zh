@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import re
 
-_SPLIT_RE = re.compile(r"[（(【]")  # 遇到括號/【】就切掉後面的規格（通常括號後是規格敘述）
-_WS_RE = re.compile(r"\s+") # 多個空白合併為一個空白
+from .common import first_line, head_before_brackets, normalize_spaces
 
 # 套裝/大全配（非單一主機板）關鍵字：出現任一通常就不是單品 MB
 _BUNDLE_RE = re.compile(
@@ -120,19 +119,12 @@ def _infer_brand_hint(title: str) -> str | None: # 根據標題推斷主機板�
             return norm
     return None
 
-def _first_non_empty_line(text: str) -> str: # 從多行文字中取第一個「非空行」當作代表行。
-    for line in (text or "").splitlines():
-        line = line.strip()
-        if line:
-            return line
-    return (text or "").strip()
-
 def _extract_head(title: str) -> str: # 從標題中抽取代表性的「頭部」文字（通常是型號前半段）
-    line = _first_non_empty_line(title)
+    line = first_line(title)
     if not line:
         return ""
-    head = _SPLIT_RE.split(line, 1)[0]
-    head = _WS_RE.sub(" ", head).strip()
+    head = head_before_brackets(line)
+    head = normalize_spaces(head)
     return head
 
 def _norm_form_factor(raw: str | None) -> str | None: # 正規化主機板外形規格

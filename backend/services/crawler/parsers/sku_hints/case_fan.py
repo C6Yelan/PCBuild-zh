@@ -1,11 +1,15 @@
+# backend/services/crawler/parsers/sku_hints/case_fan.py
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from .common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from .common import head_before_brackets, normalize_spaces
+from .shared_specs import extract_warranty_years as _extract_warranty_years
+from .shared_specs import normalize_nonempty_lines as _normalize_lines
+from .shared_specs import normalized_title_line
+from .shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
-_LEADING_BRACKET_TAGS_RE = re.compile(r"^(?:【[^】]{1,80}】\s*)+")
 _MODEL_BUNDLE_SPLIT_RE = re.compile(r"\s+[+＋]\s+")
 
 _SIZE_WITH_UNIT_RE = re.compile(r"(?<!\d)(\d+(?:\.\d+)?)\s*(cm|公分|mm)(?![A-Za-z0-9])", flags=re.IGNORECASE)
@@ -43,22 +47,6 @@ _REVERSE_RE = re.compile(r"反向|reverse", flags=re.IGNORECASE)
 _LIMIT_RE = re.compile(r"(限組裝|限購|限搭機|客訂|限量)")
 _BUNDLE_RE = re.compile(r"(大全配|套裝|組合|bundle)", flags=re.IGNORECASE)
 
-_WARRANTY_NUM_RE = re.compile(r"(\d+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?")
-_WARRANTY_ZH_RE = re.compile(r"([一二三四五六七八九十]+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?")
-
-_CHINESE_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
-
 _ACCESSORY_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"控制器|controller", flags=re.IGNORECASE), "controller"),
     (re.compile(r"\bHUB\b|集線器|hub", flags=re.IGNORECASE), "hub"),
@@ -82,21 +70,8 @@ _FAN_PACK_RE = re.compile(
 _CONTROLLER_REQ_RE = re.compile(r"需[^\n]{0,12}控制器|需搭配[^\n]{0,12}控制器")
 
 
-def _strip_leading_bracket_tags(text: str) -> str:
-    return _LEADING_BRACKET_TAGS_RE.sub("", (text or "")).lstrip()
-
-
-def _normalize_lines(lines: list[str] | None) -> list[str]:
-    out: list[str] = []
-    for line in lines or []:
-        line = normalize_spaces(line)
-        if line:
-            out.append(line)
-    return out
-
-
 def _model_head(text: str) -> str:
-    line = normalize_spaces(strip_leading_note(first_line(text)))
+    line = normalized_title_line(text)
     line = _strip_leading_bracket_tags(line)
     head = head_before_brackets(line) or line
     head = _MODEL_BUNDLE_SPLIT_RE.split(head, 1)[0]
@@ -225,32 +200,6 @@ def _extract_pack_count(texts: list[str]) -> int | None:
     return None
 
 
-def _parse_zh_number(raw: str) -> int | None:
-    if not raw:
-        return None
-    if raw.isdigit():
-        return int(raw)
-    if raw in _CHINESE_NUM:
-        return _CHINESE_NUM[raw]
-    if raw.startswith("十") and len(raw) == 2 and raw[1] in _CHINESE_NUM:
-        return 10 + _CHINESE_NUM[raw[1]]
-    if len(raw) == 2 and raw[0] in _CHINESE_NUM and raw[1] == "十":
-        return _CHINESE_NUM[raw[0]] * 10
-    return None
-
-
-def _extract_warranty_years(texts: list[str]) -> int | None:
-    candidates: list[int] = []
-    for text in texts:
-        for m in _WARRANTY_NUM_RE.finditer(text or ""):
-            candidates.append(int(m.group(1)))
-        for m in _WARRANTY_ZH_RE.finditer(text or ""):
-            yrs = _parse_zh_number(m.group(1))
-            if yrs is not None:
-                candidates.append(yrs)
-    return max(candidates) if candidates else None
-
-
 def _extract_limit(texts: list[str]) -> str | None:
     for text in texts:
         m = _LIMIT_RE.search(text or "")
@@ -288,7 +237,7 @@ def _detect_accessory(texts: list[str]) -> tuple[bool, str | None]:
 
 
 def extract_case_fan_listing_hints(title: str, desc_lines: list[str] | None) -> tuple[str | None, dict[str, Any]]:
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     desc = _normalize_lines(desc_lines)
     texts = [line] + desc
 

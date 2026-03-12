@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import re
 
-from .common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
-
-_LEADING_BRACKET_TAGS_RE = re.compile(r"^(?:【[^】]{1,80}】\s*)+") # 頭部以「【...】」標籤包住的文字，通常是促銷或套裝等非型號資訊。
+from .common import head_before_brackets, normalize_spaces
+from .shared_specs import normalize_nonempty_lines as _normalize_lines
+from .shared_specs import normalized_title_line
+from .shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
 _FORM_FACTORS: list[tuple[re.Pattern[str], str, int]] = [ # 主機板尺寸對應規則，依照尺寸由大到小排序以利挑選最大尺寸。
     (re.compile(r"(?<![A-Za-z0-9])E-?ATX(?![A-Za-z0-9])", flags=re.IGNORECASE), "E-ATX", 4),
@@ -52,19 +53,6 @@ _MODEL_TRAILING_SPEC_RE = re.compile( # 型號後方可能出現的規格描述�
     r"(?:\s*(?:顯卡長|卡長|卡|CPU高|U高)(?:\s*\d+(?:\.\d+)?(?:\([^)]*\))?)?)+\s*$",
     flags=re.IGNORECASE,
 )
-
-
-def _strip_leading_bracket_tags(text: str) -> str:
-    return _LEADING_BRACKET_TAGS_RE.sub("", (text or "")).lstrip()
-
-
-def _normalize_lines(lines: list[str] | None) -> list[str]:
-    out: list[str] = []
-    for line in lines or []:
-        line = normalize_spaces(line)
-        if line:
-            out.append(line)
-    return out
 
 
 def _extract_model_hint(text: str) -> str | None:
@@ -269,7 +257,7 @@ def _extract_psu_watt(lines: list[str]) -> int | None:
 
 
 def extract_case_sku_hint(title: str) -> str | None:
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     return _extract_model_hint(_strip_leading_bracket_tags(line))
 
 
@@ -282,7 +270,7 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     front_io_hint, psu_included_hint, psu_watt_w_hint, limit_hint, is_bundle, is_accessory
     """
     text = title or ""
-    line = normalize_spaces(strip_leading_note(first_line(text)))
+    line = normalized_title_line(text)
     head = head_before_brackets(line)
     lines = _normalize_lines(desc_lines)
 

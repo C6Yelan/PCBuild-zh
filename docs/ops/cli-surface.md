@@ -41,3 +41,11 @@ The root `chat_*` wrappers under `backend.tools.ops` are long-term public surfac
 
 - Do not rename them as part of crawler / maintenance CLI cleanup.
 - Do not treat them as deprecated aliases in this round.
+
+## Internal Helper Modules
+
+Root-level helper re-exports such as `incremental_*` or `chat_artifact_helpers` are not part of the public CLI surface.
+
+- Internal crawler helper imports should use `backend.tools.ops.crawler.*`.
+- Internal chat helper imports should use `backend.tools.ops.chat.*`.
+- New helper modules should not be re-exported from the `backend.tools.ops` root unless they are intentionally promoted to stable public surface.

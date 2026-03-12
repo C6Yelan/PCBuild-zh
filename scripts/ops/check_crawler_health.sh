@@ -153,7 +153,7 @@ printf 'repo=%s\n' "$REPO_ROOT"
 printf 'source=%s env=%s lookback_hours=%s\n' "$SOURCE" "$ENV_NAME" "$HOURS"
 
 print_section "Recent Publications"
-if publications_output="$("${COMPOSE[@]}" exec -T fastapi python -m backend.tools.ops.t9_list_publications --limit "$PUBLICATION_LIMIT" --env "$ENV_NAME" 2>&1)"; then
+if publications_output="$("${COMPOSE[@]}" exec -T fastapi python -m backend.tools.ops.list_publications --limit "$PUBLICATION_LIMIT" --env "$ENV_NAME" 2>&1)"; then
   publications_json="$(extract_last_json_line "$publications_output")"
   if [[ "$HAS_JQ" -eq 1 && -n "$publications_json" ]]; then
     printf '%s\n' "$publications_json" | jq '{

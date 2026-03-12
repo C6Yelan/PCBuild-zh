@@ -21,7 +21,7 @@ docker compose exec -T pcbuild-db psql -U pcbuild -d pcbuild -c "delete from cra
 2. 跑一次增量（不 publish）：
 
 ```bash
-docker compose exec -T fastapi python -m backend.tools.ops.t10_run_incremental --source coolpc --parts cpu --no-publish --max-items 2000 --t5-limit 50
+docker compose exec -T fastapi python -m backend.tools.ops.run_incremental --source coolpc --parts cpu --no-publish --max-items 2000 --t5-limit 50
 ```
 
 3. 驗證 DB fetch_state 有回填（至少 `content_sha256` / `last_status_code` / `last_success_at` / `updated_at` 不為空）：
@@ -37,7 +37,7 @@ docker compose exec -T fastapi sh -lc 'RUN=""; for d in $(ls -td /app/temp/t10/*
 ```
 
 5. 期望結果：
-1. `t10_run_incremental` exit code 為 `0`。
+1. `run_incremental` exit code 為 `0`。
 2. 第 3 步查詢至少回傳 `1` 筆資料，且 `content_sha256`、`last_status_code`、`last_success_at`、`updated_at` 皆有值。
 3. `t5` 目錄存在，且可看到 `t5.summary.json`、`t5.passed.json`、`t5.quarantine.json`、`t5.input.json`、`t5.link_report.jsonl`（實際檔案數可依執行結果略有差異）。
 
@@ -63,7 +63,7 @@ docker compose logs --tail 200 pcbuild-retention
 （可選）手動 dry-run：
 
 ```bash
-docker compose exec -T fastapi python -m backend.tools.ops.t9_db_retention --dry-run
+docker compose exec -T fastapi python -m backend.tools.ops.db_retention --dry-run
 ```
 
 期望可看到 `precheck_stats` / `delete_summary` 等輸出（`delete_summary` 會在 `--confirm` 實際刪除流程中出現）。

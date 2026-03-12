@@ -4,9 +4,9 @@ from __future__ import annotations
 """T9 DB retention cleanup tool.
 
 Usage:
-  python -m backend.tools.ops.t9_db_retention --dry-run
-  python -m backend.tools.ops.t9_db_retention --confirm
-  python -m backend.tools.ops.t9_db_retention --confirm --vacuum
+  python -m backend.tools.ops.db_retention --dry-run
+  python -m backend.tools.ops.db_retention --confirm
+  python -m backend.tools.ops.db_retention --confirm --vacuum
 """
 
 import argparse

@@ -33,7 +33,7 @@ scripts/ops/check_crawler_health.sh --source coolpc --env prod
 最近 publish：
 
 ```bash
-docker compose exec fastapi python -m backend.tools.ops.t9_list_publications --limit 10 --env prod
+docker compose exec fastapi python -m backend.tools.ops.list_publications --limit 10 --env prod
 ```
 
 最近 scheduler 執行：

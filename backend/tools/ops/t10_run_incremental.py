@@ -1,5 +1,5 @@
-"""Compatibility wrapper for the stable crawler incremental CLI module path."""
-from backend.tools.ops.crawler.t10_run_incremental import *  # noqa: F401,F403
+"""Deprecated compatibility alias for ``backend.tools.ops.run_incremental``."""
+from backend.tools.ops.run_incremental import *  # noqa: F401,F403
 
 
 if __name__ == "__main__":

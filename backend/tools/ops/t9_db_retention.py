@@ -1,5 +1,5 @@
-"""Compatibility wrapper for the stable maintenance retention CLI module path."""
-from backend.tools.ops.maintenance.t9_db_retention import *  # noqa: F401,F403
+"""Deprecated compatibility alias for ``backend.tools.ops.db_retention``."""
+from backend.tools.ops.db_retention import *  # noqa: F401,F403
 
 
 if __name__ == "__main__":

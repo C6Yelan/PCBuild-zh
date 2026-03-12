@@ -11,7 +11,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from backend.services.crawler.fetch_state_repo import get_fetch_state, upsert_fetch_state
-from backend.tools.crawler.artifact_io import write_json_file
+from backend.tools.crawler.io.artifact_io import write_json_file
 
 
 def utc_now() -> datetime:

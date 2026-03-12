@@ -18,7 +18,7 @@ from backend.services.crawler.staging.repo import (
     upsert_stg_items,
     upsert_stg_gate_result,
 )
-from backend.tools.crawler.artifact_io import read_json_input, require_json_object_list
+from backend.tools.crawler.io.artifact_io import read_json_input, require_json_object_list
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 

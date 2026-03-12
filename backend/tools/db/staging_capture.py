@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
+from backend.tools.crawler.parse.cli import main as crawl_parse_main
 
 
 def build_crawl_parse_argv(

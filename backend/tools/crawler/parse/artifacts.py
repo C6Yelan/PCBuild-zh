@@ -1,4 +1,3 @@
-# backend/tools/crawler/parse_artifacts.py
 """Artifact path and report writers for the crawl-parse CLI."""
 
 from __future__ import annotations
@@ -7,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from backend.tools.crawler.artifact_io import write_json_atomic
-from backend.tools.crawler.dq_reports import write_dq_artifacts as write_shared_dq_artifacts
+from backend.tools.crawler.dq.reports import write_dq_artifacts as write_shared_dq_artifacts
+from backend.tools.crawler.io.artifact_io import write_json_atomic
 
 
 @dataclass(frozen=True)

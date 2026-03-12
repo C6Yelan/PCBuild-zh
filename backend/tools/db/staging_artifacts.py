@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from backend.tools.crawler.artifact_io import build_artifact_metadata, read_json_file
+from backend.tools.crawler.io.artifact_io import build_artifact_metadata, read_json_file
 
 
 @dataclass(frozen=True)

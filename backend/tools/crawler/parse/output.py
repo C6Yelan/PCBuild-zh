@@ -1,4 +1,3 @@
-# backend/tools/crawler/parse_output.py
 """Stdout and stderr emitters for the crawl-parse CLI contract."""
 
 from __future__ import annotations
@@ -8,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from backend.tools.crawler.dq_reports import format_dq_gate_result_line
+from backend.tools.crawler.dq.reports import format_dq_gate_result_line
 
 
 def emit_schema_gate_error(report: Any) -> None:

@@ -1,4 +1,3 @@
-# backend/tools/crawler/parse_gate_execution.py
 """Schema, DQ, and T5 gate helpers for the crawl-parse CLI."""
 
 from __future__ import annotations
@@ -15,9 +14,9 @@ from backend.core.obs_events import log_loki_event
 from backend.services.crawler.dq_gate import run_dq_gate
 from backend.services.crawler.schema_gate.validate import validate_payload_fail_fast
 from backend.services.crawler.staging.conventions import get_crawler_env
-from backend.tools.crawler.artifact_io import read_jsonl_objects
+from backend.tools.crawler.io.artifact_io import read_jsonl_objects
 from backend.tools.crawler.link_consistency_check_json import main as run_link_consistency_check_json
-from backend.tools.crawler.parse_artifacts import T5ArtifactPaths, write_t5_input
+from backend.tools.crawler.parse.artifacts import T5ArtifactPaths, write_t5_input
 
 
 @dataclass(frozen=True)

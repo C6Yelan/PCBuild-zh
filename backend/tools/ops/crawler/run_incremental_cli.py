@@ -13,7 +13,7 @@ from backend.db import SessionLocal
 from backend.services.crawler import CrawlerHttpClient, CrawlerSettings
 from backend.services.crawler.part_registry import resolve_source_parts
 from backend.services.crawler.staging.conventions import get_crawler_env
-from backend.tools.crawler.artifact_io import write_json_file
+from backend.tools.crawler.io.artifact_io import write_json_file
 from backend.tools.ops.crawler.incremental_cli import incremental_cli_options_from_namespace
 from backend.tools.ops.crawler.incremental_execution import (
     run_dry_parse_steps,

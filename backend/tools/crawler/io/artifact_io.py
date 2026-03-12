@@ -1,5 +1,4 @@
 """Shared JSON and artifact helpers for crawler CLI tools."""
-# backend/tools/crawler/artifact_io.py
 
 from __future__ import annotations
 

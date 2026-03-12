@@ -1,4 +1,3 @@
-# backend/tools/crawler/dq_reports.py
 """Shared DQ report writers and stderr line formatters for crawler CLIs."""
 
 from __future__ import annotations
@@ -6,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from backend.tools.crawler.artifact_io import write_json_atomic, write_json_file
+from backend.tools.crawler.io.artifact_io import write_json_atomic, write_json_file
 
 
 def write_dq_artifacts(

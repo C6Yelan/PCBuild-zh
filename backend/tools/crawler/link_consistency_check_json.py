@@ -16,7 +16,7 @@ from backend.services.crawler.link_consistency_gate.types import (
     ListingInput,
     PacingConfig,
 )
-from backend.tools.crawler.artifact_io import write_jsonl_objects
+from backend.tools.crawler.io.artifact_io import write_jsonl_objects
 
 
 def main(argv: Optional[list[str]] = None) -> int:

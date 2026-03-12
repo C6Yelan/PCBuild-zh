@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from backend.db import SessionLocal
 from backend.services.crawler.fetch_state_repo import get_fetch_state
-from backend.tools.crawler.crawl_parse_snapshot import main as crawl_parse_main
+from backend.tools.crawler.parse.cli import main as crawl_parse_main
 from backend.tools.db.stage_from_snapshot_cli import main as t7_stage_main
 from backend.tools.db.merge_from_staging_cli import main as t8_merge_main
 from backend.tools.db.staging_capture import build_crawl_parse_argv, build_stage_from_snapshot_argv

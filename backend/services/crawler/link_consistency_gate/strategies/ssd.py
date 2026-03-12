@@ -1,13 +1,13 @@
+# backend/services/crawler/link_consistency_gate/strategies/ssd.py
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ..types import ListingInput, MatchDecision, PageSignals
+from .shared_primitives import build_evidence, compose_page_text, normalize_spaces
 
 
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_BRACKETS = re.compile(r"[][(){}<>【】（）]", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~-]+", flags=re.UNICODE)
 _RE_SEP_TOKENS = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-'
@@ -39,25 +39,19 @@ def _strip_noise(s: str) -> str:
 
 
 def _normalize_for_phrase(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    s = _strip_noise(s)
-    s = s.upper()
+    s = normalize_spaces(_strip_noise(s)).upper()
     s = _RE_BRACKETS.sub(" ", s)
     s = _RE_SEP_PHRASE.sub(" ", s)
     s = _RE_PCIE.sub("PCIE", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
+    return normalize_spaces(s)
 
 
 def _normalize_for_tokens(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    s = _strip_noise(s)
-    s = s.upper()
+    s = normalize_spaces(_strip_noise(s)).upper()
     s = _RE_BRACKETS.sub(" ", s)
     s = _RE_SEP_TOKENS.sub(" ", s)
     s = _RE_PCIE.sub("PCIE", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
+    return normalize_spaces(s)
 
 
 def _first_title_segment(title: str) -> str:
@@ -70,11 +64,7 @@ def _first_title_segment(title: str) -> str:
 
 
 def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.page_title, signals.page_h1, signals.text_hint):
-        if s:
-            parts.append(s)
-    return " ".join(parts).strip()
+    return compose_page_text(signals.page_title, signals.page_h1, signals.text_hint)
 
 
 def _canonical_capacity(amount: str, unit: str) -> str:
@@ -277,12 +267,12 @@ class SsdStrategy:
         listing_tokens = sorted(set(listing_tokens) | _hint_spec_tokens(listing))
 
         if not page_text_norm:
-            evidence: dict[str, Any] = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": [],
-                "matched_tokens": [],
-                "notes": ["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=[],
+                matched_tokens=[],
+                notes=["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
+            )
             return MatchDecision(status="uncertain", score=None, reason_code="PAGE_TEXT_EMPTY", evidence=evidence)
 
         page_tokens = _extract_tokens(page_text_raw)
@@ -291,21 +281,21 @@ class SsdStrategy:
         model_phrase_raw, model_src = _pick_model_phrase(listing)
         model_phrase_norm = _normalize_for_phrase(model_phrase_raw)
         if not model_phrase_norm:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": ["model_phrase is empty after normalization (no usable identifier)"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=["model_phrase is empty after normalization (no usable identifier)"],
+            )
             return MatchDecision(status="uncertain", score=None, reason_code="MODEL_EMPTY", evidence=evidence)
 
         if model_phrase_norm in page_text_norm:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": [f"phrase match hit (model_source={model_src})"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=[f"phrase match hit (model_source={model_src})"],
+            )
             return MatchDecision(status="match", score=None, reason_code="MODEL_PHRASE_FOUND", evidence=evidence)
 
         listing_identity = _extract_identity_tokens(listing_tokens)
@@ -317,30 +307,30 @@ class SsdStrategy:
         matched_spec = sorted(listing_spec & page_spec)
 
         if matched_identity and matched_spec:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": [
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=[
                     "token match via identity+spec overlap",
                     f"matched_identity={matched_identity[:2]}, matched_spec={matched_spec[:2]}",
                 ],
-            }
+            )
             return MatchDecision(status="match", score=None, reason_code="MODEL_TOKEN_MATCH", evidence=evidence)
 
         if listing_identity and not matched_identity:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": ["listing has identity tokens but page has no identity-token overlap"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=["listing has identity tokens but page has no identity-token overlap"],
+            )
             return MatchDecision(status="mismatch", score=None, reason_code="IDENTITY_TOKEN_MISSING", evidence=evidence)
 
-        evidence = {
-            "listing_tokens": listing_tokens,
-            "page_tokens": page_tokens,
-            "matched_tokens": matched_tokens,
-            "notes": ["token overlap is inconclusive for SSD"],
-        }
+        evidence = build_evidence(
+            listing_tokens=listing_tokens,
+            page_tokens=page_tokens,
+            matched_tokens=matched_tokens,
+            notes=["token overlap is inconclusive for SSD"],
+        )
         return MatchDecision(status="uncertain", score=None, reason_code="TOKEN_OVERLAP_INCONCLUSIVE", evidence=evidence)

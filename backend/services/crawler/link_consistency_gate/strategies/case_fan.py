@@ -1,18 +1,17 @@
+# backend/services/crawler/link_consistency_gate/strategies/case_fan.py
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ..types import ListingInput, MatchDecision, PageSignals
+from .shared_primitives import build_evidence, compose_page_text, normalize_spaces, tokenize_model_tokens
 
 
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~\-]+", flags=re.UNICODE)
 _RE_SEP_TOKEN = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-'
 _RE_BRACKET_SYMBOLS = re.compile(r"[\[\]【】\(\)（）\{\}<>]", flags=re.UNICODE)
 _RE_CLEAN_COMPACT = re.compile(r"[^A-Z0-9\u4e00-\u9fff]+", flags=re.UNICODE)
-_RE_TOKEN = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", flags=re.UNICODE)
 _RE_TITLE_TRUNC = re.compile(r"[\(（【\[]", flags=re.UNICODE)
 _RE_TITLE_SLASH = re.compile(r"[／/]", flags=re.UNICODE)
 _RE_ASCII_START = re.compile(r"[A-Z0-9]", flags=re.UNICODE)
@@ -42,22 +41,21 @@ _IDENTITY_STOPWORDS = {
 
 
 def _normalize_spaces(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_spaces(s)
 
 
 def _normalize_for_phrase(s: str) -> str:
     s = _normalize_spaces(s).upper()
     s = _RE_BRACKET_SYMBOLS.sub(" ", s)
     s = _RE_SEP_PHRASE.sub(" ", s)
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_spaces(s)
 
 
 def _normalize_for_token(s: str) -> str:
     s = _normalize_spaces(s).upper()
     s = _RE_BRACKET_SYMBOLS.sub(" ", s)
     s = _RE_SEP_TOKEN.sub(" ", s)
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_spaces(s)
 
 
 def _compact(s: str) -> str:
@@ -121,34 +119,16 @@ def _build_model_candidates(raw: str) -> list[str]:
 
 
 def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.text_hint, signals.page_title, signals.page_h1):
-        if s:
-            parts.append(s)
-    return _normalize_spaces(" ".join(parts))
+    return compose_page_text(
+        signals.text_hint,
+        signals.page_title,
+        signals.page_h1,
+        normalize=_normalize_spaces,
+    )
 
 
 def _tokenize(text: str) -> list[str]:
-    norm = _normalize_for_token(text)
-    out: set[str] = set()
-
-    for m in _RE_TOKEN.finditer(norm):
-        tok = m.group(0).strip("-")
-        if not tok:
-            continue
-        out.add(tok)
-        if "-" in tok:
-            parts: list[str] = []
-            for part in tok.split("-"):
-                part = part.strip("-")
-                if not part:
-                    continue
-                out.add(part)
-                parts.append(part)
-            if parts:
-                out.add("".join(parts))
-
-    return sorted(out)
+    return tokenize_model_tokens(text, normalize=_normalize_for_token, join_hyphen_parts=True)
 
 
 def _is_size_token(tok: str) -> bool:
@@ -182,20 +162,6 @@ def _extract_identity_tokens(tokens: list[str]) -> set[str]:
     return {t for t in tokens if _is_identity_token(t)}
 
 
-def _evidence(
-    listing_tokens: list[str],
-    page_tokens: list[str],
-    matched_tokens: list[str],
-    notes: list[str],
-) -> dict[str, Any]:
-    return {
-        "listing_tokens": list(listing_tokens),
-        "page_tokens": list(page_tokens),
-        "matched_tokens": list(matched_tokens),
-        "notes": list(notes),
-    }
-
-
 @dataclass(frozen=True)
 class CaseFanStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
@@ -205,7 +171,7 @@ class CaseFanStrategy:
 
         page_text = _build_page_text(signals)
         if not _normalize_for_phrase(page_text):
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=[],
                 matched_tokens=[],
@@ -220,7 +186,7 @@ class CaseFanStrategy:
 
         page_tokens = _tokenize(page_text)
         if len(page_tokens) < 2:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=[],
@@ -237,7 +203,7 @@ class CaseFanStrategy:
         for cand in candidates:
             cand_compact = _compact(cand)
             if cand_compact and cand_compact in page_compact:
-                evidence = _evidence(
+                evidence = build_evidence(
                     listing_tokens=listing_tokens,
                     page_tokens=page_tokens,
                     matched_tokens=[cand],
@@ -256,7 +222,7 @@ class CaseFanStrategy:
         matched_identity = sorted(listing_identity & page_identity)
 
         if not listing_identity or not page_identity:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=overlap_tokens,
@@ -273,7 +239,7 @@ class CaseFanStrategy:
             )
 
         if matched_identity:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=overlap_tokens,
@@ -291,7 +257,7 @@ class CaseFanStrategy:
             )
 
         if not overlap_tokens:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=[],
@@ -304,7 +270,7 @@ class CaseFanStrategy:
                 evidence=evidence,
             )
 
-        evidence = _evidence(
+        evidence = build_evidence(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=overlap_tokens,

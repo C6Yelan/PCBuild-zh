@@ -19,6 +19,7 @@ from backend.tools.db.staging_capture import (
 from .incremental_fetch import record_fetch_state, utc_now
 from .incremental_parsing import (
     extract_json_array,
+    extract_last_json_object,
     parse_t8_counts,
 )
 from .incremental_subprocess import run_cli_main, write_text_file

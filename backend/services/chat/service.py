@@ -62,6 +62,133 @@ from backend.services.chat.staging import (
 _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
 
 
+def _elapsed_latency_ms(started: float) -> int:
+    return int((perf_counter() - started) * 1000)
+
+
+def _finish_success_flow(
+    *,
+    state: ChatOrchestrationState,
+    started: float,
+    provider_result: chat_provider_caller.ProviderCallResult,
+) -> ChatResponse:
+    latency_ms = _elapsed_latency_ms(started)
+    normalized = normalize_provider_success(
+        provider=state.settings.ai_provider,
+        model=state.settings.ai_model,
+        request_id=state.request_id,
+        latency_ms=latency_ms,
+        provider_result=provider_result,
+        warnings=state.warnings,
+    )
+    outcome = evaluate_decision_outcome(
+        request_id=state.request_id,
+        text=normalized.text,
+        max_output_chars=state.settings.ai_max_output_chars,
+        warnings=state.warnings,
+        categories=state.demand.categories,
+        compressed_candidates=state.retrieval.compressed_candidates,
+        context_pack_text=state.retrieval.context_pack_text,
+        triggered_retrieval=state.triggered_retrieval,
+        validate_text_response=validate_text_response,
+        evaluate_text_dq=evaluate_text_dq,
+    )
+    snapshot_id = chat_snapshot_store.persist_ai_snapshot(
+        **state.snapshot_kwargs(
+            latency_ms=latency_ms,
+            ok=outcome.published.ok,
+            error_type=outcome.published.error_type or "-",
+            validation_report=outcome.validation,
+            dq_report=outcome.dq_report,
+            provider_result=provider_result,
+        )
+    )
+    persist_chat_stage_or_quarantine_seam(
+        **state.staging_kwargs(
+            snapshot_id=snapshot_id,
+            normalized_text=outcome.response_text,
+            public_text=outcome.published.text,
+            latency_ms=latency_ms,
+            gate_status=outcome.gate_status,
+            dq_status=outcome.dq_status,
+            gate_reasons=list(outcome.validation.reasons),
+            dq_reasons=list(outcome.dq_report.reasons) if outcome.dq_report else [],
+            publish_reason=outcome.published.publish_reason,
+            error_type=outcome.published.error_type,
+        )
+    )
+    log_ai_call(
+        log_operation=log_operation,
+        **state.ai_call_kwargs(
+            snapshot_id=snapshot_id,
+            latency_ms=latency_ms,
+            ok=outcome.published.ok,
+            error_type=outcome.published.error_type or "-",
+            gate_status=outcome.gate_status,
+            dq_status=outcome.dq_status,
+            staging_status=outcome.staging_status,
+            quarantine_status=outcome.quarantine_status,
+        ),
+    )
+    return build_chat_response(
+        request_id=normalized.request_id,
+        provider=normalized.provider,
+        model=normalized.model,
+        text=outcome.published.text,
+        latency_ms=normalized.latency_ms,
+        error_type=outcome.published.error_type,
+        warnings=state.warnings,
+        compressed_candidates=state.retrieval.compressed_candidates,
+        drop_log=state.retrieval.drop_log,
+    )
+
+
+def _finish_provider_error_flow(
+    *,
+    state: ChatOrchestrationState,
+    started: float,
+    error: OpenAICompatError | ProviderDispatchError,
+) -> ChatResponse:
+    latency_ms = _elapsed_latency_ms(started)
+    snapshot_id = chat_snapshot_store.persist_ai_snapshot(
+        **state.snapshot_kwargs(
+            latency_ms=latency_ms,
+            ok=False,
+            error_type=error.error_type,
+            provider_error=error,
+        )
+    )
+    published = publish_chat_response(
+        request_id=state.request_id,
+        error_type=error.error_type,
+        provider_fallback_text=provider_error_fallback_text(error.error_type),
+    )
+    log_ai_call(
+        log_operation=log_operation,
+        **state.ai_call_kwargs(
+            snapshot_id=snapshot_id,
+            latency_ms=latency_ms,
+            ok=False,
+            error_type=error.error_type,
+            gate_status="skipped",
+            dq_status="skipped",
+            staging_status="skipped",
+            quarantine_status="not_applicable",
+        ),
+    )
+    return build_chat_response(
+        request_id=state.request_id,
+        provider=state.settings.ai_provider,
+        model=state.settings.ai_model,
+        text=published.text,
+        latency_ms=latency_ms,
+        error_type=error.error_type,
+        warnings=state.warnings,
+        compressed_candidates=state.retrieval.compressed_candidates,
+        drop_log=state.retrieval.drop_log,
+    )
+
+
 def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None) -> ChatResponse:
     # Keep this module as the stable generate_chat_reply patch/import surface for
     # backend.services.chat, tests, and ops CLIs.
@@ -120,150 +247,14 @@ def generate_chat_reply(chat_request: ChatRequest, *, db: Session | None = None)
             completion_generator=generate_openai_compat_completion,
             original_text_generator=_ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT,
         )
-        latency_ms = int((perf_counter() - started) * 1000)
-        normalized = normalize_provider_success(
-            provider=settings.ai_provider,
-            model=settings.ai_model,
-            request_id=request_id,
-            latency_ms=latency_ms,
-            provider_result=provider_result,
-            warnings=warnings,
+    except (OpenAICompatError, ProviderDispatchError) as exc:
+        return _finish_provider_error_flow(
+            state=state,
+            started=started,
+            error=exc,
         )
-        outcome = evaluate_decision_outcome(
-            request_id=request_id,
-            text=normalized.text,
-            max_output_chars=settings.ai_max_output_chars,
-            warnings=warnings,
-            categories=demand.categories,
-            compressed_candidates=retrieval.compressed_candidates,
-            context_pack_text=retrieval.context_pack_text,
-            triggered_retrieval=triggered_retrieval,
-            validate_text_response=validate_text_response,
-            evaluate_text_dq=evaluate_text_dq,
-        )
-        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
-            **state.snapshot_kwargs(
-                latency_ms=latency_ms,
-                ok=outcome.published.ok,
-                error_type=outcome.published.error_type or "-",
-                validation_report=outcome.validation,
-                dq_report=outcome.dq_report,
-                provider_result=provider_result,
-            )
-        )
-        persist_chat_stage_or_quarantine_seam(
-            **state.staging_kwargs(
-                snapshot_id=snapshot_id,
-                normalized_text=outcome.response_text,
-                public_text=outcome.published.text,
-                latency_ms=latency_ms,
-                gate_status=outcome.gate_status,
-                dq_status=outcome.dq_status,
-                gate_reasons=list(outcome.validation.reasons),
-                dq_reasons=list(outcome.dq_report.reasons) if outcome.dq_report else [],
-                publish_reason=outcome.published.publish_reason,
-                error_type=outcome.published.error_type,
-            )
-        )
-        log_ai_call(
-            log_operation=log_operation,
-            **state.ai_call_kwargs(
-                snapshot_id=snapshot_id,
-                latency_ms=latency_ms,
-                ok=outcome.published.ok,
-                error_type=outcome.published.error_type or "-",
-                gate_status=outcome.gate_status,
-                dq_status=outcome.dq_status,
-                staging_status=outcome.staging_status,
-                quarantine_status=outcome.quarantine_status,
-            ),
-        )
-        return build_chat_response(
-            request_id=normalized.request_id,
-            provider=normalized.provider,
-            model=normalized.model,
-            text=outcome.published.text,
-            latency_ms=normalized.latency_ms,
-            error_type=outcome.published.error_type,
-            warnings=warnings,
-            compressed_candidates=retrieval.compressed_candidates,
-            drop_log=retrieval.drop_log,
-        )
-    except OpenAICompatError as exc:
-        latency_ms = int((perf_counter() - started) * 1000)
-        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
-            **state.snapshot_kwargs(
-                latency_ms=latency_ms,
-                ok=False,
-                error_type=exc.error_type,
-                provider_error=exc,
-            )
-        )
-        published = publish_chat_response(
-            request_id=request_id,
-            error_type=exc.error_type,
-            provider_fallback_text=provider_error_fallback_text(exc.error_type),
-        )
-        log_ai_call(
-            log_operation=log_operation,
-            **state.ai_call_kwargs(
-                snapshot_id=snapshot_id,
-                latency_ms=latency_ms,
-                ok=False,
-                error_type=exc.error_type,
-                gate_status="skipped",
-                dq_status="skipped",
-                staging_status="skipped",
-                quarantine_status="not_applicable",
-            ),
-        )
-        return build_chat_response(
-            request_id=request_id,
-            provider=settings.ai_provider,
-            model=settings.ai_model,
-            text=published.text,
-            latency_ms=latency_ms,
-            error_type=exc.error_type,
-            warnings=warnings,
-            compressed_candidates=retrieval.compressed_candidates,
-            drop_log=retrieval.drop_log,
-        )
-    except ProviderDispatchError as exc:
-        latency_ms = int((perf_counter() - started) * 1000)
-        snapshot_id = chat_snapshot_store.persist_ai_snapshot(
-            **state.snapshot_kwargs(
-                latency_ms=latency_ms,
-                ok=False,
-                error_type=exc.error_type,
-                provider_error=exc,
-            )
-        )
-        published = publish_chat_response(
-            request_id=request_id,
-            error_type=exc.error_type,
-            provider_fallback_text=provider_error_fallback_text(exc.error_type),
-        )
-        log_ai_call(
-            log_operation=log_operation,
-            **state.ai_call_kwargs(
-                snapshot_id=snapshot_id,
-                latency_ms=latency_ms,
-                ok=False,
-                error_type=exc.error_type,
-                gate_status="skipped",
-                dq_status="skipped",
-                staging_status="skipped",
-                quarantine_status="not_applicable",
-            ),
-        )
-        return build_chat_response(
-            request_id=request_id,
-            provider=settings.ai_provider,
-            model=settings.ai_model,
-            text=published.text,
-            latency_ms=latency_ms,
-            error_type=exc.error_type,
-            warnings=warnings,
-            compressed_candidates=retrieval.compressed_candidates,
-            drop_log=retrieval.drop_log,
-        )
+    return _finish_success_flow(
+        state=state,
+        started=started,
+        provider_result=provider_result,
+    )

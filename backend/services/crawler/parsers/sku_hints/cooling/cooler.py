@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 
 from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..shared_specs import extract_model_head
+from ..shared_specs import normalized_title_line
 
 _NOTICE_RE = re.compile(r"(提醒|注意事項|說明)") # 用於識別注意事項類型
 _PASTE_RE = re.compile(r"(導熱膏|散熱膏|液態金屬|道康膏|涼膏)") # 用於識別導熱膏類型
@@ -61,6 +63,10 @@ _SOCKET_RE = re.compile( # 提取支援插槽
 _MODEL_REMOVE_RE = re.compile( # 用於清除非型號的規格字串
     r"(散熱器|散熱膏|導熱膏|散熱墊|導熱墊|導熱片|散熱片|散熱座|筆電散熱座|筆電散熱墊|"
     r"M\.2散熱片|M\.2散熱器|SSD散熱片|SSD散熱器|水冷|冷排|一體式)",
+    flags=re.IGNORECASE,
+)
+_MODEL_HEAD_CLEAN_RE = re.compile(
+    rf"{_MODEL_REMOVE_RE.pattern}|{_LIMIT_RE.pattern}",
     flags=re.IGNORECASE,
 )
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 提取可能的品牌字串
@@ -129,12 +135,7 @@ def _extract_brand(text: str) -> str | None: # 提取品牌提示。
 
 
 def _extract_model_hint(text: str) -> str | None: # 提取型號提示。
-    head = head_before_brackets(text)
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
-    head = _MODEL_REMOVE_RE.sub(" ", head)
-    head = _LIMIT_RE.sub(" ", head)
-    head = normalize_spaces(head)
+    head = extract_model_head(text, clean_pattern=_MODEL_HEAD_CLEAN_RE)
     return head or None
 
 
@@ -236,7 +237,7 @@ def _extract_warranty_years(text: str) -> int | None: #　提取保固年限。
 
 
 def extract_cooler_sku_hint(title: str) -> str | None: # 回傳散熱器型號提示（sku_hint）。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     return _extract_model_hint(line)
 
 

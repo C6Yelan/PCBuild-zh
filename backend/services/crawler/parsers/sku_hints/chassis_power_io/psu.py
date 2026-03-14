@@ -4,8 +4,10 @@ from __future__ import annotations
 import re
 
 from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import build_title_desc_texts
+from ..shared_specs import extract_limit_hint
+from ..shared_specs import extract_model_head
 from ..shared_specs import extract_warranty_years as _extract_warranty_years
-from ..shared_specs import normalize_nonempty_lines as _normalize_lines
 from ..shared_specs import normalized_title_line
 from ..shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
@@ -177,11 +179,7 @@ def _clean_model_head(text: str) -> str:  # 清理並正規化型號開頭字樣
     # NEW: 若開頭是「品牌(代理/別名) 型號...」，先移除這個括號，避免 head_before_brackets 只剩品牌
     text = re.sub(r"^([^\s(（【\[]+)[(（][^）)]{1,80}[)）]\s*", r"\1 ", text)
 
-    head = head_before_brackets(text)
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
-    head = _SPEC_CLEAN_RE.sub(" ", head)
-    return normalize_spaces(head)
+    return extract_model_head(text, clean_pattern=_SPEC_CLEAN_RE)
 
 
 def extract_psu_sku_hint(title: str) -> str | None: # 抓取 PSU 型號提示字樣。
@@ -194,9 +192,7 @@ def extract_psu_sku_hint(title: str) -> str | None: # 抓取 PSU 型號提示字
 
 
 def extract_psu_hints(title: str, desc_lines: list[str] | None = None) -> tuple[str | None, dict[str, object]]: # 抓取 PSU 型號提示字樣及其他提示字樣。
-    line = normalized_title_line(title)
-    desc = _normalize_lines(desc_lines)
-    texts = [line] + desc
+    line, desc, texts = build_title_desc_texts(title, desc_lines)
 
     sku_hint = extract_psu_sku_hint(line)
 
@@ -214,10 +210,7 @@ def extract_psu_hints(title: str, desc_lines: list[str] | None = None) -> tuple[
     caps_hint = _extract_caps_hint(line)
     has_zero_rpm_hint = True if _ZERO_RPM_RE.search(line) else None
 
-    limit_hint = None
-    limit_m = _LIMIT_RE.search(line)
-    if limit_m:
-        limit_hint = limit_m.group(1)
+    limit_hint = extract_limit_hint([line], _LIMIT_RE)
 
     is_bundle = True if _BUNDLE_RE.search(line) else None
     is_accessory = True if (_ACCESSORY_RE.search(line) and watt_w_hint is None) else None

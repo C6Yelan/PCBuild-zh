@@ -4,7 +4,9 @@ from __future__ import annotations
 import re
 
 from ..common import head_before_brackets, normalize_spaces
-from ..shared_specs import normalize_nonempty_lines as _normalize_lines
+from ..shared_specs import build_title_desc_texts
+from ..shared_specs import extract_limit_hint
+from ..shared_specs import extract_model_head
 from ..shared_specs import normalized_title_line
 from ..shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
@@ -56,12 +58,12 @@ _MODEL_TRAILING_SPEC_RE = re.compile( # 型號後方可能出現的規格描述�
 
 
 def _extract_model_hint(text: str) -> str | None:
-    head = head_before_brackets(_strip_leading_bracket_tags(text))
-    head = _MODEL_BUNDLE_SPLIT_RE.split(head, 1)[0]
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
-    head = _MODEL_TRAILING_SPEC_RE.sub("", head)
-    head = normalize_spaces(head)
+    head = extract_model_head(
+        text,
+        strip_bracket_tags=True,
+        bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
+        clean_pattern=_MODEL_TRAILING_SPEC_RE,
+    )
     return head or None
 
 
@@ -270,9 +272,8 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     front_io_hint, psu_included_hint, psu_watt_w_hint, limit_hint, is_bundle, is_accessory
     """
     text = title or ""
-    line = normalized_title_line(text)
+    line, lines, _texts = build_title_desc_texts(text, desc_lines)
     head = head_before_brackets(line)
-    lines = _normalize_lines(desc_lines)
 
     clean_line = _strip_leading_bracket_tags(line)
     brand_hint = _extract_brand(head or clean_line)
@@ -317,10 +318,7 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     if psu_watt_w_hint is not None and psu_included_hint is None:
         psu_included_hint = True
 
-    limit_hint = None
-    limit_m = _LIMIT_RE.search(" ".join(lines) or line)
-    if limit_m:
-        limit_hint = limit_m.group(1)
+    limit_hint = extract_limit_hint(lines or [line], _LIMIT_RE)
 
     bundle_blob = " ".join([line] + lines)  # 一定包含 title + desc
     is_bundle = bool(

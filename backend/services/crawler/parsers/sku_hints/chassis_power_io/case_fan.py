@@ -4,11 +4,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import build_title_desc_texts
+from ..shared_specs import extract_limit_hint
+from ..shared_specs import extract_model_head
 from ..shared_specs import extract_warranty_years as _extract_warranty_years
-from ..shared_specs import normalize_nonempty_lines as _normalize_lines
 from ..shared_specs import normalized_title_line
-from ..shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
 _MODEL_BUNDLE_SPLIT_RE = re.compile(r"\s+[+＋]\s+")
 
@@ -72,12 +72,11 @@ _CONTROLLER_REQ_RE = re.compile(r"需[^\n]{0,12}控制器|需搭配[^\n]{0,12}�
 
 def _model_head(text: str) -> str:
     line = normalized_title_line(text)
-    line = _strip_leading_bracket_tags(line)
-    head = head_before_brackets(line) or line
-    head = _MODEL_BUNDLE_SPLIT_RE.split(head, 1)[0]
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
-    return normalize_spaces(head)
+    return extract_model_head(
+        line,
+        strip_bracket_tags=True,
+        bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
+    )
 
 
 def extract_case_fan_sku_hint(title: str) -> str | None:
@@ -200,14 +199,6 @@ def _extract_pack_count(texts: list[str]) -> int | None:
     return None
 
 
-def _extract_limit(texts: list[str]) -> str | None:
-    for text in texts:
-        m = _LIMIT_RE.search(text or "")
-        if m:
-            return m.group(1)
-    return None
-
-
 def _detect_accessory(texts: list[str]) -> tuple[bool, str | None]:
     bundle_context = False
     for text in texts:
@@ -237,9 +228,7 @@ def _detect_accessory(texts: list[str]) -> tuple[bool, str | None]:
 
 
 def extract_case_fan_listing_hints(title: str, desc_lines: list[str] | None) -> tuple[str | None, dict[str, Any]]:
-    line = normalized_title_line(title)
-    desc = _normalize_lines(desc_lines)
-    texts = [line] + desc
+    line, desc, texts = build_title_desc_texts(title, desc_lines)
 
     sku_hint = extract_case_fan_sku_hint(line)
 
@@ -253,7 +242,7 @@ def extract_case_fan_listing_hints(title: str, desc_lines: list[str] | None) -> 
     pack_count_hint = _extract_pack_count(texts)
     reverse_fan_hint = True if any(_REVERSE_RE.search(t or "") for t in texts) else None
     warranty_years = _extract_warranty_years(texts)
-    limit_hint = _extract_limit(texts)
+    limit_hint = extract_limit_hint(texts, _LIMIT_RE)
     is_bundle = True if any(_BUNDLE_RE.search(t or "") for t in texts) else None
 
     fan_size_mm_hint = None

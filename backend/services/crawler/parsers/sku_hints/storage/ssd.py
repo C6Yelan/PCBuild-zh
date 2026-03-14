@@ -4,15 +4,14 @@ from __future__ import annotations
 import re
 
 from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..shared_specs import extract_capacity_gib
+from ..shared_specs import normalized_title_line
 
 _BRACKET_CONTENT_RE = re.compile(r"[（(【\[](?P<content>[^）)】\]]+)[）)】\]]") # 提取括號內的內容
 _BRACKET_REMOVE_RE = re.compile(r"[（(【\[][^\)）】\]]*[）)】\]]") # 用於清除括號及其內容
 _SKU_TOKEN_RE = re.compile(r"[A-Z0-9][A-Z0-9-]{4,}", flags=re.IGNORECASE) # 用於尋找可能的型號字串
 _PLUS_SPLIT_RE = re.compile(r"[+＋]") # 用於在 '+' 號處切割字串
 
-_CAPACITY_RE = re.compile( # 提取容量數值及單位
-    r"(?i)(?<!\d)(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>TB|T|GB|G)(?![A-Za-z0-9])"
-)
 _FORM_25_RE = re.compile(r"2\.5吋|2\.5\"", flags=re.IGNORECASE) # 用於識別 2.5 吋規格
 _M2_RE = re.compile(r"\bM\.2\b", flags=re.IGNORECASE) # 用於識別 M.2 規格
 _M2_LEN_RE = re.compile(r"\b(22(?:30|42|60|80|110))\b") # 提取 M.2 長度規格
@@ -99,19 +98,6 @@ def _clean_model(text: str, brand_hint: str | None) -> str | None: # 清理並�
     return base or None
 
 
-def _extract_capacity_gib(text: str) -> int | None: # 提取容量並轉換為 GiB。
-    m = _CAPACITY_RE.search(text or "")
-    if not m:
-        return None
-    num = float(m.group("num"))
-    unit = m.group("unit").upper()
-    if unit in ("T", "TB"):
-        bytes_val = num * 10**12
-    else:
-        bytes_val = num * 10**9
-    return int(round(bytes_val / (1 << 30)))
-
-
 def _extract_pcie_gen(text: str) -> int | None: # 提取 PCIe 世代資訊。
     m = _PCIE_GEN_RE.search(text or "")
     if not m:
@@ -187,7 +173,7 @@ def _parse_warranty_years(text: str) -> int | None: # 解析保固年限，支�
 
 
 def extract_ssd_sku_hint(title: str) -> str | None: # 回傳 SSD 型號提示（sku_hint）。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     hint = _extract_bracket_model(line)
     if hint:
         return hint
@@ -207,14 +193,14 @@ def extract_ssd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     single_sided_hint, warranty_years, limit_hint
     """
     text = title or ""
-    line = normalize_spaces(strip_leading_note(first_line(text)))
+    line = normalized_title_line(text)
     head = head_before_brackets(line)
 
     brand_hint = _infer_brand(head or line)
     sku_hint = extract_ssd_sku_hint(line)
     model_hint = _clean_model(line, brand_hint)
 
-    capacity_gib = _extract_capacity_gib(head) or _extract_capacity_gib(line)
+    capacity_gib = extract_capacity_gib(head) or extract_capacity_gib(line)
 
     form_factor_hint = None
     if _FORM_25_RE.search(line):

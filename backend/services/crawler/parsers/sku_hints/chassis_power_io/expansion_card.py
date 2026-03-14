@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import re
 
-from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import build_title_desc_texts
+from ..shared_specs import extract_keyword_count
+from ..shared_specs import extract_limit_hint
+from ..shared_specs import extract_model_head
+from ..shared_specs import extract_warranty_years
+from ..shared_specs import normalized_title_line
+from ..shared_specs import strip_leading_bracket_tags
 
-_LEADING_BRACKET_TAGS_RE = re.compile(r"^(?:【[^】]{1,80}】\s*)+")
 _MODEL_BUNDLE_SPLIT_RE = re.compile(r"\s*[+＋]\s*")
 
 _PCIE_RE = re.compile(r"PCI-?E|PCIE", flags=re.IGNORECASE)
@@ -21,7 +27,6 @@ _LANES_RE = re.compile(
 _M2_RE = re.compile(r"M\.2|NVME|HYPER\s*M\.2|轉接卡", flags=re.IGNORECASE)
 _M2_COUNT_RE = re.compile(r"(\d+)\s*(?:個|條|埠)\s*M\.2|M\.2[^0-9]{0,8}(\d+)\s*(?:個|條|埠)", flags=re.IGNORECASE)
 _PORT_COUNT_RE = re.compile(r"(\d+)\s*埠")
-
 _NVME_ONLY_RE = re.compile(r"限\s*NVME|NVME\s*ONLY", flags=re.IGNORECASE)
 
 _USB4_RE = re.compile(r"(?<![A-Za-z0-9])USB\s*4(?![A-Za-z0-9])", flags=re.IGNORECASE)
@@ -50,9 +55,6 @@ _ACCESSORY_RE = re.compile(r"轉接線|延長線|線材|轉接頭|配件", flags
 _CARD_RE = re.compile(r"CARD|轉接卡|擴充卡", flags=re.IGNORECASE)
 
 _COUNT_STAR_RE = re.compile(r"(?<![A-Za-z0-9])(?:\*|x|×)\s*(\d+)(?![A-Za-z0-9])", flags=re.IGNORECASE)
-
-_WARRANTY_NUM_RE = re.compile(r"(\d+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?")
-_WARRANTY_ZH_RE = re.compile(r"([一二三四五六七八九十]+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?")
 
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}")
 _CJK_BRAND_ONLY_RE = re.compile(r"^[\u4e00-\u9fff]{1,6}$")
@@ -85,20 +87,6 @@ _SPEC_CLEAN_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
-_CHINESE_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
-
-
 _KIND_RULES: list[tuple[re.Pattern[str], str]] = [
     (_THUNDERBOLT_RE, "thunderbolt"),
     (_USB4_RE, "usb4"),
@@ -110,35 +98,17 @@ _KIND_RULES: list[tuple[re.Pattern[str], str]] = [
     (_RAID_RE, "raid"),
 ]
 
-_COUNT_TOKEN_RE = re.compile(r"(?:\*|×|(?<![A-Za-z0-9])x)\s*(\d+)", flags=re.IGNORECASE)
-
-
-def _strip_leading_bracket_tags(text: str) -> str:
-    return _LEADING_BRACKET_TAGS_RE.sub("", (text or "")).lstrip()
-
-
-def _normalize_lines(lines: list[str] | None) -> list[str]:
-    out: list[str] = []
-    for line in lines or []:
-        line = normalize_spaces(line)
-        if not line or "含稅" in line:
-            continue
-        out.append(line)
-    return out
-
-
 def _model_head(text: str) -> str:
-    line = normalize_spaces(strip_leading_note(first_line(text)))
-    line = _strip_leading_bracket_tags(line)
+    line = strip_leading_bracket_tags(normalized_title_line(text))
     has_bracket = bool(re.search(r"[（(【]", line))
-    head = head_before_brackets(line) or line
-    head = _MODEL_BUNDLE_SPLIT_RE.split(head, 1)[0]
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
-    head = normalize_spaces(head)
+    head = extract_model_head(line, bundle_split_re=_MODEL_BUNDLE_SPLIT_RE)
     if has_bracket and head and not _SPEC_CLEAN_RE.search(head):
         return head
-    cleaned = normalize_spaces(_SPEC_CLEAN_RE.sub(" ", head))
+    cleaned = extract_model_head(
+        line,
+        bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
+        clean_pattern=_SPEC_CLEAN_RE,
+    )
     return cleaned or head
 
 
@@ -164,8 +134,7 @@ def _hyper_gen_suffix(text: str) -> str | None:
 
 
 def extract_expansion_card_sku_hint(title: str) -> str | None:
-    line = normalize_spaces(strip_leading_note(first_line(title)))
-    line = _strip_leading_bracket_tags(line)
+    line = strip_leading_bracket_tags(normalized_title_line(title))
     head = _model_head(line)
     tail_model = _tail_model_token(line)
 
@@ -185,7 +154,7 @@ def extract_expansion_card_sku_hint(title: str) -> str | None:
 
 
 def _infer_brand(text: str) -> str | None:
-    clean = _strip_leading_bracket_tags(text)
+    clean = strip_leading_bracket_tags(text)
     cjk_m = re.match(r"^([\u4e00-\u9fff]{1,20})", clean or "")
     if cjk_m:
         return cjk_m.group(1)
@@ -244,30 +213,6 @@ def _extract_m2_slots(texts: list[str]) -> int | None:
     return None
 
 
-def _extract_keyword_count(texts: list[str], keyword_re: re.Pattern[str], before_keyword: str | None = None) -> int | None:
-    zh_map = {"雙": 2, "兩": 2, "三": 3, "四": 4}
-    label_re = re.compile(before_keyword, flags=re.IGNORECASE) if before_keyword else keyword_re
-    for text in texts:
-        t = text or ""
-        for kw in keyword_re.finditer(t):
-            start = max(0, kw.start() - 10)
-            end = min(len(t), kw.end() + 20)
-            window = t[start:end]
-            if before_keyword and not label_re.search(window):
-                continue
-            forward = t[kw.end(): min(len(t), kw.end() + 20)]
-            m = _COUNT_TOKEN_RE.search(forward)
-            if m:
-                return int(m.group(1))
-            m = _PORT_COUNT_RE.search(window)
-            if m:
-                return int(m.group(1))
-            for zh, val in zh_map.items():
-                if zh in window:
-                    return val
-    return None
-
-
 def _extract_bandwidth(texts: list[str]) -> int | None:
     for text in texts:
         m = _GBPS_RE.search(text or "")
@@ -299,44 +244,12 @@ def _extract_platform_support(lines: list[str]) -> str | None:
     return None
 
 
-def _parse_zh_number(raw: str) -> int | None:
-    if not raw:
-        return None
-    if raw.isdigit():
-        return int(raw)
-    if raw in _CHINESE_NUM:
-        return _CHINESE_NUM[raw]
-    if raw.startswith("十") and len(raw) == 2 and raw[1] in _CHINESE_NUM:
-        return 10 + _CHINESE_NUM[raw[1]]
-    if len(raw) == 2 and raw[0] in _CHINESE_NUM and raw[1] == "十":
-        return _CHINESE_NUM[raw[0]] * 10
-    return None
-
-
-def _extract_warranty_years(texts: list[str]) -> int | None:
-    candidates: list[int] = []
-    for text in texts:
-        for m in _WARRANTY_NUM_RE.finditer(text or ""):
-            candidates.append(int(m.group(1)))
-        for m in _WARRANTY_ZH_RE.finditer(text or ""):
-            yrs = _parse_zh_number(m.group(1))
-            if yrs is not None:
-                candidates.append(yrs)
-    return max(candidates) if candidates else None
-
-
-def _extract_limit(texts: list[str]) -> str | None:
-    for text in texts:
-        m = _LIMIT_RE.search(text or "")
-        if m:
-            return m.group(1)
-    return None
-
-
 def extract_expansion_card_hints(title: str, desc_lines: list[str] | None) -> tuple[str | None, dict[str, object]]:
-    line = normalize_spaces(strip_leading_note(first_line(title)))
-    desc = _normalize_lines(desc_lines)
-    texts = [line] + desc
+    line, desc, texts = build_title_desc_texts(
+        title,
+        desc_lines,
+        skip_substrings=("含稅",),
+    )
 
     sku_hint = extract_expansion_card_sku_hint(line)
     brand_hint = _infer_brand(line)
@@ -351,23 +264,23 @@ def extract_expansion_card_hints(title: str, desc_lines: list[str] | None) -> tu
     m2_slot_count_hint = _extract_m2_slots(texts)
     nvme_only_hint = True if any(_NVME_ONLY_RE.search(t or "") for t in texts) else None
 
-    usb4_port_count_hint = _extract_keyword_count(texts, _USB4_RE, r"USB\s*4")
-    thunderbolt_port_count_hint = _extract_keyword_count(texts, _THUNDERBOLT_RE, r"Thunderbolt|TB[45]")
-    usb_typec_port_count_hint = _extract_keyword_count(texts, _TYPEC_RE, r"Type-?C|TYPEC")
-    usb_typea_port_count_hint = _extract_keyword_count(texts, _TYPEA_RE, r"Type-?A|TYPEA")
-    sata_port_count_hint = _extract_keyword_count(texts, _SATA_RE, r"SATA")
-    rs232_port_count_hint = _extract_keyword_count(texts, _SERIAL_RE, r"RS232|Serial")
-    parallel_port_count_hint = _extract_keyword_count(texts, _PARALLEL_RE, r"Parallel|LPT")
-    displayport_in_count_hint = _extract_keyword_count(texts, _DISPLAYPORT_RE, r"DisplayPort")
-    mini_dp_in_count_hint = _extract_keyword_count(texts, _MINI_DP_RE, r"Mini\s*DP")
+    usb4_port_count_hint = extract_keyword_count(texts, _USB4_RE, before_keyword=r"USB\s*4")
+    thunderbolt_port_count_hint = extract_keyword_count(texts, _THUNDERBOLT_RE, before_keyword=r"Thunderbolt|TB[45]")
+    usb_typec_port_count_hint = extract_keyword_count(texts, _TYPEC_RE, before_keyword=r"Type-?C|TYPEC")
+    usb_typea_port_count_hint = extract_keyword_count(texts, _TYPEA_RE, before_keyword=r"Type-?A|TYPEA")
+    sata_port_count_hint = extract_keyword_count(texts, _SATA_RE, before_keyword=r"SATA")
+    rs232_port_count_hint = extract_keyword_count(texts, _SERIAL_RE, before_keyword=r"RS232|Serial")
+    parallel_port_count_hint = extract_keyword_count(texts, _PARALLEL_RE, before_keyword=r"Parallel|LPT")
+    displayport_in_count_hint = extract_keyword_count(texts, _DISPLAYPORT_RE, before_keyword=r"DisplayPort")
+    mini_dp_in_count_hint = extract_keyword_count(texts, _MINI_DP_RE, before_keyword=r"Mini\s*DP")
 
     bandwidth_gbps_hint = _extract_bandwidth(texts)
     chipset_hint = _extract_chipset(texts)
     internal_header_hint = _extract_header(texts)
     low_profile_bracket_included_hint = True if any(_SHORT_BRACKET_RE.search(t or "") for t in texts) else None
     platform_support_hint = _extract_platform_support(desc)
-    warranty_years = _extract_warranty_years(texts)
-    limit_hint = _extract_limit(texts)
+    warranty_years = extract_warranty_years(texts)
+    limit_hint = extract_limit_hint(texts, _LIMIT_RE)
 
     is_bundle = True if any(_BUNDLE_RE.search(t or "") for t in texts) else None
     has_accessory_term = any(_ACCESSORY_RE.search(t or "") for t in texts)

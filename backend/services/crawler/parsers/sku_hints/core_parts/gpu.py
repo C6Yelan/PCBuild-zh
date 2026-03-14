@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import re
 
-from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import normalized_title_line
 
 _RTX_RE = re.compile( # NVIDIA RTX 系列型號格式
     r"(?i)(?<![A-Za-z0-9])RTX\s*(?P<num>\d{3,4})"
@@ -288,7 +289,7 @@ def _extract_chip_from_core_lines(text: str) -> tuple[str | None, str | None]: #
 
 def _infer_is_bundle(title: str) -> bool:
     text = title or ""
-    line = strip_leading_note(first_line(text))
+    line = normalized_title_line(text)
     head = head_before_brackets(line) or line
 
     if _BUNDLE_KEYWORDS_RE.search(text):
@@ -307,7 +308,7 @@ def _infer_is_bundle(title: str) -> bool:
 
 def extract_gpu_hints(title: str) -> tuple[str | None, dict[str, object]]: # 從標題中抽取 GPU 型號提示及其他額外資訊
     full_text = title or ""
-    line = strip_leading_note(first_line(full_text))
+    line = normalized_title_line(full_text)
     sku_hint, brand_hint = _match_chip(line)
     if not sku_hint:
         sku_hint, brand_hint = _extract_chip_from_core_lines(full_text)

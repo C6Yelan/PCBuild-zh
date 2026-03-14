@@ -3,11 +3,10 @@ from __future__ import annotations
 
 import re
 
-from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..common import head_before_brackets
+from ..shared_specs import extract_capacity_gib
+from ..shared_specs import normalized_title_line
 
-_CAPACITY_RE = re.compile( # 容量，支援 TB、GB 單位
-    r"(?i)(?<!\d)(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>TB|T|GB|G)(?![A-Za-z0-9])"
-)
 _RPM_RE = re.compile(r"(?P<rpm>\d{4,5})\s*轉") # 轉速, 單位 RPM
 _CACHE_MB_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*MB\b") # 快取容量, 單位 MB
 _CACHE_M_RE = re.compile(r"(?i)(?P<mb>\d{2,4})\s*M\b") # 快取容量的備用模式, 單位 MB
@@ -74,19 +73,6 @@ def _infer_brand_from_model_token(model_token: str | None) -> str | None:
     return None
 
 
-def _extract_capacity_gib(text: str) -> int | None: # 提取容量並轉換為 GiB。
-    m = _CAPACITY_RE.search(text or "")
-    if not m:
-        return None
-    num = float(m.group("num"))
-    unit = m.group("unit").upper()
-    if unit in ("T", "TB"):
-        bytes_val = num * 10**12
-    else:
-        bytes_val = num * 10**9
-    return int(round(bytes_val / (1 << 30)))
-
-
 def _extract_model_token(text: str) -> str | None: # 提取型號提示。
     if not text:
         return None
@@ -151,7 +137,7 @@ def _infer_brand(text: str) -> str | None: # 推斷品牌提示。
 
 def extract_hdd_sku_hint(title: str) -> str | None: # 回傳 HDD 型號提示（sku_hint）。
     text = title or ""
-    line = normalize_spaces(strip_leading_note(first_line(text)))
+    line = normalized_title_line(text)
     head = head_before_brackets(line)
     model_token = _pick_hint(_extract_model_token(line), _extract_model_token(head), _extract_model_token(text))
     return _pick_hint(model_token, head, line, "UNKNOWN-HDD")
@@ -162,9 +148,9 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     「extra 會回傳完整欄位；但在上游輸出 JSON 時可能會做 compact（移除 None 的 key）。
     """
     text = title or ""
-    line = normalize_spaces(strip_leading_note(first_line(text)))
+    line = normalized_title_line(text)
     head = head_before_brackets(line)
-    title_first_line = normalize_spaces(strip_leading_note(first_line(text)))
+    title_first_line = normalized_title_line(text)
 
     model_token = _pick_hint(_extract_model_token(line), _extract_model_token(head), _extract_model_token(text))
     model_hint = _pick_hint(model_token, head, line, title_first_line, "UNKNOWN-HDD")
@@ -178,7 +164,7 @@ def extract_hdd_hints(title: str) -> tuple[str | None, dict[str, object]]:
     if brand_hint is None:
         brand_hint = _infer_brand_from_model_token(model_hint)
 
-    capacity_gib = _extract_capacity_gib(head) or _extract_capacity_gib(line)
+    capacity_gib = extract_capacity_gib(head) or extract_capacity_gib(line)
 
     rpm_hint = None
     rpm_m = _RPM_RE.search(line)

@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import re
 
-from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
+from ..common import head_before_brackets, normalize_spaces, strip_leading_note
+from ..shared_specs import extract_model_head
+from ..shared_specs import normalized_title_line
 
 _RADIATOR_SIZE_RE = re.compile(r"(?<!\d)(120|240|280|360|420)(?!\d)") # 水冷排尺寸（mm）
 _THICKNESS_MM_RE = re.compile(r"(?<!\d)(\d{2,3})\s*mm(?![A-Za-z0-9])", flags=re.IGNORECASE) # 水冷排厚度（mm）
@@ -81,9 +83,7 @@ def _extract_brand(text: str) -> str | None: # 從標題中抽出品牌提示。
 
 
 def _extract_model_hint(text: str) -> str | None: # 從標題中抽出型號提示。
-    head = head_before_brackets(text)
-    head = re.split(r"[／/|｜]", head, 1)[0]
-    head = re.split(r"[，,、:：]", head, 1)[0]
+    head = extract_model_head(text)
     head = normalize_spaces(head)
     return head or None
 
@@ -151,7 +151,7 @@ def _extract_warranty_years(text: str) -> int | None: # 從標題中抽出保固
 
 
 def extract_liquid_cooling_sku_hint(title: str) -> str | None: # 只回傳 sku_hint(型號提示)，不回傳 extra。
-    line = normalize_spaces(strip_leading_note(first_line(title)))
+    line = normalized_title_line(title)
     return _extract_model_hint(line)
 
 
@@ -163,7 +163,7 @@ def extract_liquid_cooling_hints(title: str) -> tuple[str | None, dict[str, obje
     limit_hint, is_bundle, is_accessory
     """
     # 第一行：用於型號/品牌（避免第二行規格污染 model_hint）
-    line1 = normalize_spaces(strip_leading_note(first_line(title)))
+    line1 = normalized_title_line(title)
     head = head_before_brackets(line1)
     # 全標題：用於抓第二行的厚度/ARGB/保固等資訊（把換行當空白）
     full = normalize_spaces(strip_leading_note((title or "").replace("\n", " ")))

@@ -13,22 +13,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from pydantic import SecretBytes, SecretStr
-
 from backend.services.chat.clients.openai_compat_client import (
     OpenAICompatResult,
     generate_openai_compat_completion,
     generate_openai_compat_text,
 )
 from backend.services.chat.config import (
-    OPENAI_COMPAT_PROVIDERS,
     AISettings,
+    GeminiRuntimeConfig,
+    OpenAICompatRuntimeConfig,
     SYSTEM_PROMPT,
+    build_provider_runtime_config,
+    resolve_secret_text,
 )
 from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.prompt import build_prompt
 
 _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
+
+ProviderTextGenerator = Callable[..., str]
+ProviderCompletionGenerator = Callable[..., OpenAICompatResult]
 
 
 @dataclass(slots=True)
@@ -122,17 +126,6 @@ def build_provider_messages(
     ]
 
 
-def _resolve_api_key(api_key: SecretStr | SecretBytes | str | None) -> str | None:
-    if isinstance(api_key, SecretStr):
-        return api_key.get_secret_value()
-    if isinstance(api_key, SecretBytes):
-        value = api_key.get_secret_value()
-        return value.decode("utf-8", errors="ignore")
-    if isinstance(api_key, str):
-        return api_key
-    return None
-
-
 def _coerce_provider_result(result: OpenAICompatResult) -> ProviderCallResult:
     return ProviderCallResult(
         text=result.text,
@@ -152,7 +145,7 @@ def _coerce_provider_result(result: OpenAICompatResult) -> ProviderCallResult:
 
 def _fallback_text_result(
     *,
-    settings: AISettings,
+    runtime: OpenAICompatRuntimeConfig,
     messages: list[dict[str, str]],
     request_id: str,
     text: str,
@@ -164,14 +157,72 @@ def _fallback_text_result(
     }
     return ProviderCallResult(
         text=text,
-        endpoint=settings.ai_oai_base_url or "-",
+        endpoint=runtime.base_url or "-",
         status_code=200,
         request_headers=request_headers,
-        request_json={"model": settings.ai_model, "messages": messages},
+        request_json={"model": runtime.model, "messages": messages},
         response_headers={},
         response_json=None,
         raw_response_text=text,
         upstream_request_id=None,
+    )
+
+
+def _dispatch_openai_compat_runtime(
+    *,
+    runtime: OpenAICompatRuntimeConfig,
+    messages: list[dict[str, str]],
+    request_id: str,
+    text_generator: ProviderTextGenerator,
+    completion_generator: ProviderCompletionGenerator,
+    original_text_generator: ProviderTextGenerator,
+) -> ProviderCallResult:
+    if not runtime.base_url:
+        raise ProviderDispatchError(
+            "config_error",
+            "AI_OAI_BASE_URL is required for openai-compatible providers.",
+            request_json={"model": runtime.model, "messages": messages},
+        )
+
+    resolved_api_key = resolve_secret_text(runtime.api_key)
+    if text_generator is not original_text_generator:
+        text = text_generator(
+            base_url=runtime.base_url,
+            api_key=resolved_api_key,
+            model=runtime.model,
+            messages=messages,
+            timeout_seconds=runtime.timeout_seconds,
+            client_request_id=request_id,
+            provider=runtime.provider,
+        )
+        return _fallback_text_result(
+            runtime=runtime,
+            messages=messages,
+            request_id=request_id,
+            text=text,
+        )
+
+    result = completion_generator(
+        base_url=runtime.base_url,
+        api_key=resolved_api_key,
+        model=runtime.model,
+        messages=messages,
+        timeout_seconds=runtime.timeout_seconds,
+        client_request_id=request_id,
+        provider=runtime.provider,
+    )
+    return _coerce_provider_result(result)
+
+
+def _dispatch_gemini_runtime(
+    *,
+    runtime: GeminiRuntimeConfig,
+    messages: list[dict[str, str]],
+) -> ProviderCallResult:
+    raise ProviderDispatchError(
+        "provider_not_ready",
+        "Gemini provider dispatch is reserved for A5 implementation.",
+        request_json={"model": runtime.model, "messages": messages},
     )
 
 
@@ -180,11 +231,10 @@ def generate_provider_result(
     settings: AISettings,
     messages: list[dict[str, str]],
     request_id: str,
-    text_generator: Callable[..., str] | None = None,
-    completion_generator: Callable[..., OpenAICompatResult] | None = None,
-    original_text_generator: Callable[..., str] | None = None,
+    text_generator: ProviderTextGenerator | None = None,
+    completion_generator: ProviderCompletionGenerator | None = None,
+    original_text_generator: ProviderTextGenerator | None = None,
 ) -> ProviderCallResult:
-    provider = settings.ai_provider
     resolved_text_generator = text_generator or generate_openai_compat_text
     resolved_completion_generator = (
         completion_generator or generate_openai_compat_completion
@@ -193,52 +243,33 @@ def generate_provider_result(
         original_text_generator or _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT
     )
 
-    if provider in OPENAI_COMPAT_PROVIDERS:
-        if not settings.ai_oai_base_url:
-            raise ProviderDispatchError(
-                "config_error",
-                "AI_OAI_BASE_URL is required for openai-compatible providers.",
-                request_json={"model": settings.ai_model, "messages": messages},
-            )
-
-        if resolved_text_generator is not resolved_original_text_generator:
-            text = resolved_text_generator(
-                base_url=settings.ai_oai_base_url,
-                api_key=_resolve_api_key(settings.ai_oai_api_key),
-                model=settings.ai_model,
-                messages=messages,
-                timeout_seconds=settings.ai_timeout_seconds,
-                client_request_id=request_id,
-                provider=provider,
-            )
-            return _fallback_text_result(
-                settings=settings,
-                messages=messages,
-                request_id=request_id,
-                text=text,
-            )
-
-        result = resolved_completion_generator(
-            base_url=settings.ai_oai_base_url,
-            api_key=_resolve_api_key(settings.ai_oai_api_key),
-            model=settings.ai_model,
-            messages=messages,
-            timeout_seconds=settings.ai_timeout_seconds,
-            client_request_id=request_id,
-            provider=provider,
-        )
-        return _coerce_provider_result(result)
-
-    if provider == "gemini":
+    try:
+        runtime = build_provider_runtime_config(settings)
+    except ValueError as exc:
         raise ProviderDispatchError(
-            "provider_not_ready",
-            "Gemini provider dispatch is reserved for A5 implementation.",
-            request_json={"model": settings.ai_model, "messages": messages},
+            "config_error",
+            str(exc),
+            request_json={"model": getattr(settings, "ai_model", ""), "messages": messages},
+        ) from exc
+
+    if isinstance(runtime, OpenAICompatRuntimeConfig):
+        return _dispatch_openai_compat_runtime(
+            runtime=runtime,
+            messages=messages,
+            request_id=request_id,
+            text_generator=resolved_text_generator,
+            completion_generator=resolved_completion_generator,
+            original_text_generator=resolved_original_text_generator,
+        )
+    if isinstance(runtime, GeminiRuntimeConfig):
+        return _dispatch_gemini_runtime(
+            runtime=runtime,
+            messages=messages,
         )
     raise ProviderDispatchError(
         "config_error",
-        f"Unsupported AI provider: {provider}",
-        request_json={"model": settings.ai_model, "messages": messages},
+        f"Unsupported AI provider: {getattr(settings, 'ai_provider', '')}",
+        request_json={"model": getattr(settings, "ai_model", ""), "messages": messages},
     )
 
 

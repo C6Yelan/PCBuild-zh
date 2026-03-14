@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretBytes, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 OPENAI_COMPAT_PROVIDERS = (
@@ -24,6 +25,26 @@ AIProviderAlias = Literal[
 
 HISTORY_MAX_TURNS = 8
 SYSTEM_PROMPT = "你是電腦組裝顧問，所有回覆一律使用繁體中文。"
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAICompatRuntimeConfig:
+    provider: str
+    model: str
+    timeout_seconds: float
+    base_url: str | None
+    api_key: SecretStr | SecretBytes | str | None
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiRuntimeConfig:
+    provider: Literal["gemini"]
+    model: str
+    timeout_seconds: float
+    api_key: SecretStr | SecretBytes | str | None
+
+
+ProviderRuntimeConfig = OpenAICompatRuntimeConfig | GeminiRuntimeConfig
 
 
 class AISettings(BaseSettings):
@@ -150,3 +171,57 @@ class AISettings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_ai_settings() -> AISettings:
     return AISettings()
+
+
+def resolve_secret_text(
+    value: SecretStr | SecretBytes | str | None,
+) -> str | None:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    if isinstance(value, SecretBytes):
+        secret_bytes = value.get_secret_value()
+        return secret_bytes.decode("utf-8", errors="ignore")
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def resolve_gemini_api_key_secret(
+    settings: AISettings | object | None = None,
+) -> SecretStr | SecretBytes | str | None:
+    resolved_settings = settings or get_ai_settings()
+    if isinstance(resolved_settings, AISettings):
+        return resolved_settings.get_gemini_api_key()
+    google_api_key = getattr(resolved_settings, "google_api_key", None)
+    if google_api_key is not None:
+        return google_api_key
+    return getattr(resolved_settings, "gemini_api_key", None)
+
+
+def get_gemini_api_key_value(settings: AISettings | object | None = None) -> str | None:
+    return resolve_secret_text(resolve_gemini_api_key_secret(settings))
+
+
+def build_provider_runtime_config(settings: AISettings | object) -> ProviderRuntimeConfig:
+    provider = str(getattr(settings, "ai_provider"))
+    model = str(getattr(settings, "ai_model"))
+    timeout_seconds = float(getattr(settings, "ai_timeout_seconds"))
+
+    if provider in OPENAI_COMPAT_PROVIDERS:
+        return OpenAICompatRuntimeConfig(
+            provider=provider,
+            model=model,
+            timeout_seconds=timeout_seconds,
+            base_url=getattr(settings, "ai_oai_base_url", None),
+            api_key=getattr(settings, "ai_oai_api_key", None),
+        )
+
+    if provider == "gemini":
+        return GeminiRuntimeConfig(
+            provider="gemini",
+            model=model,
+            timeout_seconds=timeout_seconds,
+            api_key=resolve_gemini_api_key_secret(settings),
+        )
+
+    raise ValueError(f"Unsupported AI provider: {provider}")

@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ...types import ListingInput, MatchDecision, PageSignals
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
 
-
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_SEP = re.compile(r"[\\/._|,:;+=~\-]+", flags=re.UNICODE)
 _RE_BRACKET_SYMBOLS = re.compile(r"[\[\]【】\(\)（）\{\}<>]", flags=re.UNICODE)
 _RE_TITLE_PREFIX = re.compile(r"^\s*[【\[]?(?:限搭|搭機價|組裝價|組裝/升級|促銷)[】\]]?\s*", flags=re.UNICODE)
@@ -56,22 +54,27 @@ _RE_ID_INTEL = re.compile(
 
 
 def _normalize_spaces(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_spaces(s)
 
 
 def _normalize_text(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_GEFORCE_GLUE.sub("GEFORCE ", s)
-    s = _RE_RADEON_GLUE.sub("RADEON ", s)
-    s = _RE_ARC_GLUE.sub("ARC ", s)
-    s = _RE_NUM_SUFFIX_GLUE.sub(r"\1 \2", s)
-    s = _RE_TI_SUPER_GLUE.sub("TI ", s)
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP.sub(" ", s)
-    s = _RE_ALPHA_TO_DIGIT.sub(" ", s)
-    s = _RE_DIGIT_TO_ALPHA.sub(" ", s)
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP,
+        replacements_before=(
+            (_RE_GEFORCE_GLUE, "GEFORCE "),
+            (_RE_RADEON_GLUE, "RADEON "),
+            (_RE_ARC_GLUE, "ARC "),
+            (_RE_NUM_SUFFIX_GLUE, r"\1 \2"),
+            (_RE_TI_SUPER_GLUE, "TI "),
+        ),
+        replacements_after=(
+            (_RE_ALPHA_TO_DIGIT, " "),
+            (_RE_DIGIT_TO_ALPHA, " "),
+        ),
+    )
 
 
 def _title_head(title: str) -> str:
@@ -94,14 +97,6 @@ def _pick_model_phrase(listing: ListingInput) -> tuple[str, str]:
         return listing.sku_hint.strip(), "sku_hint"
 
     return _title_head(listing.title), "title_head"
-
-
-def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.text_hint, signals.page_title, signals.page_h1, signals.canonical_url):
-        if s:
-            parts.append(s)
-    return _normalize_spaces(" ".join(parts))
 
 
 def _extract_gpu_identities(text: str) -> list[str]:
@@ -176,27 +171,19 @@ def _build_page_tokens(page_text: str, page_identities: list[str]) -> list[str]:
     return sorted(out)
 
 
-def _evidence(
-    listing_tokens: list[str],
-    page_tokens: list[str],
-    matched_tokens: list[str],
-    notes: list[str],
-) -> dict[str, Any]:
-    return {
-        "listing_tokens": list(listing_tokens),
-        "page_tokens": list(page_tokens),
-        "matched_tokens": list(matched_tokens),
-        "notes": list(notes),
-    }
-
-
 @dataclass(frozen=True)
 class GpuStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
         model_phrase_raw, model_source = _pick_model_phrase(listing)
         model_phrase_norm = _normalize_text(model_phrase_raw)
 
-        page_text = _build_page_text(signals)
+        page_text = compose_page_text(
+            signals.text_hint,
+            signals.page_title,
+            signals.page_h1,
+            signals.canonical_url,
+            normalize=normalize_spaces,
+        )
         page_text_norm = _normalize_text(page_text)
 
         listing_identities = _extract_gpu_identities(
@@ -215,7 +202,7 @@ class GpuStrategy:
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
 
         if not page_text_norm:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=[],
                 matched_tokens=[],
@@ -229,7 +216,7 @@ class GpuStrategy:
             )
 
         if not page_tokens and not page_identities:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -252,7 +239,7 @@ class GpuStrategy:
                 pass
             else:
                 phrase_matches = sorted(set(matched_tokens) | {model_phrase_norm} | set(matched_identity))
-                evidence = _evidence(
+                evidence = build_evidence(
                     listing_tokens=listing_tokens,
                     page_tokens=page_tokens,
                     matched_tokens=phrase_matches,
@@ -266,7 +253,7 @@ class GpuStrategy:
                 )
 
         if matched_identity:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_identity,
@@ -280,7 +267,7 @@ class GpuStrategy:
             )
 
         if listing_identity_set and page_identity_set and not matched_identity:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -297,7 +284,7 @@ class GpuStrategy:
             )
 
         if not listing_identity_set or not page_identity_set:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -310,7 +297,7 @@ class GpuStrategy:
                 evidence=evidence,
             )
 
-        evidence = _evidence(
+        evidence = build_evidence(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,

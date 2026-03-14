@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_spaces
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
 
 
 _RE_BRACKETS = re.compile(r"[][(){}<>【】（）]", flags=re.UNICODE)
@@ -39,19 +39,25 @@ def _strip_noise(s: str) -> str:
 
 
 def _normalize_for_phrase(s: str) -> str:
-    s = normalize_spaces(_strip_noise(s)).upper()
-    s = _RE_BRACKETS.sub(" ", s)
-    s = _RE_SEP_PHRASE.sub(" ", s)
-    s = _RE_PCIE.sub("PCIE", s)
-    return normalize_spaces(s)
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        prepare=_strip_noise,
+        bracket_re=_RE_BRACKETS,
+        separator_re=_RE_SEP_PHRASE,
+        replacements_after=((_RE_PCIE, "PCIE"),),
+    )
 
 
 def _normalize_for_tokens(s: str) -> str:
-    s = normalize_spaces(_strip_noise(s)).upper()
-    s = _RE_BRACKETS.sub(" ", s)
-    s = _RE_SEP_TOKENS.sub(" ", s)
-    s = _RE_PCIE.sub("PCIE", s)
-    return normalize_spaces(s)
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        prepare=_strip_noise,
+        bracket_re=_RE_BRACKETS,
+        separator_re=_RE_SEP_TOKENS,
+        replacements_after=((_RE_PCIE, "PCIE"),),
+    )
 
 
 def _first_title_segment(title: str) -> str:

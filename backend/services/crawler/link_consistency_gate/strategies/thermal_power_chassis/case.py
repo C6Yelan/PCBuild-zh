@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_spaces, tokenize_model_tokens
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces, tokenize_model_tokens
 
 
 _RE_BRACKET_SYMBOLS = re.compile(r"[\[\]【】\(\)（）\{\}<>]", flags=re.UNICODE)
@@ -89,17 +89,21 @@ def _normalize_spaces(s: str) -> str:
 
 
 def _normalize_for_phrase(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_PHRASE.sub(" ", s)
-    return normalize_spaces(s)
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_PHRASE,
+    )
 
 
 def _normalize_for_token(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_TOKEN.sub(" ", s)
-    return normalize_spaces(s)
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_TOKEN,
+    )
 
 
 def _compact_for_contains(s: str) -> str:

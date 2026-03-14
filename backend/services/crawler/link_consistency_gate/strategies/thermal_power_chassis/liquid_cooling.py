@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ...types import ListingInput, MatchDecision, PageSignals
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
 
 
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_M2 = re.compile(r"M[\s\.．]*2", flags=re.UNICODE)
 _RE_ARGB = re.compile(r"A[\s\.\-_/]*RGB", flags=re.UNICODE)
 _RE_RAD_MM = re.compile(r"(?<![0-9A-Z])(240|280|360|420)\s*MM(?![0-9A-Z])", flags=re.UNICODE)
@@ -28,43 +27,43 @@ _SPEC_ALPHA = {"M2", "ARGB", "RGB", "PWM", "TDP"}
 
 
 def _normalize_spaces(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    s = _RE_WS.sub(" ", s).strip()
-    return s
+    return normalize_spaces(s)
 
 
 def _normalize_phrase(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_M2.sub("M2", s)
-    s = _RE_ARGB.sub("ARGB", s)
-    s = _RE_RAD_MM.sub(r"\1", s)
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_PHRASE.sub(" ", s)
-    s = _RE_ALNUM_TO_CJK.sub(" ", s)
-    s = _RE_CJK_TO_ALNUM.sub(" ", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_PHRASE,
+        replacements_before=(
+            (_RE_M2, "M2"),
+            (_RE_ARGB, "ARGB"),
+            (_RE_RAD_MM, r"\1"),
+        ),
+        replacements_after=(
+            (_RE_ALNUM_TO_CJK, " "),
+            (_RE_CJK_TO_ALNUM, " "),
+        ),
+    )
 
 
 def _normalize_token(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_M2.sub("M2", s)
-    s = _RE_ARGB.sub("ARGB", s)
-    s = _RE_RAD_MM.sub(r"\1", s)
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_TOKEN.sub(" ", s)
-    s = _RE_ALNUM_TO_CJK.sub(" ", s)
-    s = _RE_CJK_TO_ALNUM.sub(" ", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
-
-
-def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.page_title, signals.page_h1, signals.text_hint):
-        if s:
-            parts.append(s)
-    return _normalize_spaces(" ".join(parts))
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_TOKEN,
+        replacements_before=(
+            (_RE_M2, "M2"),
+            (_RE_ARGB, "ARGB"),
+            (_RE_RAD_MM, r"\1"),
+        ),
+        replacements_after=(
+            (_RE_ALNUM_TO_CJK, " "),
+            (_RE_CJK_TO_ALNUM, " "),
+        ),
+    )
 
 
 def _title_head(title: str) -> str:
@@ -160,33 +159,24 @@ def _identity_key(tok: str) -> str:
     return (tok or "").replace("-", "")
 
 
-def _evidence(
-    listing_tokens: list[str],
-    page_tokens: list[str],
-    matched_tokens: list[str],
-    notes: list[str],
-) -> dict[str, Any]:
-    return {
-        "listing_tokens": list(listing_tokens),
-        "page_tokens": list(page_tokens),
-        "matched_tokens": list(matched_tokens),
-        "notes": list(notes),
-    }
-
-
 @dataclass(frozen=True)
 class LiquidCoolingStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
         model_phrase_raw, model_source = _pick_model_phrase(listing)
         model_phrase_norm = _normalize_phrase(model_phrase_raw)
 
-        page_text = _build_page_text(signals)
+        page_text = compose_page_text(
+            signals.page_title,
+            signals.page_h1,
+            signals.text_hint,
+            normalize=normalize_spaces,
+        )
         page_text_norm = _normalize_phrase(page_text)
 
         listing_tokens = _tokenize(model_phrase_raw)
 
         if not page_text_norm:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=[],
                 matched_tokens=[],
@@ -203,7 +193,7 @@ class LiquidCoolingStrategy:
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
 
         if model_phrase_norm and model_phrase_norm in page_text_norm:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -224,7 +214,7 @@ class LiquidCoolingStrategy:
         matched_identity_keys = sorted(listing_identity_keys & page_identity_keys)
 
         if matched_identity_keys:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -238,7 +228,7 @@ class LiquidCoolingStrategy:
             )
 
         if not listing_identity_keys:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -251,7 +241,7 @@ class LiquidCoolingStrategy:
                 evidence=evidence,
             )
 
-        evidence = _evidence(
+        evidence = build_evidence(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ...types import ListingInput, MatchDecision, PageSignals
+from ..shared_primitives import build_evidence, compose_page_text, normalize_spaces
 
 
 _RE_WS = re.compile(r"\s+", flags=re.UNICODE)
@@ -23,14 +23,6 @@ def _canonical_alnum(s: str) -> str:
     s = _normalize_spaces(s).upper()
     s = _RE_KEEP_ALNUM.sub("", s)
     return s
-
-
-def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.page_title, signals.page_h1, signals.text_hint):
-        if s:
-            parts.append(s)
-    return _normalize_spaces(" ".join(parts))
 
 
 def _extract_tokens(s: str) -> list[str]:
@@ -101,33 +93,24 @@ def _build_listing_tokens(listing: ListingInput, model_candidate: str) -> list[s
     return _extract_tokens(listing_text)
 
 
-def _make_evidence(
-    listing_tokens: list[str],
-    page_tokens: list[str],
-    matched_tokens: list[str],
-    notes: list[str],
-) -> dict[str, Any]:
-    return {
-        "listing_tokens": list(listing_tokens),
-        "page_tokens": list(page_tokens),
-        "matched_tokens": list(matched_tokens),
-        "notes": list(notes),
-    }
-
-
 @dataclass(frozen=True)
 class HddStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
         model_candidate, model_src = _pick_model_candidate(listing)
         canonical_model_key = _canonical_alnum(model_candidate)
 
-        page_text = _build_page_text(signals)
+        page_text = compose_page_text(
+            signals.page_title,
+            signals.page_h1,
+            signals.text_hint,
+            normalize=normalize_spaces,
+        )
         canonical_page_text = _canonical_alnum(page_text)
 
         listing_tokens = _build_listing_tokens(listing, model_candidate)
 
         if not page_text or not canonical_page_text:
-            evidence = _make_evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=[],
                 matched_tokens=[],
@@ -144,7 +127,7 @@ class HddStrategy:
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
 
         if not canonical_model_key:
-            evidence = _make_evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -158,7 +141,7 @@ class HddStrategy:
             )
 
         if canonical_model_key in canonical_page_text:
-            evidence = _make_evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -176,7 +159,7 @@ class HddStrategy:
         matched_identity = sorted(listing_identity & page_identity)
 
         if matched_identity:
-            evidence = _make_evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -193,7 +176,7 @@ class HddStrategy:
             )
 
         if listing_identity:
-            evidence = _make_evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -209,7 +192,7 @@ class HddStrategy:
                 evidence=evidence,
             )
 
-        evidence = _make_evidence(
+        evidence = build_evidence(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,

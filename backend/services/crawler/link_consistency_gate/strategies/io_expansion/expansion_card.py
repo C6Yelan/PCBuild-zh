@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ...types import ListingInput, MatchDecision, PageSignals
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
 
 
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~\-]+", flags=re.UNICODE)
 _RE_SEP_TOKEN = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-'
 _RE_BRACKET_SYMBOLS = re.compile(r"[\[\]【】\(\)（）\{\}<>]", flags=re.UNICODE)
@@ -21,24 +20,27 @@ _WEAK_IDENTITY_TOKENS = {"GEN3", "GEN4", "GEN5", "USB4"}
 
 
 def _normalize_spaces(s: str) -> str:
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_spaces(s)
 
 
 def _normalize_for_phrase(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_M2.sub("M2", s)
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_PHRASE.sub(" ", s)
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_PHRASE,
+        replacements_before=((_RE_M2, "M2"),),
+    )
 
 
 def _normalize_for_token(s: str) -> str:
-    s = _normalize_spaces(s).upper()
-    s = _RE_M2.sub("M2", s)
-    s = _RE_BRACKET_SYMBOLS.sub(" ", s)
-    s = _RE_SEP_TOKEN.sub(" ", s)
-    return _RE_WS.sub(" ", s).strip()
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        bracket_re=_RE_BRACKET_SYMBOLS,
+        separator_re=_RE_SEP_TOKEN,
+        replacements_before=((_RE_M2, "M2"),),
+    )
 
 
 def _compact(s: str) -> str:
@@ -157,20 +159,6 @@ def _extract_identity_tokens(tokens: list[str]) -> set[str]:
     return {tok for tok in tokens if _is_identity_token(tok)}
 
 
-def _evidence(
-    listing_tokens: list[str],
-    page_tokens: list[str],
-    matched_tokens: list[str],
-    notes: list[str],
-) -> dict[str, Any]:
-    return {
-        "listing_tokens": list(listing_tokens),
-        "page_tokens": list(page_tokens),
-        "matched_tokens": list(matched_tokens),
-        "notes": list(notes),
-    }
-
-
 @dataclass(frozen=True)
 class ExpansionCardStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
@@ -186,12 +174,12 @@ class ExpansionCardStrategy:
                 if title_head_candidates:
                     base_notes.append("added_title_head_candidates")
 
-        page_text = (signals.text_hint or "").strip()
+        page_text = compose_page_text(signals.text_hint, normalize=normalize_spaces)
         listing_tokens = _tokenize(model_phrase)
         page_tokens = _tokenize(page_text)
 
         if not _normalize_spaces(page_text):
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=[],
                 matched_tokens=[],
@@ -216,7 +204,7 @@ class ExpansionCardStrategy:
                 match_notes = [*base_notes, f"candidate_used={cand}", "phrase_match"]
                 if phrase_source == "title_head":
                     match_notes.append("phrase_source=title_head")
-                evidence = _evidence(
+                evidence = build_evidence(
                     listing_tokens=_tokenize(cand),
                     page_tokens=page_tokens,
                     matched_tokens=[cand],
@@ -234,7 +222,7 @@ class ExpansionCardStrategy:
         matched_tokens = sorted(list(listing_identity & page_identity))
 
         if not listing_identity or not page_identity:
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -249,7 +237,7 @@ class ExpansionCardStrategy:
 
         if matched_tokens:
             if all(tok in _WEAK_IDENTITY_TOKENS for tok in matched_tokens):
-                evidence = _evidence(
+                evidence = build_evidence(
                     listing_tokens=listing_tokens,
                     page_tokens=page_tokens,
                     matched_tokens=matched_tokens,
@@ -262,7 +250,7 @@ class ExpansionCardStrategy:
                     evidence=evidence,
                 )
 
-            evidence = _evidence(
+            evidence = build_evidence(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -275,7 +263,7 @@ class ExpansionCardStrategy:
                 evidence=evidence,
             )
 
-        evidence = _evidence(
+        evidence = build_evidence(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=[],

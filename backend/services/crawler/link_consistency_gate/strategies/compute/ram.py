@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from ...types import ListingInput, MatchDecision, PageSignals
+from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text
 
-
-_RE_WS = re.compile(r"\s+", flags=re.UNICODE)
 _RE_BRACKETS = re.compile(r"[][(){}<>【】（）]", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~-]+", flags=re.UNICODE)
 _RE_SEP_TOKENS = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-' for SKU tokens
@@ -65,32 +63,24 @@ def _cjk_head_token(s: str) -> str | None:
 
 def _normalize_for_phrase(s: str) -> str:
     # Phrase match should be separator-tolerant (including '-' vs whitespace).
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    s = _strip_noise(s)
-    s = s.upper()
-    s = _RE_BRACKETS.sub(" ", s)
-    s = _RE_SEP_PHRASE.sub(" ", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        prepare=_strip_noise,
+        bracket_re=_RE_BRACKETS,
+        separator_re=_RE_SEP_PHRASE,
+    )
 
 
 def _normalize_for_tokens(s: str) -> str:
     # Tokenization keeps '-' so SKU tokens (e.g., F5-6000J... / AX5U...-...) survive.
-    s = (s or "").replace("\u3000", " ").replace("\xa0", " ")
-    s = _strip_noise(s)
-    s = s.upper()
-    s = _RE_BRACKETS.sub(" ", s)
-    s = _RE_SEP_TOKENS.sub(" ", s)
-    s = _RE_WS.sub(" ", s).strip()
-    return s
-
-
-def _build_page_text(signals: PageSignals) -> str:
-    parts: list[str] = []
-    for s in (signals.page_title, signals.page_h1, signals.text_hint):
-        if s:
-            parts.append(s)
-    return " ".join(parts).strip()
+    return normalize_pattern_text(
+        s,
+        transform="upper",
+        prepare=_strip_noise,
+        bracket_re=_RE_BRACKETS,
+        separator_re=_RE_SEP_TOKENS,
+    )
 
 
 def _extract_tokens(text: str) -> list[str]:
@@ -248,7 +238,7 @@ def _extract_spec_tokens(tokens: list[str]) -> set[str]:
 @dataclass(frozen=True)
 class RamStrategy:
     def decide(self, listing: ListingInput, signals: PageSignals) -> MatchDecision:
-        page_text_raw = _build_page_text(signals)
+        page_text_raw = compose_page_text(signals.page_title, signals.page_h1, signals.text_hint)
         page_text_norm = _normalize_for_phrase(page_text_raw)
 
         # Evidence must always contain stable keys with list[str] values.
@@ -268,12 +258,12 @@ class RamStrategy:
         )
 
         if not page_text_norm:
-            evidence: dict[str, Any] = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": [],
-                "matched_tokens": [],
-                "notes": ["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=[],
+                matched_tokens=[],
+                notes=["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
+            )
             return MatchDecision(status="uncertain", score=None, reason_code="PAGE_TEXT_EMPTY", evidence=evidence)
 
         page_tokens = _extract_tokens(page_text_raw)
@@ -283,21 +273,21 @@ class RamStrategy:
         model_phrase_norm = _normalize_for_phrase(model_phrase_raw)
 
         if not model_phrase_norm:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": ["model_phrase is empty after normalization (no usable identifier)"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=["model_phrase is empty after normalization (no usable identifier)"],
+            )
             return MatchDecision(status="uncertain", score=None, reason_code="MODEL_EMPTY", evidence=evidence)
 
         if model_phrase_norm in page_text_norm:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": [f"phrase_hit via normalized substring (model_source={model_src})"],
-            }
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=[f"phrase_hit via normalized substring (model_source={model_src})"],
+            )
             return MatchDecision(status="match", score=None, reason_code="MODEL_PHRASE_FOUND", evidence=evidence)
 
         listing_identity = _extract_identity_tokens(listing, listing_tokens)
@@ -308,36 +298,36 @@ class RamStrategy:
         matched_spec = sorted(listing_spec & page_set)
 
         if matched_identity and matched_spec:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": [
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=[
                     "token_match: identity+spec tokens overlapped",
                     f"matched_identity={matched_identity[:2]}, matched_spec={matched_spec[:2]}",
                 ],
-            }
+            )
             return MatchDecision(status="match", score=None, reason_code="MODEL_TOKEN_MATCH", evidence=evidence)
 
         if listing_identity and not matched_identity:
-            evidence = {
-                "listing_tokens": listing_tokens,
-                "page_tokens": page_tokens,
-                "matched_tokens": matched_tokens,
-                "notes": [
+            evidence = build_evidence(
+                listing_tokens=listing_tokens,
+                page_tokens=page_tokens,
+                matched_tokens=matched_tokens,
+                notes=[
                     "mismatch: no identity token matched",
                     f"identity_tokens(listing)={len(listing_identity)}",
                 ],
-            }
+            )
             return MatchDecision(status="mismatch", score=None, reason_code="IDENTITY_TOKEN_MISSING", evidence=evidence)
 
-        evidence = {
-            "listing_tokens": listing_tokens,
-            "page_tokens": page_tokens,
-            "matched_tokens": matched_tokens,
-            "notes": [
+        evidence = build_evidence(
+            listing_tokens=listing_tokens,
+            page_tokens=page_tokens,
+            matched_tokens=matched_tokens,
+            notes=[
                 "uncertain: token overlap insufficient (need >=1 identity + >=1 spec token)",
                 f"identity/spec(listing)={len(listing_identity)}/{len(listing_spec)}",
             ],
-        }
+        )
         return MatchDecision(status="uncertain", score=None, reason_code="TOKEN_OVERLAP_INCONCLUSIVE", evidence=evidence)

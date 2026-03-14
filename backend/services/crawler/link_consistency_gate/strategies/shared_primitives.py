@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any, Callable
 
 _RE_WS = re.compile(r"\s+", flags=re.UNICODE)
@@ -13,6 +14,36 @@ _RE_MODEL_TOKEN = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", flags=re.UNICODE)
 def normalize_spaces(text: str) -> str:
     normalized = (text or "").replace("\u3000", " ").replace("\xa0", " ")
     return _RE_WS.sub(" ", normalized).strip()
+
+
+def normalize_pattern_text(
+    text: str,
+    *,
+    transform: str | None = None,
+    prepare: Callable[[str], str] | None = None,
+    bracket_re: re.Pattern[str] | None = None,
+    separator_re: re.Pattern[str] | None = None,
+    replacements_before: Sequence[tuple[re.Pattern[str], str]] = (),
+    replacements_after: Sequence[tuple[re.Pattern[str], str]] = (),
+) -> str:
+    normalized = normalize_spaces(text)
+    if prepare is not None:
+        normalized = prepare(normalized)
+    if transform == "upper":
+        normalized = normalized.upper()
+    elif transform == "lower":
+        normalized = normalized.lower()
+
+    for pattern, replacement in replacements_before:
+        normalized = pattern.sub(replacement, normalized)
+    if bracket_re is not None:
+        normalized = bracket_re.sub(" ", normalized)
+    if separator_re is not None:
+        normalized = separator_re.sub(" ", normalized)
+    for pattern, replacement in replacements_after:
+        normalized = pattern.sub(replacement, normalized)
+
+    return normalize_spaces(normalized)
 
 
 def compose_page_text(

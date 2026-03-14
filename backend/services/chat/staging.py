@@ -14,6 +14,7 @@ from backend.services.chat.snapshot_store import (
     update_snapshot_meta,
     write_json_file,
 )
+from backend.services.chat.snapshot_payloads import ChatPayloadContext
 
 
 @dataclass(slots=True)
@@ -46,13 +47,33 @@ class ChatStagingRecord:
     error_type: str | None = None
 
 
+def build_staging_record_payload(record: ChatStagingRecord) -> dict[str, object]:
+    return asdict(record)
+
+
+def build_quarantine_index_entry(record: ChatStagingRecord) -> dict[str, object]:
+    reasons = list(dict.fromkeys([*record.gate_reasons, *record.dq_reasons]))
+    return {
+        "request_id": record.request_id,
+        "snapshot_id": record.snapshot_id,
+        "provider": record.provider,
+        "model": record.model,
+        "error_type": record.error_type or "-",
+        "gate_status": record.gate_status,
+        "dq_status": record.dq_status,
+        "reasons": reasons,
+        "publish_reason": record.publish_reason,
+        "created_at": record.created_at,
+    }
+
+
 def persist_chat_staging_record(
     *,
     snapshot_root_dir: str | Path,
     snapshot_dir: str | Path,
     record: ChatStagingRecord,
 ) -> dict[str, object]:
-    payload = asdict(record)
+    payload = build_staging_record_payload(record)
     root_dir = Path(snapshot_root_dir)
     request_snapshot_dir = Path(snapshot_dir)
     request_id = record.request_id
@@ -68,7 +89,7 @@ def persist_chat_quarantine_entry(
     snapshot_dir: str | Path,
     record: ChatStagingRecord,
 ) -> dict[str, object]:
-    payload = asdict(record)
+    payload = build_staging_record_payload(record)
     root_dir = Path(snapshot_root_dir)
     request_snapshot_dir = Path(snapshot_dir)
     request_id = record.request_id
@@ -77,19 +98,7 @@ def persist_chat_quarantine_entry(
     write_json_file(quarantine_dir / f"{request_id}.quarantine.json", payload)
     write_json_file(request_snapshot_dir / "quarantine_entry.json", payload)
 
-    reasons = list(dict.fromkeys([*record.gate_reasons, *record.dq_reasons]))
-    index_entry = {
-        "request_id": record.request_id,
-        "snapshot_id": record.snapshot_id,
-        "provider": record.provider,
-        "model": record.model,
-        "error_type": record.error_type or "-",
-        "gate_status": record.gate_status,
-        "dq_status": record.dq_status,
-        "reasons": reasons,
-        "publish_reason": record.publish_reason,
-        "created_at": record.created_at,
-    }
+    index_entry = build_quarantine_index_entry(record)
     quarantine_dir.mkdir(parents=True, exist_ok=True)
     with (quarantine_dir / "quarantine_index.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(index_entry, ensure_ascii=False, sort_keys=True))
@@ -100,11 +109,8 @@ def persist_chat_quarantine_entry(
 
 def build_chat_staging_record(
     *,
-    request_id: str,
+    context: ChatPayloadContext,
     snapshot_id: str,
-    provider: str,
-    model: str,
-    context_pack_hash: str,
     normalized_text: str,
     public_text: str,
     latency_ms: int,
@@ -113,11 +119,6 @@ def build_chat_staging_record(
     gate_reasons: list[str],
     dq_reasons: list[str],
     warnings: list[str],
-    demand_source: str,
-    triggered_retrieval: bool,
-    categories: list[str],
-    top_k: int,
-    env: str,
     has_context_pack: bool,
     compressed_candidates: dict[str, list[dict[str, object]]],
     snapshot_dir: str,
@@ -127,11 +128,11 @@ def build_chat_staging_record(
     error_type: str | None,
 ) -> ChatStagingRecord:
     return ChatStagingRecord(
-        request_id=request_id,
+        request_id=context.request_id,
         snapshot_id=snapshot_id,
-        provider=provider,
-        model=model,
-        context_pack_hash=context_pack_hash,
+        provider=context.provider,
+        model=context.model,
+        context_pack_hash=context.context_pack_hash,
         normalized_text=normalized_text,
         public_text=public_text,
         latency_ms=latency_ms,
@@ -140,11 +141,11 @@ def build_chat_staging_record(
         gate_reasons=list(gate_reasons),
         dq_reasons=list(dq_reasons),
         warnings=list(warnings),
-        demand_source=demand_source,
-        triggered_retrieval=triggered_retrieval,
-        categories=list(categories),
-        top_k=top_k,
-        env=env,
+        demand_source=context.demand_source,
+        triggered_retrieval=context.triggered_retrieval,
+        categories=list(context.categories),
+        top_k=context.top_k,
+        env=context.env,
         has_context_pack=has_context_pack,
         data_versions=build_candidate_lineage_categories(compressed_candidates),
         snapshot_dir=snapshot_dir,
@@ -160,11 +161,8 @@ def persist_chat_stage_or_quarantine(
     *,
     settings: AISettings,
     warnings: list[str],
-    request_id: str,
+    context: ChatPayloadContext,
     snapshot_id: str,
-    provider: str,
-    model: str,
-    context_pack_hash: str,
     normalized_text: str,
     public_text: str,
     latency_ms: int,
@@ -172,11 +170,6 @@ def persist_chat_stage_or_quarantine(
     dq_status: str,
     gate_reasons: list[str],
     dq_reasons: list[str],
-    demand_source: str,
-    triggered_retrieval: bool,
-    categories: list[str],
-    top_k: int,
-    env: str,
     has_context_pack: bool,
     compressed_candidates: dict[str, list[dict[str, object]]],
     publish_reason: str,
@@ -186,14 +179,11 @@ def persist_chat_stage_or_quarantine(
         return
 
     root_dir = snapshot_root(settings)
-    request_snapshot_dir = root_dir / request_id
+    request_snapshot_dir = root_dir / context.request_id
     published = gate_status == "pass" and dq_status == "pass"
     record = build_chat_staging_record(
-        request_id=request_id,
+        context=context,
         snapshot_id=snapshot_id,
-        provider=provider,
-        model=model,
-        context_pack_hash=context_pack_hash,
         normalized_text=normalized_text,
         public_text=public_text,
         latency_ms=latency_ms,
@@ -202,11 +192,6 @@ def persist_chat_stage_or_quarantine(
         gate_reasons=gate_reasons,
         dq_reasons=dq_reasons,
         warnings=warnings,
-        demand_source=demand_source,
-        triggered_retrieval=triggered_retrieval,
-        categories=categories,
-        top_k=top_k,
-        env=env,
         has_context_pack=has_context_pack,
         compressed_candidates=compressed_candidates,
         snapshot_dir=str(request_snapshot_dir),
@@ -225,7 +210,7 @@ def persist_chat_stage_or_quarantine(
             )
             update_snapshot_meta(
                 settings=settings,
-                request_id=request_id,
+                request_id=context.request_id,
                 staging_status="staged",
                 quarantine_status="not_quarantined",
                 artifact_name="staging_record.json",
@@ -235,9 +220,9 @@ def persist_chat_stage_or_quarantine(
                 warnings.append("staging_write_failed")
             log_operation(
                 "chat_staging_write_failed",
-                request_id=request_id,
-                provider=provider,
-                model=model,
+                request_id=context.request_id,
+                provider=context.provider,
+                model=context.model,
                 error_type=type(exc).__name__,
             )
         return
@@ -250,7 +235,7 @@ def persist_chat_stage_or_quarantine(
         )
         update_snapshot_meta(
             settings=settings,
-            request_id=request_id,
+            request_id=context.request_id,
             staging_status="skipped",
             quarantine_status="quarantined",
             artifact_name="quarantine_entry.json",
@@ -260,8 +245,8 @@ def persist_chat_stage_or_quarantine(
             warnings.append("quarantine_write_failed")
         log_operation(
             "chat_quarantine_write_failed",
-            request_id=request_id,
-            provider=provider,
-            model=model,
+            request_id=context.request_id,
+            provider=context.provider,
+            model=context.model,
             error_type=type(exc).__name__,
         )

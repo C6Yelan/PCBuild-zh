@@ -10,15 +10,13 @@ from backend.services.chat.config import AISettings
 from backend.services.chat.dq import DQReport
 from backend.services.chat.gate import TextValidationReport
 from backend.services.chat.snapshot_artifacts import read_json_file, write_json_file
+from backend.services.chat.snapshot_payloads import ChatPayloadContext
 from backend.services.chat.snapshot_paths import snapshot_dir
 
 
 def build_snapshot_meta_payload(
     *,
-    request_id: str,
-    provider: str,
-    model: str,
-    context_pack_hash: str,
+    context: ChatPayloadContext,
     latency_ms: int,
     ok: bool,
     error_type: str | None,
@@ -26,18 +24,16 @@ def build_snapshot_meta_payload(
     upstream_request_id: str | None,
     status_code: int | None,
     request_mode: str,
-    demand_source: str,
-    triggered_retrieval: bool,
     validation_report: TextValidationReport | None,
     dq_report: DQReport | None,
     provider_error: Any,
     artifacts: list[str],
 ) -> dict[str, Any]:
     return {
-        "request_id": request_id,
-        "provider": provider,
-        "model": model,
-        "context_pack_hash": context_pack_hash,
+        "request_id": context.request_id,
+        "provider": context.provider,
+        "model": context.model,
+        "context_pack_hash": context.context_pack_hash,
         "latency_ms": latency_ms,
         "ok": ok,
         "error_type": error_type or "-",
@@ -45,8 +41,8 @@ def build_snapshot_meta_payload(
         "upstream_request_id": upstream_request_id,
         "status_code": status_code,
         "request_mode": request_mode,
-        "demand_source": demand_source,
-        "triggered_retrieval": triggered_retrieval,
+        "demand_source": context.demand_source,
+        "triggered_retrieval": context.triggered_retrieval,
         "gate_status": (
             "pass"
             if validation_report is None or validation_report.passed

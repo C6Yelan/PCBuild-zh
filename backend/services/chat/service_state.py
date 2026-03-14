@@ -15,6 +15,11 @@ from backend.services.chat.provider_caller import (
 )
 from backend.services.chat.service_demand import DemandResolution
 from backend.services.chat.service_retrieval import RetrievalArtifacts
+from backend.services.chat.snapshot_payloads import (
+    ChatPayloadContext,
+    build_snapshot_store_kwargs,
+    build_staging_persist_kwargs,
+)
 
 
 @dataclass(slots=True)
@@ -27,6 +32,19 @@ class ChatOrchestrationState:
     triggered_retrieval: bool
     provider_messages: list[dict[str, str]]
 
+    def payload_context(self) -> ChatPayloadContext:
+        return ChatPayloadContext(
+            request_id=self.request_id,
+            provider=self.settings.ai_provider,
+            model=self.settings.ai_model,
+            context_pack_hash=self.retrieval.context_pack_hash,
+            demand_source=self.demand.source,
+            triggered_retrieval=self.triggered_retrieval,
+            categories=list(self.demand.categories),
+            top_k=self.demand.top_k,
+            env=self.demand.env,
+        )
+
     def snapshot_kwargs(
         self,
         *,
@@ -38,33 +56,25 @@ class ChatOrchestrationState:
         provider_result: ProviderCallResult | None = None,
         provider_error: OpenAICompatError | ProviderDispatchError | None = None,
     ) -> dict[str, Any]:
-        return {
-            "settings": self.settings,
-            "warnings": self.warnings,
-            "request_id": self.request_id,
-            "provider": self.settings.ai_provider,
-            "model": self.settings.ai_model,
-            "context_pack_hash": self.retrieval.context_pack_hash,
-            "latency_ms": latency_ms,
-            "ok": ok,
-            "error_type": error_type,
-            "messages": self.provider_messages,
-            "request_mode": self.demand.request_mode,
-            "demand_source": self.demand.source,
-            "triggered_retrieval": self.triggered_retrieval,
-            "categories": self.demand.categories,
-            "top_k": self.demand.top_k,
-            "env": self.demand.env,
-            "message_chars": self.demand.message_chars,
-            "history_turns": self.demand.history_turns,
-            "context_pack_text": self.retrieval.context_pack_text,
-            "compressed_candidates": self.retrieval.compressed_candidates,
-            "drop_log": self.retrieval.drop_log,
-            "validation_report": validation_report,
-            "dq_report": dq_report,
-            "provider_result": provider_result,
-            "provider_error": provider_error,
-        }
+        return build_snapshot_store_kwargs(
+            settings=self.settings,
+            warnings=self.warnings,
+            context=self.payload_context(),
+            messages=self.provider_messages,
+            request_mode=self.demand.request_mode,
+            message_chars=self.demand.message_chars,
+            history_turns=self.demand.history_turns,
+            context_pack_text=self.retrieval.context_pack_text,
+            compressed_candidates=self.retrieval.compressed_candidates,
+            drop_log=self.retrieval.drop_log,
+            latency_ms=latency_ms,
+            ok=ok,
+            error_type=error_type,
+            validation_report=validation_report,
+            dq_report=dq_report,
+            provider_result=provider_result,
+            provider_error=provider_error,
+        )
 
     def staging_kwargs(
         self,
@@ -80,31 +90,23 @@ class ChatOrchestrationState:
         publish_reason: str,
         error_type: str | None,
     ) -> dict[str, Any]:
-        return {
-            "settings": self.settings,
-            "warnings": self.warnings,
-            "request_id": self.request_id,
-            "snapshot_id": snapshot_id,
-            "provider": self.settings.ai_provider,
-            "model": self.settings.ai_model,
-            "context_pack_hash": self.retrieval.context_pack_hash,
-            "normalized_text": normalized_text,
-            "public_text": public_text,
-            "latency_ms": latency_ms,
-            "gate_status": gate_status,
-            "dq_status": dq_status,
-            "gate_reasons": gate_reasons,
-            "dq_reasons": dq_reasons,
-            "demand_source": self.demand.source,
-            "triggered_retrieval": self.triggered_retrieval,
-            "categories": self.demand.categories,
-            "top_k": self.demand.top_k,
-            "env": self.demand.env,
-            "has_context_pack": bool(self.retrieval.context_pack_text),
-            "compressed_candidates": self.retrieval.compressed_candidates,
-            "publish_reason": publish_reason,
-            "error_type": error_type,
-        }
+        return build_staging_persist_kwargs(
+            settings=self.settings,
+            warnings=self.warnings,
+            context=self.payload_context(),
+            snapshot_id=snapshot_id,
+            normalized_text=normalized_text,
+            public_text=public_text,
+            latency_ms=latency_ms,
+            gate_status=gate_status,
+            dq_status=dq_status,
+            gate_reasons=gate_reasons,
+            dq_reasons=dq_reasons,
+            has_context_pack=bool(self.retrieval.context_pack_text),
+            compressed_candidates=self.retrieval.compressed_candidates,
+            publish_reason=publish_reason,
+            error_type=error_type,
+        )
 
     def ai_call_kwargs(
         self,
@@ -118,11 +120,12 @@ class ChatOrchestrationState:
         staging_status: str,
         quarantine_status: str,
     ) -> dict[str, Any]:
+        context = self.payload_context()
         return {
-            "request_id": self.request_id,
-            "provider": self.settings.ai_provider,
-            "model": self.settings.ai_model,
-            "context_pack_hash": self.retrieval.context_pack_hash,
+            "request_id": context.request_id,
+            "provider": context.provider,
+            "model": context.model,
+            "context_pack_hash": context.context_pack_hash,
             "snapshot_id": snapshot_id,
             "latency_ms": latency_ms,
             "ok": ok,
@@ -132,6 +135,6 @@ class ChatOrchestrationState:
             "staging_status": staging_status,
             "quarantine_status": quarantine_status,
             "warning_count": len(self.warnings),
-            "demand_source": self.demand.source,
-            "triggered_retrieval": self.triggered_retrieval,
+            "demand_source": context.demand_source,
+            "triggered_retrieval": context.triggered_retrieval,
         }

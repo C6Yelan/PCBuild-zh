@@ -15,7 +15,7 @@ from backend.services.chat.provider_caller import (
 )
 from backend.services.chat.service_demand import DemandResolution
 from backend.services.chat.service_retrieval import RetrievalArtifacts
-from backend.services.chat.snapshot_payloads import (
+from backend.services.chat.chat_payload_context import (
     ChatPayloadContext,
     build_snapshot_store_kwargs,
     build_staging_persist_kwargs,

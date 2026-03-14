@@ -28,12 +28,11 @@ from backend.services.chat.snapshot_meta import (
     update_snapshot_meta,
 )
 from backend.services.chat.snapshot_paths import snapshot_dir, snapshot_root
-from backend.services.chat.snapshot_payloads import (
-    build_candidate_lineage_categories,
+from backend.services.chat.chat_payload_context import ChatPayloadContext
+from backend.services.chat.snapshot_artifact_payloads import (
     build_dq_payload,
     build_snapshot_artifact_payloads,
     build_validation_payload,
-    ChatPayloadContext,
 )
 
 
@@ -167,7 +166,6 @@ def persist_ai_snapshot(
 
 
 __all__ = [
-    "build_candidate_lineage_categories",
     "persist_ai_snapshot",
     "read_json_file",
     "snapshot_dir",

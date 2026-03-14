@@ -9,8 +9,8 @@ from typing import Any
 from backend.services.chat.config import AISettings
 from backend.services.chat.dq import DQReport
 from backend.services.chat.gate import TextValidationReport
+from backend.services.chat.chat_payload_context import ChatPayloadContext
 from backend.services.chat.snapshot_artifacts import read_json_file, write_json_file
-from backend.services.chat.snapshot_payloads import ChatPayloadContext
 from backend.services.chat.snapshot_paths import snapshot_dir
 
 

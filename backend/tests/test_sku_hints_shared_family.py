@@ -8,6 +8,7 @@ from backend.services.crawler.parsers.sku_hints.expansion_card import (
 from backend.services.crawler.parsers.sku_hints.liquid_cooling import (
     extract_liquid_cooling_hints,
 )
+from backend.services.crawler.parsers.sku_hints.mb import extract_mb_hints
 from backend.services.crawler.parsers.sku_hints.psu import extract_psu_sku_hint
 
 
@@ -66,3 +67,13 @@ def test_expansion_card_hints_keep_brand_and_port_counts() -> None:
 
 def test_psu_sku_hint_keeps_brand_alias_cleanup() -> None:
     assert extract_psu_sku_hint("華碩(ASUS) TUF-750G ATX3.1 金牌") == "華碩 TUF-750G"
+
+
+def test_mb_hints_keep_socket_chipset_and_variant() -> None:
+    sku_hint, extra = extract_mb_hints("華碩 ROG STRIX B850-A GAMING WIFI BTF ATX")
+
+    assert sku_hint == "B850-A GAMING WIFI BTF"
+    assert extra["brand_hint"] == "ASUS"
+    assert extra["chipset_hint"] == "B850"
+    assert extra["socket_hint"] == "AM5"
+    assert extra["form_factor_hint"] == "ATX"

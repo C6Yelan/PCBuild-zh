@@ -7,7 +7,7 @@ import math
 from datetime import timedelta
 from typing import Any, NoReturn
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from backend.api.auth.config import EMAIL_ADAPTER
@@ -45,6 +45,31 @@ def build_email_action_log_fields(
     if retry_after is not None:
         fields["retry_after"] = int(retry_after)
     return fields
+
+
+def log_email_action_security_event(
+    request: Request,
+    *,
+    event: str,
+    email: str | None = None,
+    user_id: Any | None = None,
+    endpoint: str | None = None,
+    retry_after: int | None = None,
+) -> None:
+    log_security(
+        event,
+        **build_email_action_log_fields(
+            request,
+            email=email,
+            user_id=user_id,
+            endpoint=endpoint,
+            retry_after=retry_after,
+        ),
+    )
+
+
+def set_retry_after_header(response: Response, *, retry_after: int) -> None:
+    response.headers["Retry-After"] = str(int(retry_after))
 
 
 def validate_email_action_email(
@@ -126,4 +151,32 @@ def raise_email_action_rate_limited(
     raise build_rate_limited_exception(
         message=message,
         retry_after=retry_after,
+    )
+
+
+def raise_email_action_cooldown(
+    request: Request,
+    *,
+    db: Session,
+    user: User | None,
+    purpose: VerificationPurpose,
+    cooldown_seconds: int,
+    event: str,
+    message: str,
+    email: str | None = None,
+    user_id: Any | None = None,
+) -> NoReturn:
+    retry_after = compute_retry_after_seconds(
+        db,
+        user=user,
+        purpose=purpose,
+        cooldown_seconds=cooldown_seconds,
+    )
+    raise_email_action_rate_limited(
+        request,
+        event=event,
+        message=message,
+        retry_after=retry_after,
+        email=email,
+        user_id=user_id,
     )

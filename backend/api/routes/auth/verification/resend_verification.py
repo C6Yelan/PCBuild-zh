@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session as OrmSession
 from backend.api.dependencies.db import get_db
 from backend.api.auth.config import RESEND_SIGNUP_MIN_INTERVAL_SECONDS
 from backend.api.routes.auth._shared.email_action_guards import (
-    build_email_action_log_fields,
-    compute_retry_after_seconds,
     find_user_by_email,
-    raise_email_action_rate_limited,
+    log_email_action_security_event,
+    raise_email_action_cooldown,
+    set_retry_after_header,
     validate_email_action_email,
 )
 from backend.api.dependencies.auth import try_get_current_user
@@ -19,7 +19,6 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
-from backend.core.seclog import log_security
 
 router = APIRouter()
 
@@ -34,7 +33,10 @@ def resend_verification(
     db: OrmSession = Depends(get_db),
 ):
     # 所有成功回覆都帶 Retry-After，讓前端不用猜 60 秒
-    response.headers["Retry-After"] = str(RESEND_SIGNUP_MIN_INTERVAL_SECONDS)
+    set_retry_after_header(
+        response,
+        retry_after=RESEND_SIGNUP_MIN_INTERVAL_SECONDS,
+    )
 
     # 0) email 可能是 None
     email = (getattr(body, "email", None) or "").strip()
@@ -43,7 +45,10 @@ def resend_verification(
     if not email:
         current_user = try_get_current_user(request=request, db=db)
         if not current_user:
-            log_security("email_verification_resend_anonymous", **build_email_action_log_fields(request))
+            log_email_action_security_event(
+                request,
+                event="email_verification_resend_anonymous",
+            )
             return {"ok": True}
         email = current_user.email
 
@@ -60,29 +65,23 @@ def resend_verification(
     try:
         resend_signup_verification_for_candidate(db=db, user=user, request=request)
     except VerificationEmailRateLimitedError:
-        retry_after = compute_retry_after_seconds(
-            db,
+        raise_email_action_cooldown(
+            request,
+            db=db,
             user=(user if user is not None and not user.is_active else None),
             purpose=VerificationPurpose.SIGNUP,
             cooldown_seconds=RESEND_SIGNUP_MIN_INTERVAL_SECONDS,
-        )
-        raise_email_action_rate_limited(
-            request,
             event="email_verification_resend_rate_limited",
-            # 重要：不要放到 email 欄位，避免前端把輸入框標紅
             message="驗證信寄送太頻繁，請稍後再試。",
-            retry_after=retry_after,
             email=email,
             user_id=(user.id if (user is not None) else "-"),
         )
 
-    log_security(
-        "email_verification_resent",
-        **build_email_action_log_fields(
-            request,
-            email=email,
-            user_id=(user.id if (user is not None) else "-"),
-        ),
+    log_email_action_security_event(
+        request,
+        event="email_verification_resent",
+        email=email,
+        user_id=(user.id if (user is not None) else "-"),
     )
     # C) 一律回成功（避免暴露帳號是否存在/是否已驗證）
     return {"ok": True}

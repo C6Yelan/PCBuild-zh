@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session as OrmSession
 from backend.api.dependencies.db import get_db
 from backend.api.auth.config import RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS
 from backend.api.routes.auth._shared.email_action_guards import (
-    build_email_action_log_fields,
-    compute_retry_after_seconds,
     find_user_by_email,
-    raise_email_action_rate_limited,
+    log_email_action_security_event,
+    raise_email_action_cooldown,
     validate_email_action_email,
 )
 from backend.schemas.auth import ForgotPasswordIn
@@ -18,7 +17,6 @@ from backend.services.auth.verification.core import (
     VerificationPurpose,
 )
 from backend.core.middleware.throttling.rate_limit import limiter
-from backend.core.seclog import log_security
 
 router = APIRouter()
 
@@ -48,31 +46,30 @@ def forgot_password(
 
     user = find_user_by_email(db, email=body.email)
     if not user:
-        log_security(
-            "password_reset_request_unknown",
-            **build_email_action_log_fields(request, email=body.email),
+        log_email_action_security_event(
+            request,
+            event="password_reset_request_unknown",
+            email=body.email,
         )
         return {"ok": True}
 
     try:
         send_password_reset_for_user(db=db, user=user, request=request)
     except VerificationEmailRateLimitedError:
-        retry_after = compute_retry_after_seconds(
-            db,
+        raise_email_action_cooldown(
+            request,
+            db=db,
             user=user,
             purpose=VerificationPurpose.PASSWORD_RESET,
             cooldown_seconds=RESEND_PASSWORD_RESET_MIN_INTERVAL_SECONDS,
-        )
-        raise_email_action_rate_limited(
-            request,
             event="password_reset_rate_limited",
             message="重設密碼請求太頻繁，請稍後再試。",
-            retry_after=retry_after,
             user_id=user.id,
         )
 
-    log_security(
-        "password_reset_email_sent",
-        **build_email_action_log_fields(request, user_id=user.id),
+    log_email_action_security_event(
+        request,
+        event="password_reset_email_sent",
+        user_id=user.id,
     )
     return {"ok": True}

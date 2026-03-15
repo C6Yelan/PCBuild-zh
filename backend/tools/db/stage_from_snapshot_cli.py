@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 import time
@@ -13,6 +12,7 @@ from uuid import UUID, uuid4
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import SessionLocal
 from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env
+from backend.tools.crawler.io.artifact_io import emit_json_stdout
 from backend.tools.db.staging_artifacts import (
     load_gate_artifacts,
     resolve_artifact_paths,
@@ -123,7 +123,7 @@ def main() -> int:
             )
             # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
             # 將 stderr 原封不動印出，方便你追查
-            sys.stderr.write(stderr_txt)
+            print(stderr_txt, end="", file=sys.stderr)
             return rc if rc != 0 else 2
 
         gate_artifacts = load_gate_artifacts(artifact_paths)
@@ -168,19 +168,16 @@ def main() -> int:
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        print(
-            json.dumps(
-                {
-                    "run_id": str(run_id),
-                    "crawl_rc": rc,
-                    "item_inserted": staging_counts.item_inserted,
-                    "item_updated": staging_counts.item_updated,
-                    "gate_inserted": staging_counts.gate_inserted,
-                    "gate_updated": staging_counts.gate_updated,
-                    "artifact_dir": str(base_outdir),
-                },
-                ensure_ascii=False,
-            )
+        emit_json_stdout(
+            {
+                "run_id": str(run_id),
+                "crawl_rc": rc,
+                "item_inserted": staging_counts.item_inserted,
+                "item_updated": staging_counts.item_updated,
+                "gate_inserted": staging_counts.gate_inserted,
+                "gate_updated": staging_counts.gate_updated,
+                "artifact_dir": str(base_outdir),
+            }
         )
 
         # 保留 crawl rc，讓 pipeline 能知道是否有 T5 non_match 等問題

@@ -3,16 +3,14 @@
 
 from __future__ import annotations
 
-import contextlib
 from dataclasses import dataclass
-import io
 import json
-import sys
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from backend.tools.crawler.parse.cli import main as crawl_parse_main
+from backend.tools.crawler.io.artifact_io import extract_last_json_object, run_cli_main
 
 
 @dataclass(frozen=True)
@@ -113,16 +111,11 @@ def build_stage_from_snapshot_argv(
 
 
 def run_crawl_parse(argv: list[str]) -> tuple[int, str, str]:
-    old_argv = sys.argv[:]
-    out_buf = io.StringIO()
-    err_buf = io.StringIO()
-    try:
-        sys.argv = ["crawl_parse_snapshot"] + argv
-        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
-            rc = crawl_parse_main()
-        return int(rc), out_buf.getvalue(), err_buf.getvalue()
-    finally:
-        sys.argv = old_argv
+    return run_cli_main(
+        crawl_parse_main,
+        argv,
+        program_name="crawl_parse_snapshot",
+    )
 
 
 def load_pass_items(stdout_txt: str) -> list[dict[str, Any]]:
@@ -136,7 +129,7 @@ def load_pass_items(stdout_txt: str) -> list[dict[str, Any]]:
 
 
 def load_stage_summary(stdout_txt: str) -> StageCliSummary:
-    result = _extract_last_json_object(stdout_txt)
+    result = extract_last_json_object(stdout_txt)
     item_inserted = int((result or {}).get("item_inserted") or 0)
     item_updated = int((result or {}).get("item_updated") or 0)
     gate_inserted = int((result or {}).get("gate_inserted") or 0)
@@ -156,17 +149,3 @@ def load_stage_summary(stdout_txt: str) -> StageCliSummary:
         gate_inserted=gate_inserted,
         gate_updated=gate_updated,
     )
-
-
-def _extract_last_json_object(stdout_txt: str) -> dict[str, Any] | None:
-    for line in reversed(stdout_txt.splitlines()):
-        candidate = line.strip()
-        if not candidate:
-            continue
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None

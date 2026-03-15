@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -12,6 +11,7 @@ from uuid import UUID, uuid4
 from backend.core.obs_events import ensure_cli_logging, log_loki_event
 from backend.db import SessionLocal
 from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env
+from backend.tools.crawler.io.artifact_io import emit_json_stdout
 from backend.tools.db.staging_ingest import load_stage_ingest_payload, stage_json_payload
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
@@ -84,17 +84,14 @@ def main() -> int:
             ended_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        print(
-            json.dumps(
-                {
-                    "run_id": str(run_id),
-                    "item_inserted": staging_counts.item_inserted,
-                    "item_updated": staging_counts.item_updated,
-                    "gate_inserted": staging_counts.gate_inserted,
-                    "gate_updated": staging_counts.gate_updated,
-                },
-                ensure_ascii=False,
-            )
+        emit_json_stdout(
+            {
+                "run_id": str(run_id),
+                "item_inserted": staging_counts.item_inserted,
+                "item_updated": staging_counts.item_updated,
+                "gate_inserted": staging_counts.gate_inserted,
+                "gate_updated": staging_counts.gate_updated,
+            }
         )
         return 0
     except (Exception, SystemExit) as e:

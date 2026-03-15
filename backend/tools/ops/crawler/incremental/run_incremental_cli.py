@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -13,7 +12,7 @@ from backend.db import SessionLocal
 from backend.services.crawler import CrawlerHttpClient, CrawlerSettings
 from backend.services.crawler.part_registry import resolve_source_parts
 from backend.services.crawler.staging.conventions import get_crawler_env
-from backend.tools.crawler.io.artifact_io import write_json_file
+from backend.tools.crawler.io.artifact_io import emit_json_stdout, write_json_file
 from .incremental_cli import incremental_cli_options_from_namespace
 from .incremental_execution import (
     run_dry_parse_steps,
@@ -266,17 +265,14 @@ def main(argv: list[str] | None = None) -> int:
     summary["exit_code"] = int(rc)
     write_json_file(summary_path, summary)
 
-    print(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "summary_path": str(summary_path),
-                "exit_code": int(rc),
-                "changed_parts": int(summary["counts"]["parts_changed"]),
-                "no_change_parts": int(summary["counts"]["parts_no_change"]),
-            },
-            ensure_ascii=False,
-        )
+    emit_json_stdout(
+        {
+            "run_id": run_id,
+            "summary_path": str(summary_path),
+            "exit_code": int(rc),
+            "changed_parts": int(summary["counts"]["parts_changed"]),
+            "no_change_parts": int(summary["counts"]["parts_no_change"]),
+        }
     )
     return int(rc)
 

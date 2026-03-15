@@ -1,7 +1,10 @@
-"""Shared JSON and artifact helpers for crawler CLI tools."""
+"""Shared JSON, artifact, and captured-CLI helpers for crawler tools."""
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
+import io
 import json
 import os
 import sys
@@ -46,6 +49,10 @@ def require_json_object_list(
 def write_json_file(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def emit_json_stdout(payload: Any) -> None:
+    print(json.dumps(payload, ensure_ascii=False))
 
 
 def write_json_atomic(path: Path, payload: Any) -> None:
@@ -98,3 +105,39 @@ def build_artifact_metadata(path: Path, *, base_dir: Path) -> dict[str, Any]:
         "bytes": int(stat.st_size),
         "mtime": int(stat.st_mtime),
     }
+
+
+def extract_last_json_object(text: str) -> dict[str, Any] | None:
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        if not stripped.startswith("{") or not stripped.endswith("}"):
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def run_cli_main(
+    main_fn: Callable[[], int],
+    argv: list[str],
+    *,
+    program_name: str | None = None,
+) -> tuple[int, str, str]:
+    old_argv = sys.argv[:]
+    out_buf = io.StringIO()
+    err_buf = io.StringIO()
+    try:
+        sys.argv = [program_name or getattr(main_fn, "__name__", "cli")] + argv
+        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):
+            try:
+                ret = main_fn()
+                rc = int(ret) if ret is not None else 0
+            except SystemExit as exc:
+                rc = int(exc.code) if isinstance(exc.code, int) else 1
+        return rc, out_buf.getvalue(), err_buf.getvalue()
+    finally:
+        sys.argv = old_argv

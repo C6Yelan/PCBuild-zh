@@ -7,24 +7,12 @@ import json
 import re
 from typing import Any
 
+from backend.tools.crawler.io.artifact_io import extract_last_json_object
+
 
 _T8_COUNTS_RE = re.compile(
     r"items\(pass\)=(?P<items>\d+)\s+product_upsert=(?P<product>\d+)\s+price_upsert=(?P<price>\d+)\s+spec_upsert=(?P<spec>\d+)"
 )
-
-
-def extract_last_json_object(text: str) -> dict[str, Any] | None:
-    for line in reversed(text.splitlines()):
-        stripped = line.strip()
-        if not stripped.startswith("{") or not stripped.endswith("}"):
-            continue
-        try:
-            parsed = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return None
 
 
 def extract_json_array(text: str) -> list[dict[str, Any]] | None:

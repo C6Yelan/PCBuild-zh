@@ -3,26 +3,19 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from uuid import UUID, uuid4
 
-from backend.core.obs_events import ensure_cli_logging, log_loki_event
-from backend.db import SessionLocal
-from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env
-from backend.tools.crawler.io.artifact_io import emit_json_stdout
-from backend.tools.db.staging_artifacts import (
-    load_gate_artifacts,
-    resolve_artifact_paths,
+from backend.core.obs_events import ensure_cli_logging
+from backend.tools.db.stage_from_snapshot_runtime import (
+    build_stage_from_snapshot_context,
+    emit_stage_from_snapshot_no_items,
+    emit_stage_from_snapshot_success,
+    log_stage_from_snapshot_failed,
+    log_stage_from_snapshot_finished,
+    log_stage_from_snapshot_started,
+    run_stage_from_snapshot_capture,
+    stage_snapshot_capture,
 )
-from backend.tools.db.staging_capture import (
-    build_crawl_parse_argv,
-    load_pass_items,
-    run_crawl_parse,
-)
-from backend.tools.db.staging_ingest import stage_snapshot_items
 
 _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
@@ -51,153 +44,41 @@ def main() -> int:
     args = ap.parse_args()
 
     # Keep this module path stable for existing pipeline callers; detailed staging steps live in sibling helpers.
-    run_id: UUID = UUID(args.run_id) if args.run_id else uuid4()
     ensure_cli_logging(logger=_PIPELINE_LOGGER)
-    src = str(args.source)
-    app_git_sha = get_app_git_sha()
-    artifact_dir = None
+    context = build_stage_from_snapshot_context(args)
+    artifact_dir: str | None = None
     t0 = time.monotonic()
 
-    # run metadata: started
-    log_loki_event(
-        _PIPELINE_LOGGER,
-        event="t7_stage_started",
-        source=src,
-        stage="stage",
-        env=get_crawler_env(),
-        run_id=str(run_id),
-        app_git_sha=app_git_sha,
-        snapshot_dir=str(args.snapshot_dir),
-        snapshot_name=str(Path(args.snapshot_dir).name),
-        enable_t5=bool(args.enable_t5),
-        t5_limit=int(args.t5_limit),
-        t5_min_interval_ms=int(args.t5_min_interval_ms),
-        t5_timeout_s=float(args.t5_timeout_s),
-        t5_max_redirects=int(args.t5_max_redirects),
-        t5_max_bytes=int(args.t5_max_bytes),
-        started_at=datetime.now(timezone.utc).isoformat(),
-    )
+    log_stage_from_snapshot_started(context, logger=_PIPELINE_LOGGER)
 
     try:
-        artifact_paths = resolve_artifact_paths(
-            artifact_dir=args.artifact_dir,
-            run_id=run_id,
-            enable_t5=bool(args.enable_t5),
-        )
-        base_outdir = artifact_paths.base_outdir
-        artifact_dir = str(base_outdir)
+        capture = run_stage_from_snapshot_capture(context)
+        artifact_dir = str(capture.artifact_paths.base_outdir)
 
-        crawl_argv = build_crawl_parse_argv(
-            source=args.source,
-            snapshot_dir=args.snapshot_dir,
-            run_id=run_id,
-            dq_outdir=artifact_paths.dq_outdir,
-            t5_outdir=artifact_paths.t5_outdir,
-            t5_limit=int(args.t5_limit),
-            t5_min_interval_ms=int(args.t5_min_interval_ms),
-            t5_timeout_s=float(args.t5_timeout_s),
-            t5_max_redirects=int(args.t5_max_redirects),
-            t5_max_bytes=int(args.t5_max_bytes),
-            t5_block_pattern=[str(p) for p in args.t5_block_pattern],
-        )
-
-        rc, stdout_txt, stderr_txt = run_crawl_parse(crawl_argv)
-        items = load_pass_items(stdout_txt)
-
-        if not items:
-            # run metadata: finished (no items / fail-fast)
-            log_loki_event(
-                _PIPELINE_LOGGER,
-                level=logging.WARNING,
-                event="t7_stage_finished",
-                source=src,
-                stage="stage",
-                env=get_crawler_env(),
-                run_id=str(run_id),
-                app_git_sha=app_git_sha,
-                status="no_items",
-                crawl_rc=int(rc),
-                artifact_dir=artifact_dir,
-                elapsed_ms=int((time.monotonic() - t0) * 1000),
-                ended_at=datetime.now(timezone.utc).isoformat(),
-            )
-            # 沒 items 就不做 staging（通常是 T3/T4 fail-fast）
-            # 將 stderr 原封不動印出，方便你追查
-            print(stderr_txt, end="", file=sys.stderr)
-            return rc if rc != 0 else 2
-
-        gate_artifacts = load_gate_artifacts(artifact_paths)
-
-        # ORM 入庫：同一個交易（run + items + gate_results）
-        with SessionLocal() as db:
-            staging_counts = stage_snapshot_items(
-                db,
-                source=args.source,
-                note=args.note,
-                run_id=run_id,
-                snapshot_dir=args.snapshot_dir,
-                artifact_dir=base_outdir,
-                items=items,
-                crawl_rc=int(rc),
-                enable_t5=bool(args.enable_t5),
-                dq_report=gate_artifacts.dq_report,
-                dq_meta=gate_artifacts.dq_meta,
-                t5_summary=gate_artifacts.t5_summary,
-                t5_meta=gate_artifacts.t5_meta,
+        if not capture.crawl_capture.items:
+            return emit_stage_from_snapshot_no_items(
+                context,
+                capture,
+                logger=_PIPELINE_LOGGER,
+                started_monotonic=t0,
             )
 
-        # run metadata: finished (has items staged)
-        status = "succeeded" if int(rc) == 0 else "completed_with_warnings"
-        log_loki_event(
-            _PIPELINE_LOGGER,
-            event="t7_stage_finished",
-            source=src,
-            stage="stage",
-            env=get_crawler_env(),
-            run_id=str(run_id),
-            app_git_sha=app_git_sha,
-            status=status,
-            crawl_rc=int(rc),
-            item_total=int(len(items)),
-            item_inserted=int(staging_counts.item_inserted),
-            item_updated=int(staging_counts.item_updated),
-            gate_inserted=int(staging_counts.gate_inserted),
-            gate_updated=int(staging_counts.gate_updated),
-            artifact_dir=artifact_dir,
-            elapsed_ms=int((time.monotonic() - t0) * 1000),
-            ended_at=datetime.now(timezone.utc).isoformat(),
+        staging_counts = stage_snapshot_capture(context, capture)
+        log_stage_from_snapshot_finished(
+            context,
+            capture,
+            staging_counts,
+            logger=_PIPELINE_LOGGER,
+            started_monotonic=t0,
         )
-
-        emit_json_stdout(
-            {
-                "run_id": str(run_id),
-                "crawl_rc": rc,
-                "item_inserted": staging_counts.item_inserted,
-                "item_updated": staging_counts.item_updated,
-                "gate_inserted": staging_counts.gate_inserted,
-                "gate_updated": staging_counts.gate_updated,
-                "artifact_dir": str(base_outdir),
-            }
-        )
-
-        # 保留 crawl rc，讓 pipeline 能知道是否有 T5 non_match 等問題
-        return rc
+        return emit_stage_from_snapshot_success(context, capture, staging_counts)
     except (Exception, SystemExit) as e:
-        log_loki_event(
-            _PIPELINE_LOGGER,
-            level=logging.ERROR,
-            event="t7_stage_failed",
-            source=src,
-            stage="stage",
-            env=get_crawler_env(),
-            run_id=str(run_id),
-            app_git_sha=app_git_sha,
-            snapshot_dir=str(args.snapshot_dir),
+        log_stage_from_snapshot_failed(
+            context,
+            e,
+            logger=_PIPELINE_LOGGER,
             artifact_dir=artifact_dir,
-            error=str(e),
-            exc_type=type(e).__name__,
-            elapsed_ms=int((time.monotonic() - t0) * 1000),
-            ended_at=datetime.now(timezone.utc).isoformat(),
+            started_monotonic=t0,
         )
         raise
 

@@ -23,6 +23,14 @@ class StageCliSummary:
     gate_updated: int
 
 
+@dataclass(frozen=True)
+class CrawlParseCapture:
+    rc: int
+    stdout_txt: str
+    stderr_txt: str
+    items: list[dict[str, Any]]
+
+
 def build_crawl_parse_argv(
     *,
     source: str,
@@ -115,6 +123,16 @@ def run_crawl_parse(argv: list[str]) -> tuple[int, str, str]:
         crawl_parse_main,
         argv,
         program_name="crawl_parse_snapshot",
+    )
+
+
+def run_crawl_parse_capture(argv: list[str]) -> CrawlParseCapture:
+    rc, stdout_txt, stderr_txt = run_crawl_parse(argv)
+    return CrawlParseCapture(
+        rc=int(rc),
+        stdout_txt=stdout_txt,
+        stderr_txt=stderr_txt,
+        items=load_pass_items(stdout_txt),
     )
 
 

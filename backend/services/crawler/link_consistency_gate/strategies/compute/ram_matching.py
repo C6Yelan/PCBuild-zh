@@ -4,13 +4,21 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text
+from ..shared_primitives import (
+    compose_page_text,
+    decision_with_evidence,
+    identity_token_missing_decision,
+    model_phrase_found_decision,
+    model_token_match_decision,
+    normalize_upper_pattern_text,
+    page_text_empty_decision,
+    token_overlap_inconclusive_decision,
+    tokenize_model_tokens,
+)
 
 _RE_BRACKETS = re.compile(r"[][(){}<>【】（）]", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~-]+", flags=re.UNICODE)
 _RE_SEP_TOKENS = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-' for SKU tokens
-
-_RE_TOKEN = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", flags=re.UNICODE)
 
 _RE_DDR = re.compile(r"(?<![A-Z0-9])DDR\s*([345])(?![A-Z0-9])", flags=re.UNICODE)
 _RE_D_ABBR = re.compile(r"(?<![A-Z0-9])D([345])(?![A-Z0-9])", flags=re.UNICODE)
@@ -63,9 +71,8 @@ def _cjk_head_token(s: str) -> str | None:
 
 def _normalize_for_phrase(s: str) -> str:
     # Phrase match should be separator-tolerant (including '-' vs whitespace).
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         prepare=_strip_noise,
         bracket_re=_RE_BRACKETS,
         separator_re=_RE_SEP_PHRASE,
@@ -74,9 +81,8 @@ def _normalize_for_phrase(s: str) -> str:
 
 def _normalize_for_tokens(s: str) -> str:
     # Tokenization keeps '-' so SKU tokens (e.g., F5-6000J... / AX5U...-...) survive.
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         prepare=_strip_noise,
         bracket_re=_RE_BRACKETS,
         separator_re=_RE_SEP_TOKENS,
@@ -89,19 +95,7 @@ def _extract_tokens(text: str) -> list[str]:
     - identity candidates: SKU-like tokens (keeps '-'), brand/series words, mixed alnum tokens
     - spec helpers: DDR{3/4/5}, speed(4~5 digits), {N}GB, CL{N}
     """
-    tokens: set[str] = set()
-
-    raw = _normalize_for_tokens(text)
-    for m in _RE_TOKEN.finditer(raw):
-        tok = m.group(0)
-        if len(tok) < 2:
-            continue
-        tokens.add(tok)
-        if "-" in tok:
-            for part in tok.split("-"):
-                if len(part) >= 2:
-                    tokens.add(part)
-
+    tokens = set(tokenize_model_tokens(text, normalize=_normalize_for_tokens, min_length=2))
     # Add canonical spec tokens from a more separator-tolerant normalization.
     phrase = _normalize_for_phrase(text)
     for m in _RE_DDR.finditer(phrase):
@@ -258,13 +252,10 @@ class RamStrategy:
         )
 
         if not page_text_norm:
-            evidence = build_evidence(
+            return page_text_empty_decision(
                 listing_tokens=listing_tokens,
-                page_tokens=[],
-                matched_tokens=[],
                 notes=["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
             )
-            return MatchDecision(status="uncertain", score=None, reason_code="PAGE_TEXT_EMPTY", evidence=evidence)
 
         page_tokens = _extract_tokens(page_text_raw)
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
@@ -273,22 +264,22 @@ class RamStrategy:
         model_phrase_norm = _normalize_for_phrase(model_phrase_raw)
 
         if not model_phrase_norm:
-            evidence = build_evidence(
+            return decision_with_evidence(
+                status="uncertain",
+                reason_code="MODEL_EMPTY",
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=["model_phrase is empty after normalization (no usable identifier)"],
             )
-            return MatchDecision(status="uncertain", score=None, reason_code="MODEL_EMPTY", evidence=evidence)
 
         if model_phrase_norm in page_text_norm:
-            evidence = build_evidence(
+            return model_phrase_found_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=[f"phrase_hit via normalized substring (model_source={model_src})"],
             )
-            return MatchDecision(status="match", score=None, reason_code="MODEL_PHRASE_FOUND", evidence=evidence)
 
         listing_identity = _extract_identity_tokens(listing, listing_tokens)
         listing_spec = _extract_spec_tokens(listing_tokens)
@@ -298,7 +289,7 @@ class RamStrategy:
         matched_spec = sorted(listing_spec & page_set)
 
         if matched_identity and matched_spec:
-            evidence = build_evidence(
+            return model_token_match_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -307,10 +298,9 @@ class RamStrategy:
                     f"matched_identity={matched_identity[:2]}, matched_spec={matched_spec[:2]}",
                 ],
             )
-            return MatchDecision(status="match", score=None, reason_code="MODEL_TOKEN_MATCH", evidence=evidence)
 
         if listing_identity and not matched_identity:
-            evidence = build_evidence(
+            return identity_token_missing_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -319,9 +309,8 @@ class RamStrategy:
                     f"identity_tokens(listing)={len(listing_identity)}",
                 ],
             )
-            return MatchDecision(status="mismatch", score=None, reason_code="IDENTITY_TOKEN_MISSING", evidence=evidence)
 
-        evidence = build_evidence(
+        return token_overlap_inconclusive_decision(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,
@@ -330,4 +319,3 @@ class RamStrategy:
                 f"identity/spec(listing)={len(listing_identity)}/{len(listing_spec)}",
             ],
         )
-        return MatchDecision(status="uncertain", score=None, reason_code="TOKEN_OVERLAP_INCONCLUSIVE", evidence=evidence)

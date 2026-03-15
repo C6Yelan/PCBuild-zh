@@ -4,7 +4,17 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
+from ..shared_primitives import (
+    compose_page_text,
+    model_phrase_found_decision,
+    model_token_match_decision,
+    model_token_missing_decision,
+    normalize_spaces,
+    normalize_upper_pattern_text,
+    page_text_empty_decision,
+    token_overlap_inconclusive_decision,
+    token_weak_or_empty_decision,
+)
 
 _RE_SEP = re.compile(r"[\\/._|,:;+=~\-]+", flags=re.UNICODE)
 _RE_BRACKET_SYMBOLS = re.compile(r"[\[\]【】\(\)（）\{\}<>]", flags=re.UNICODE)
@@ -58,9 +68,8 @@ def _normalize_spaces(s: str) -> str:
 
 
 def _normalize_text(s: str) -> str:
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         bracket_re=_RE_BRACKET_SYMBOLS,
         separator_re=_RE_SEP,
         replacements_before=(
@@ -202,31 +211,17 @@ class GpuStrategy:
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
 
         if not page_text_norm:
-            evidence = build_evidence(
+            return page_text_empty_decision(
                 listing_tokens=listing_tokens,
-                page_tokens=[],
-                matched_tokens=[],
                 notes=[f"model_source={model_source}", "page text empty"],
-            )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="PAGE_TEXT_EMPTY",
-                evidence=evidence,
             )
 
         if not page_tokens and not page_identities:
-            evidence = build_evidence(
+            return token_weak_or_empty_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=[f"model_source={model_source}", "page tokens too weak"],
-            )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="TOKEN_WEAK_OR_EMPTY",
-                evidence=evidence,
             )
 
         listing_identity_set = set(listing_identities)
@@ -239,35 +234,23 @@ class GpuStrategy:
                 pass
             else:
                 phrase_matches = sorted(set(matched_tokens) | {model_phrase_norm} | set(matched_identity))
-                evidence = build_evidence(
+                return model_phrase_found_decision(
                     listing_tokens=listing_tokens,
                     page_tokens=page_tokens,
                     matched_tokens=phrase_matches,
                     notes=[f"model_source={model_source}", "phrase hit"],
                 )
-                return MatchDecision(
-                    status="match",
-                    score=None,
-                    reason_code="MODEL_PHRASE_FOUND",
-                    evidence=evidence,
-                )
 
         if matched_identity:
-            evidence = build_evidence(
+            return model_token_match_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_identity,
                 notes=[f"model_source={model_source}", "identity token match"],
             )
-            return MatchDecision(
-                status="match",
-                score=None,
-                reason_code="MODEL_TOKEN_MATCH",
-                evidence=evidence,
-            )
 
         if listing_identity_set and page_identity_set and not matched_identity:
-            evidence = build_evidence(
+            return model_token_missing_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -276,36 +259,18 @@ class GpuStrategy:
                     f"identity mismatch: listing={sorted(listing_identity_set)[:2]} page={sorted(page_identity_set)[:2]}",
                 ],
             )
-            return MatchDecision(
-                status="mismatch",
-                score=None,
-                reason_code="MODEL_TOKEN_MISSING",
-                evidence=evidence,
-            )
 
         if not listing_identity_set or not page_identity_set:
-            evidence = build_evidence(
+            return token_weak_or_empty_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=[f"model_source={model_source}", "identity tokens weak or empty"],
             )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="TOKEN_WEAK_OR_EMPTY",
-                evidence=evidence,
-            )
 
-        evidence = build_evidence(
+        return token_overlap_inconclusive_decision(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,
             notes=[f"model_source={model_source}", "token overlap inconclusive"],
-        )
-        return MatchDecision(
-            status="uncertain",
-            score=None,
-            reason_code="TOKEN_OVERLAP_INCONCLUSIVE",
-            evidence=evidence,
         )

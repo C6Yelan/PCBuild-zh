@@ -5,13 +5,23 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces
+from ..shared_primitives import (
+    compose_page_text,
+    decision_with_evidence,
+    identity_token_missing_decision,
+    model_phrase_found_decision,
+    model_token_match_decision,
+    normalize_spaces,
+    normalize_upper_pattern_text,
+    page_text_empty_decision,
+    token_overlap_inconclusive_decision,
+    tokenize_model_tokens,
+)
 
 
 _RE_BRACKETS = re.compile(r"[][(){}<>【】（）]", flags=re.UNICODE)
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~-]+", flags=re.UNICODE)
 _RE_SEP_TOKENS = re.compile(r"[\\/._|,:;+=~]+", flags=re.UNICODE)  # keep '-'
-_RE_TOKEN = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", flags=re.UNICODE)
 
 _RE_CAPACITY = re.compile(r"(?<![A-Z0-9])(\d{1,4})\s*(TB|GB|T|G)(?![A-Z0-9])", flags=re.UNICODE)
 _RE_CAPACITY_TOKEN = re.compile(r"^(\d{1,4})(TB|GB|T|G)$", flags=re.UNICODE)
@@ -39,9 +49,8 @@ def _strip_noise(s: str) -> str:
 
 
 def _normalize_for_phrase(s: str) -> str:
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         prepare=_strip_noise,
         bracket_re=_RE_BRACKETS,
         separator_re=_RE_SEP_PHRASE,
@@ -50,9 +59,8 @@ def _normalize_for_phrase(s: str) -> str:
 
 
 def _normalize_for_tokens(s: str) -> str:
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         prepare=_strip_noise,
         bracket_re=_RE_BRACKETS,
         separator_re=_RE_SEP_TOKENS,
@@ -129,19 +137,7 @@ def _is_identity_token(tok: str) -> bool:
 
 
 def _extract_tokens(text: str) -> list[str]:
-    tokens: set[str] = set()
-
-    raw = _normalize_for_tokens(text)
-    for m in _RE_TOKEN.finditer(raw):
-        tok = m.group(0)
-        if len(tok) < 2:
-            continue
-        tokens.add(tok)
-        if "-" in tok:
-            for part in tok.split("-"):
-                if len(part) >= 2:
-                    tokens.add(part)
-
+    tokens = set(tokenize_model_tokens(text, normalize=_normalize_for_tokens, min_length=2))
     phrase = _normalize_for_phrase(text)
     tokens |= _capacity_tokens(phrase)
 
@@ -185,7 +181,7 @@ def _is_sku_like(sku_hint: str) -> bool:
     if not (sku_hint or "").strip():
         return False
     phrase = _normalize_for_phrase(sku_hint)
-    token_candidates = _RE_TOKEN.findall(_normalize_for_tokens(sku_hint))
+    token_candidates = tokenize_model_tokens(sku_hint, normalize=_normalize_for_tokens, min_length=2)
     if not token_candidates:
         return False
     if len(token_candidates) > 3:
@@ -273,13 +269,10 @@ class SsdStrategy:
         listing_tokens = sorted(set(listing_tokens) | _hint_spec_tokens(listing))
 
         if not page_text_norm:
-            evidence = build_evidence(
+            return page_text_empty_decision(
                 listing_tokens=listing_tokens,
-                page_tokens=[],
-                matched_tokens=[],
                 notes=["page_text is empty (page_title/page_h1/text_hint all missing or blank)"],
             )
-            return MatchDecision(status="uncertain", score=None, reason_code="PAGE_TEXT_EMPTY", evidence=evidence)
 
         page_tokens = _extract_tokens(page_text_raw)
         matched_tokens = sorted(set(listing_tokens) & set(page_tokens))
@@ -287,22 +280,22 @@ class SsdStrategy:
         model_phrase_raw, model_src = _pick_model_phrase(listing)
         model_phrase_norm = _normalize_for_phrase(model_phrase_raw)
         if not model_phrase_norm:
-            evidence = build_evidence(
+            return decision_with_evidence(
+                status="uncertain",
+                reason_code="MODEL_EMPTY",
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=["model_phrase is empty after normalization (no usable identifier)"],
             )
-            return MatchDecision(status="uncertain", score=None, reason_code="MODEL_EMPTY", evidence=evidence)
 
         if model_phrase_norm in page_text_norm:
-            evidence = build_evidence(
+            return model_phrase_found_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=[f"phrase match hit (model_source={model_src})"],
             )
-            return MatchDecision(status="match", score=None, reason_code="MODEL_PHRASE_FOUND", evidence=evidence)
 
         listing_identity = _extract_identity_tokens(listing_tokens)
         listing_spec = _extract_spec_tokens(listing_tokens)
@@ -313,7 +306,7 @@ class SsdStrategy:
         matched_spec = sorted(listing_spec & page_spec)
 
         if matched_identity and matched_spec:
-            evidence = build_evidence(
+            return model_token_match_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
@@ -322,21 +315,18 @@ class SsdStrategy:
                     f"matched_identity={matched_identity[:2]}, matched_spec={matched_spec[:2]}",
                 ],
             )
-            return MatchDecision(status="match", score=None, reason_code="MODEL_TOKEN_MATCH", evidence=evidence)
 
         if listing_identity and not matched_identity:
-            evidence = build_evidence(
+            return identity_token_missing_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=["listing has identity tokens but page has no identity-token overlap"],
             )
-            return MatchDecision(status="mismatch", score=None, reason_code="IDENTITY_TOKEN_MISSING", evidence=evidence)
 
-        evidence = build_evidence(
+        return token_overlap_inconclusive_decision(
             listing_tokens=listing_tokens,
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,
             notes=["token overlap is inconclusive for SSD"],
         )
-        return MatchDecision(status="uncertain", score=None, reason_code="TOKEN_OVERLAP_INCONCLUSIVE", evidence=evidence)

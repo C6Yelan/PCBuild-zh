@@ -5,7 +5,19 @@ import re
 from dataclasses import dataclass
 
 from ...types import ListingInput, MatchDecision, PageSignals
-from ..shared_primitives import build_evidence, compose_page_text, normalize_pattern_text, normalize_spaces, tokenize_model_tokens
+from ..shared_primitives import (
+    compose_page_text,
+    identity_token_missing_decision,
+    model_phrase_found_decision,
+    model_token_match_decision,
+    model_token_missing_decision,
+    normalize_spaces,
+    normalize_upper_pattern_text,
+    page_text_empty_decision,
+    token_overlap_inconclusive_decision,
+    token_weak_or_empty_decision,
+    tokenize_model_tokens,
+)
 
 
 _RE_SEP_PHRASE = re.compile(r"[\\/._|,:;+=~\-]+", flags=re.UNICODE)
@@ -52,18 +64,16 @@ def _normalize_spaces(s: str) -> str:
 
 
 def _normalize_for_phrase(s: str) -> str:
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         bracket_re=_RE_BRACKET_SYMBOLS,
         separator_re=_RE_SEP_PHRASE,
     )
 
 
 def _normalize_for_token(s: str) -> str:
-    return normalize_pattern_text(
+    return normalize_upper_pattern_text(
         s,
-        transform="upper",
         bracket_re=_RE_BRACKET_SYMBOLS,
         separator_re=_RE_SEP_TOKEN,
     )
@@ -230,104 +240,60 @@ class PsuStrategy:
 
         page_text = _build_page_text(signals)
         if not _normalize_for_phrase(page_text):
-            evidence = build_evidence(
+            return page_text_empty_decision(
                 listing_tokens=listing_tokens,
-                page_tokens=[],
-                matched_tokens=[],
                 notes=[*base_notes, "page_text_empty"],
-            )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="PAGE_TEXT_EMPTY",
-                evidence=evidence,
             )
 
         page_tokens = _tokenize(page_text)
         if len(page_tokens) < 2:
-            evidence = build_evidence(
+            return token_weak_or_empty_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=[],
                 notes=[*base_notes, "page_tokens_too_weak"],
-            )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="TOKEN_WEAK_OR_EMPTY",
-                evidence=evidence,
             )
 
         page_compact = _compact(page_text)
         for cand in candidates:
             cand_compact = _compact(cand)
             if cand_compact and cand_compact in page_compact:
-                evidence = build_evidence(
+                return model_phrase_found_decision(
                     listing_tokens=listing_tokens,
                     page_tokens=page_tokens,
                     matched_tokens=[cand],
                     notes=[*base_notes, f"candidate_used={cand}", "phrase_match"],
                 )
-                return MatchDecision(
-                    status="match",
-                    score=None,
-                    reason_code="MODEL_PHRASE_FOUND",
-                    evidence=evidence,
-                )
 
         listing_identity = _extract_identity_tokens(listing_tokens)
         if not listing_identity:
-            evidence = build_evidence(
+            return model_token_missing_decision(
                 listing_tokens=listing_tokens,
                 page_tokens=page_tokens,
                 matched_tokens=[],
                 notes=[*base_notes, "listing_identity_empty"],
             )
-            return MatchDecision(
-                status="mismatch",
-                score=None,
-                reason_code="MODEL_TOKEN_MISSING",
-                evidence=evidence,
-            )
 
         matched_tokens = sorted(listing_identity & set(page_tokens))
         if not matched_tokens:
-            evidence = build_evidence(
+            return identity_token_missing_decision(
                 listing_tokens=sorted(listing_identity),
                 page_tokens=page_tokens,
                 matched_tokens=[],
                 notes=[*base_notes, "identity_overlap_empty"],
             )
-            return MatchDecision(
-                status="mismatch",
-                score=None,
-                reason_code="IDENTITY_TOKEN_MISSING",
-                evidence=evidence,
-            )
 
         if all(_is_weak_token(tok) for tok in matched_tokens):
-            evidence = build_evidence(
+            return token_overlap_inconclusive_decision(
                 listing_tokens=sorted(listing_identity),
                 page_tokens=page_tokens,
                 matched_tokens=matched_tokens,
                 notes=[*base_notes, "only_weak_identity_overlap"],
             )
-            return MatchDecision(
-                status="uncertain",
-                score=None,
-                reason_code="TOKEN_OVERLAP_INCONCLUSIVE",
-                evidence=evidence,
-            )
 
-        evidence = build_evidence(
+        return model_token_match_decision(
             listing_tokens=sorted(listing_identity),
             page_tokens=page_tokens,
             matched_tokens=matched_tokens,
             notes=[*base_notes, "fallback_token_match"],
-        )
-        return MatchDecision(
-            status="match",
-            score=None,
-            reason_code="MODEL_TOKEN_MATCH",
-            evidence=evidence,
         )

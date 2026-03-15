@@ -4,9 +4,12 @@ from __future__ import annotations
 import re
 
 from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import extract_brand_hint as shared_extract_brand_hint
 from ..shared_specs import build_title_desc_texts
+from ..shared_specs import extract_labeled_length_from_lines as shared_extract_labeled_length_from_lines
+from ..shared_specs import extract_labeled_length_mm as shared_extract_labeled_length_mm
 from ..shared_specs import extract_limit_hint
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
 from ..shared_specs import normalized_title_line
 from ..shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
 
@@ -42,8 +45,6 @@ _CASE_LIKE_RE = re.compile( # 機殼相關提示詞
     r"(?i)(顯卡長|卡長|CPU高|U高|水冷|風扇支援|前I/O|尺寸|"
     r"E-?ATX|ATX|M-?ATX|Micro-ATX|Mini-ITX|ITX|玻璃|透側|機殼|電源)"
 )
-_BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
-
 _PSU_INCLUDED_RE = re.compile(
     r"(含電源|機殼\+電源|內附\s*\d{2,4}\s*W?\s*(?:\S+\s*){0,2}電源)",
     flags=re.IGNORECASE,
@@ -58,23 +59,20 @@ _MODEL_TRAILING_SPEC_RE = re.compile( # 型號後方可能出現的規格描述�
 
 
 def _extract_model_hint(text: str) -> str | None:
-    head = extract_model_head(
+    return shared_extract_model_hint(
         text,
         strip_bracket_tags=True,
         bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
         clean_pattern=_MODEL_TRAILING_SPEC_RE,
     )
-    return head or None
 
 
 def _extract_brand(text: str) -> str | None:
-    clean = _strip_leading_bracket_tags(text)
-    cjk_m = re.match(r"^([\u4e00-\u9fff]{1,20})", clean or "")
-    if cjk_m:
-        return cjk_m.group(1)
-    for m in _BRAND_TOKEN_RE.finditer(clean or ""):
-        return m.group(0).upper()
-    return None
+    return shared_extract_brand_hint(
+        text,
+        strip_bracket_tags=True,
+        allow_cjk_prefix=True,
+    )
 
 
 def _pick_max_form_factor(values: set[str]) -> str | None:
@@ -100,36 +98,6 @@ def _extract_mb_form_factor(lines: list[str]) -> str | None:
             continue
         found |= factors
     return _pick_max_form_factor(found)
-
-
-def _to_mm(value: float, unit: str | None) -> int:
-    if unit == "mm":
-        return int(round(value))
-    if unit == "cm":
-        return int(round(value * 10))
-    if value <= 80:
-        return int(round(value * 10))
-    return int(round(value))
-
-
-def _extract_labeled_length_mm(text: str, label_re: re.Pattern[str]) -> int | None:
-    m = label_re.search(text or "")
-    if not m:
-        return None
-    tail = (text or "")[m.end():]
-    segment = re.split(r"[／/|｜]", tail, 1)[0]
-    nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", segment)]
-    if not nums:
-        return None
-    unit = "mm" if re.search(r"mm", segment, flags=re.IGNORECASE) else "cm" if re.search(r"cm", segment, flags=re.IGNORECASE) else None
-    return _to_mm(max(nums), unit)
-
-def _extract_labeled_length_from_lines(lines: list[str], label_re: re.Pattern[str]) -> int | None:
-    for line in lines:
-        val = _extract_labeled_length_mm(line, label_re)
-        if val is not None:
-            return val
-    return None
 
 
 def _extract_radiator_support_with_seen(lines: list[str]) -> tuple[list[int] | None, bool]:
@@ -281,14 +249,14 @@ def extract_case_hints(title: str, desc_lines: list[str] | None) -> tuple[str | 
     sku_hint = model_hint
 
     mb_form_factor_support_hint = _extract_mb_form_factor(lines) or _extract_mb_form_factor([line])
-    gpu_title_value = _extract_labeled_length_mm(line, _GPU_LABEL_RE)
-    gpu_desc_value = _extract_labeled_length_from_lines(lines, _GPU_LABEL_RE)
+    gpu_title_value = shared_extract_labeled_length_mm(line, _GPU_LABEL_RE)
+    gpu_desc_value = shared_extract_labeled_length_from_lines(lines, _GPU_LABEL_RE)
     if gpu_title_value is not None and gpu_desc_value is not None:
         gpu_max_length_mm_hint = max(gpu_title_value, gpu_desc_value)
     else:
         gpu_max_length_mm_hint = gpu_title_value if gpu_title_value is not None else gpu_desc_value
-    cpu_title_value = _extract_labeled_length_mm(line, _CPU_LABEL_RE)
-    cpu_desc_value = _extract_labeled_length_from_lines(lines, _CPU_LABEL_RE)
+    cpu_title_value = shared_extract_labeled_length_mm(line, _CPU_LABEL_RE)
+    cpu_desc_value = shared_extract_labeled_length_from_lines(lines, _CPU_LABEL_RE)
     if cpu_title_value is not None and cpu_desc_value is not None:
         cpu_cooler_max_height_mm_hint = max(cpu_title_value, cpu_desc_value)
     else:

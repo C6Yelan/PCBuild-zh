@@ -3,10 +3,11 @@ from __future__ import annotations
 import re
 
 from ..common import head_before_brackets, normalize_spaces
+from ..shared_specs import extract_brand_hint as shared_extract_brand_hint
 from ..shared_specs import build_title_desc_texts
 from ..shared_specs import extract_keyword_count
 from ..shared_specs import extract_limit_hint
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
 from ..shared_specs import extract_warranty_years
 from ..shared_specs import normalized_title_line
 from ..shared_specs import strip_leading_bracket_tags
@@ -56,7 +57,6 @@ _CARD_RE = re.compile(r"CARD|轉接卡|擴充卡", flags=re.IGNORECASE)
 
 _COUNT_STAR_RE = re.compile(r"(?<![A-Za-z0-9])(?:\*|x|×)\s*(\d+)(?![A-Za-z0-9])", flags=re.IGNORECASE)
 
-_BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}")
 _CJK_BRAND_ONLY_RE = re.compile(r"^[\u4e00-\u9fff]{1,6}$")
 _TAIL_MODEL_BRACKET_RE = re.compile(r"【\s*([A-Z0-9][A-Z0-9-]{3,})\s*】")
 _HYPER_M2_RE = re.compile(r"HYPER\s*M\.2", flags=re.IGNORECASE)
@@ -101,10 +101,10 @@ _KIND_RULES: list[tuple[re.Pattern[str], str]] = [
 def _model_head(text: str) -> str:
     line = strip_leading_bracket_tags(normalized_title_line(text))
     has_bracket = bool(re.search(r"[（(【]", line))
-    head = extract_model_head(line, bundle_split_re=_MODEL_BUNDLE_SPLIT_RE)
+    head = shared_extract_model_hint(line, bundle_split_re=_MODEL_BUNDLE_SPLIT_RE)
     if has_bracket and head and not _SPEC_CLEAN_RE.search(head):
         return head
-    cleaned = extract_model_head(
+    cleaned = shared_extract_model_hint(
         line,
         bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
         clean_pattern=_SPEC_CLEAN_RE,
@@ -154,16 +154,12 @@ def extract_expansion_card_sku_hint(title: str) -> str | None:
 
 
 def _infer_brand(text: str) -> str | None:
-    clean = strip_leading_bracket_tags(text)
-    cjk_m = re.match(r"^([\u4e00-\u9fff]{1,20})", clean or "")
-    if cjk_m:
-        return cjk_m.group(1)
-    for m in _BRAND_TOKEN_RE.finditer(clean or ""):
-        token = m.group(0).upper()
-        if token in _BRAND_IGNORE:
-            continue
-        return token
-    return None
+    return shared_extract_brand_hint(
+        text,
+        strip_bracket_tags=True,
+        allow_cjk_prefix=True,
+        ignore_tokens=_BRAND_IGNORE,
+    )
 
 
 def _extract_kind(texts: list[str]) -> str:

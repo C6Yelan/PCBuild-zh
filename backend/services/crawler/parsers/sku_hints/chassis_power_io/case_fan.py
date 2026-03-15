@@ -6,7 +6,7 @@ from typing import Any
 
 from ..shared_specs import build_title_desc_texts
 from ..shared_specs import extract_limit_hint
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
 from ..shared_specs import extract_warranty_years as _extract_warranty_years
 from ..shared_specs import normalized_title_line
 
@@ -72,11 +72,11 @@ _CONTROLLER_REQ_RE = re.compile(r"需[^\n]{0,12}控制器|需搭配[^\n]{0,12}�
 
 def _model_head(text: str) -> str:
     line = normalized_title_line(text)
-    return extract_model_head(
+    return shared_extract_model_hint(
         line,
         strip_bracket_tags=True,
         bundle_split_re=_MODEL_BUNDLE_SPLIT_RE,
-    )
+    ) or ""
 
 
 def extract_case_fan_sku_hint(title: str) -> str | None:

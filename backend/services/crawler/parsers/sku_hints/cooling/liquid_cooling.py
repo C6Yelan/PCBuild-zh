@@ -4,7 +4,10 @@ from __future__ import annotations
 import re
 
 from ..common import head_before_brackets, normalize_spaces, strip_leading_note
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_brand_hint as shared_extract_brand_hint
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
+from ..shared_specs import extract_warranty_years_with_registration
+from ..shared_specs import normalize_length_mm
 from ..shared_specs import normalized_title_line
 
 _RADIATOR_SIZE_RE = re.compile(r"(?<!\d)(120|240|280|360|420)(?!\d)") # 水冷排尺寸（mm）
@@ -24,10 +27,8 @@ _ACCESSORY_RE = re.compile(r"(扣具|支架|轉接|控制器|延長線|套件|�
 _ACCESSORY_NEG_RE = re.compile(r"(不含|未含|無含|不附|未附|無附)\s*控制器")  # 避免「不含控制器」誤判為配件
 
 # 保固年份：同時支援「5年保/5年保固」與「6年【WXZ】/6年【XZ】」這種寫法
-_WARRANTY_RE = re.compile(r"(\d{1,2})\s*年(?:(?:保固|保)\b|(?=[【\[]))")
 _REGISTER_RE = re.compile(r"註冊\s*(\d+)\s*\+\s*(\d+)\s*年?")  # 登錄延長保固（必須有「註冊」才算）
 
-_BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 品牌可能的字元組合
 _BRAND_IGNORE = {"CPU", "PWM", "RGB", "ARGB", "AIO", "TDP", "M2", "SSD", "HDD", "LCD"} # 忽略的品牌字串
 
 _DRGB_RE = re.compile(r"(?<![A-Za-z0-9])D-?RGB(?![A-Za-z0-9])", flags=re.IGNORECASE) # 排除 D-RGB 誤判
@@ -70,22 +71,15 @@ _SOCKET_RULES: list[tuple[re.Pattern[str], str]] = [ # 支援插槽對應規則
 
 
 def _extract_brand(text: str) -> str | None: # 從標題中抽出品牌提示。
-    head = (text or "").strip()
-    for pat, norm in _BRAND_PREFIX_RULES:
-        if pat.search(head):
-            return norm
-    for m in _BRAND_TOKEN_RE.finditer(text or ""):
-        token = m.group(0).upper()
-        if token in _BRAND_IGNORE:
-            continue
-        return token
-    return None
+    return shared_extract_brand_hint(
+        text,
+        prefix_rules=_BRAND_PREFIX_RULES,
+        ignore_tokens=_BRAND_IGNORE,
+    )
 
 
 def _extract_model_hint(text: str) -> str | None: # 從標題中抽出型號提示。
-    head = extract_model_head(text)
-    head = normalize_spaces(head)
-    return head or None
+    return shared_extract_model_hint(text)
 
 
 def _extract_radiator_size(text: str) -> int | None: # 從標題中抽出水冷排尺寸提示（mm）。
@@ -96,14 +90,14 @@ def _extract_radiator_size(text: str) -> int | None: # 從標題中抽出水冷�
 def _extract_radiator_thickness(text: str) -> int | None: # 從標題中抽出水冷排厚度提示（mm）。
     m = _THICKNESS_CM_RE.search(text or "")
     if m:
-        return int(round(float(m.group(1)) * 10))
+        return normalize_length_mm(float(m.group(1)), "cm")
     for m in _THICKNESS_MM_RE.finditer(text or ""):
         tail = (text or "")[m.end():m.end() + 3]
         if _FAN_RE.search(tail):
             continue
         window = (text or "")[max(0, m.start() - 8):min(len(text or ""), m.end() + 8)]
         if _THICKNESS_HINT_RE.search(window):
-            return int(m.group(1))
+            return normalize_length_mm(float(m.group(1)), "mm")
     return None
 
 
@@ -135,14 +129,6 @@ def _extract_sockets(text: str) -> list[str] | None: # 從標題中抽出支援�
         return None
     return sorted(found)
 
-
-def _extract_warranty_years(text: str) -> int | None: # 從標題中抽出保固年限提示。
-    candidates: list[int] = []
-    for m in _WARRANTY_RE.finditer(text or ""):
-        candidates.append(int(m.group(1)))
-    for m in _REGISTER_RE.finditer(text or ""):
-        candidates.append(int(m.group(1)) + int(m.group(2)))
-    return max(candidates) if candidates else None
 
 # examples:
 # - "…28mm風扇/厚:5.5…" -> radiator_thickness_mm_hint=55
@@ -178,7 +164,7 @@ def extract_liquid_cooling_hints(title: str) -> tuple[str | None, dict[str, obje
     lcd_size_inch_hint = _extract_lcd_size(full)
     rgb_hint = _extract_rgb_hint(full)
     socket_support_hint = _extract_sockets(full)
-    warranty_years = _extract_warranty_years(full)
+    warranty_years = extract_warranty_years_with_registration([full], _REGISTER_RE)
 
     limit_hint = None
     limit_m = _LIMIT_RE.search(full)

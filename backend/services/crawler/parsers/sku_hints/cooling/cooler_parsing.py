@@ -4,7 +4,10 @@ from __future__ import annotations
 import re
 
 from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_brand_hint as shared_extract_brand_hint
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
+from ..shared_specs import extract_warranty_years
+from ..shared_specs import normalize_length_mm
 from ..shared_specs import normalized_title_line
 
 _NOTICE_RE = re.compile(r"(提醒|注意事項|說明)") # 用於識別注意事項類型
@@ -43,14 +46,6 @@ _THERMAL_COND_RE = re.compile(r"(\d+(?:\.\d+)?)\s*W\s*/\s*m\s*-?\s*K", flags=re.
 _WEIGHT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:公克|g)\b", flags=re.IGNORECASE) # 提取重量（公克）
 _ANY_MM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*mm", flags=re.IGNORECASE) # 提取任意毫米數值
 
-_WARRANTY_RE = re.compile(r"(\d+)\s*年(?:保)?") # 提取保固年限（數字）
-_WARRANTY_CN = { # 提取保固年限（中文）
-    "一年": 1,
-    "二年": 2,
-    "三年": 3,
-    "五年": 5,
-}
-
 _SOCKET_RE = re.compile( # 提取支援插槽
     r"(?<![A-Za-z0-9])("
     r"LGA\s*1700|LGA\s*1851|LGA\s*1200|LGA\s*115x|LGA\s*115X|LGA\s*2011|"
@@ -69,7 +64,6 @@ _MODEL_HEAD_CLEAN_RE = re.compile(
     rf"{_MODEL_REMOVE_RE.pattern}|{_LIMIT_RE.pattern}",
     flags=re.IGNORECASE,
 )
-_BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}") # 提取可能的品牌字串
 _BRAND_IGNORE = {"CPU", "PWM", "RGB", "ARGB", "AIO", "TDP", "M2", "SSD", "HDD"} # 忽略的品牌字串
 
 _FAN_WORDS = { # 用於識別風扇尺寸附近的字樣
@@ -122,35 +116,27 @@ def _detect_cooler_kind(text: str) -> str: # 偵測散熱器類型。
 
 
 def _extract_brand(text: str) -> str | None: # 提取品牌提示。
-    head = (text or "").strip()
-    for pat, norm in _BRAND_PREFIX_RULES:
-        if pat.search(head):
-            return norm
-    for m in _BRAND_TOKEN_RE.finditer(text or ""):
-        token = m.group(0).upper()
-        if token in _BRAND_IGNORE:
-            continue
-        return token
-    return None
+    return shared_extract_brand_hint(
+        text,
+        prefix_rules=_BRAND_PREFIX_RULES,
+        ignore_tokens=_BRAND_IGNORE,
+    )
 
 
 def _extract_model_hint(text: str) -> str | None: # 提取型號提示。
-    head = extract_model_head(text, clean_pattern=_MODEL_HEAD_CLEAN_RE)
-    return head or None
+    return shared_extract_model_hint(text, clean_pattern=_MODEL_HEAD_CLEAN_RE)
 
 
 def _extract_height_mm(text: str) -> int | None: # 提取高度（mm）。
     m = _HEIGHT_MM_RE.search(text or "")
     if m:
-        return int(round(float(m.group(1))))
+        return normalize_length_mm(float(m.group(1)), "mm")
     m = _HEIGHT_CM_RE.search(text or "")
     if m:
-        return int(round(float(m.group(1)) * 10))
+        return normalize_length_mm(float(m.group(1)), "cm")
     m = _HEIGHT_NUM_RE.search(text or "")
     if m:
-        val = float(m.group(1))
-        if val <= 30:
-            return int(round(val * 10))
+        return normalize_length_mm(float(m.group(1)), None, assume_cm_threshold=30)
     return None
 
 
@@ -224,16 +210,6 @@ def _extract_thermal_cond(text: str) -> float | None: # 提取導熱係數（W/m
 def _extract_weight(text: str) -> float | None: # 提取重量（公克）。
     m = _WEIGHT_RE.search(text or "")
     return float(m.group(1)) if m else None
-
-
-def _extract_warranty_years(text: str) -> int | None: #　提取保固年限。
-    m = _WARRANTY_RE.search(text or "")
-    if m:
-        return int(m.group(1))
-    for key, val in _WARRANTY_CN.items():
-        if key in (text or ""):
-            return val
-    return None
 
 
 def extract_cooler_sku_hint(title: str) -> str | None: # 回傳散熱器型號提示（sku_hint）。
@@ -343,7 +319,7 @@ def extract_cooler_hints(title: str) -> tuple[str | None, dict[str, object]]:
         thermal_conductivity_w_mk_hint = _extract_thermal_cond(line)
         weight_g_hint = _extract_weight(line)
 
-    warranty_years = _extract_warranty_years(full)
+    warranty_years = extract_warranty_years([full])
 
     extra = {
         "brand_hint": brand_hint,

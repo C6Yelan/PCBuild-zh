@@ -6,7 +6,7 @@ import re
 from ..common import head_before_brackets, normalize_spaces
 from ..shared_specs import build_title_desc_texts
 from ..shared_specs import extract_limit_hint
-from ..shared_specs import extract_model_head
+from ..shared_specs import extract_model_hint as shared_extract_model_hint
 from ..shared_specs import extract_warranty_years as _extract_warranty_years
 from ..shared_specs import normalized_title_line
 from ..shared_specs import strip_leading_bracket_tags as _strip_leading_bracket_tags
@@ -179,7 +179,7 @@ def _clean_model_head(text: str) -> str:  # 清理並正規化型號開頭字樣
     # NEW: 若開頭是「品牌(代理/別名) 型號...」，先移除這個括號，避免 head_before_brackets 只剩品牌
     text = re.sub(r"^([^\s(（【\[]+)[(（][^）)]{1,80}[)）]\s*", r"\1 ", text)
 
-    return extract_model_head(text, clean_pattern=_SPEC_CLEAN_RE)
+    return shared_extract_model_hint(text, clean_pattern=_SPEC_CLEAN_RE) or ""
 
 
 def extract_psu_sku_hint(title: str) -> str | None: # 抓取 PSU 型號提示字樣。

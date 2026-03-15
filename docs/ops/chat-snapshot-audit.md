@@ -6,6 +6,7 @@
 - 這是 P5 的原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
 - 這不是 provider health check；provider smoke/health 仍看 `docs/ops/chat-provider-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
+- `docs/ops/chat-round1-boundary.md` 只保留 round 1 的歷史 boundary / compat 背景，不作為目前 snapshot ops 的現行說明。
 
 ## Snapshot 目錄結構範例
 

@@ -8,6 +8,7 @@
 - 記錄 chat round 1 目前已凍結的 public boundary 與 compat 點。
 - 這份文件反映 Step 1、Step 2A、Step 2B 的現況，不改 `generate_chat_reply` 簽名，不改 `/api/chat` contract，不改 CLI stdout JSON shape / exit code。
 - 持續原則：不要新增新的跨模組 `_...` import / patch。
+- 下列 CLI / module 清單只作 frozen boundary inventory；目前日常營運說明請回到 `docs/ops/chat-ops-index.md` 與其指向的正式文件。
 
 ## 已凍結的不變項
 - 正式業務入口維持 `backend.services.chat.generate_chat_reply`。
@@ -108,53 +109,12 @@
 | `backend/tools/ops/chat_staging_inspect.py` | CLI `python -m backend.tools.ops.chat_staging_inspect`、`main()` | `backend/tests/chat/ops/test_staging_inspect.py` | official ops；已共用 `snapshot_store` loader | 否 |
 | `backend/tools/ops/chat_release_check.py` | CLI `python -m backend.tools.ops.chat_release_check --mode p10`、`run_p10_release_check()`、`main()` | `docs/ops/chat-snapshot-audit.md`、`docs/ops/ai-baseline-freeze.md`、`backend/tests/chat/harness/test_release_check.py` | test harness / acceptance surface；保留 CLI 名稱與 summary shape | 否；已改 patch provider seam |
 
-## 檔案分類
-
-### Official Ops
-- `backend/tools/ops/chat_provider_healthcheck.py`
-- `backend/tools/ops/chat_regression_report.py`
-- `backend/tools/ops/chat_snapshot_inspect.py`
-- `backend/tools/ops/chat_staging_inspect.py`
-- `docs/ops/chat-provider-health.md`
-- `docs/ops/chat-snapshot-audit.md`
-
-### Test Harness
-- `backend/tools/ops/chat_release_check.py`
-- `backend/tests/chat/harness/test_release_check.py`
-
-### Ops Contract Tests
-- `backend/tests/chat/ops/test_snapshot_inspect.py`
-- `backend/tests/chat/ops/test_staging_inspect.py`
-- `backend/tests/chat/ops/test_regression_report.py`
-
-### Service Behavior Tests
-- `backend/tests/chat/service/*.py`
-
-### Context Pack Tests
-- `backend/tests/chat/context_pack/*.py`
-
-### Provider Tests
-- `backend/tests/chat/provider/*.py`
-
-### Inference Tests
-- `backend/tests/chat/inference/*.py`
-
-### Contracts Tests
-- `backend/tests/chat/contracts/*.py`
-
-### Internal Support Seams
-- `backend/services/chat/provider_caller.py`
-- `backend/services/chat/snapshot_store.py`
-- `backend/services/chat/staging.py`
-
-### Internal-Only Modules
-- `backend/services/chat/service.py` 的所有 `_...`
-- `backend/services/chat/context_pack/retrieval.py` 的所有 `_...`
-- `backend/services/chat/prompt.py`
-- `backend/services/chat/gate.py`
-- `backend/services/chat/dq.py`
-- `backend/services/chat/normalize.py`
-- `backend/services/chat/retry_policy.py`
+## 目前文件定位
+- 正式 chat ops 導覽與當前 CLI 入口：`docs/ops/chat-ops-index.md`
+- snapshot / staging / quarantine 稽核：`docs/ops/chat-snapshot-audit.md`
+- provider smoke / health：`docs/ops/chat-provider-health.md`
+- baseline freeze / regression / release acceptance：`docs/ops/ai-baseline-freeze.md`
+- 本文件只保留 round 1 的 boundary / compat 決策與歷史 import/CLI mapping，不再重複維護日常 SOP 清單。
 
 ## 目前剩餘的 private helper debt
 - chat round 1 既知的 private-helper test dependency 已清零。

@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from backend.core.logfmt import render_logfmt_pairs
+from backend.core.log_event_lines import build_log_event_message
 
 
 def log_loki_event(
@@ -20,29 +20,19 @@ def log_loki_event(
     env: str | None = None,
     **fields: Any,
 ) -> None:
-    # 固定欄位先放，順序穩定方便 grep / 比對
-    parts: list[tuple[str, Any]] = [
-        ("category", category),
-        ("event", event),
-        ("source", source),
-        ("stage", stage),
-    ]
-    if gate_name is not None:
-        parts.append(("gate_name", gate_name))
-    if env is not None:
-        parts.append(("env", env))
-
-    # 其他欄位：None 就略過，避免噪音
-    for k in sorted(fields.keys()):
-        v = fields[k]
-        if v is None:
-            continue
-        parts.append((k, v))
-
-    msg = render_logfmt_pairs(
-        parts,
+    msg = build_log_event_message(
+        prefix_pairs=[
+            ("category", category),
+            ("event", event),
+            ("source", source),
+            ("stage", stage),
+            ("gate_name", gate_name),
+            ("env", env),
+        ],
+        fields=fields,
         structured_json=True,
         quote_mode="whitespace",
+        skip_none=True,
     )
     logger.log(level, msg)
     # 在 docker compose exec 跑工具時，stdout 不一定會進 PID1 的 docker logs。

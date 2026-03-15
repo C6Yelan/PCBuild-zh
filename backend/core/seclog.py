@@ -4,16 +4,20 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from backend.core.log_event_lines import build_log_event_message
 from backend.core.log_redaction import (
     DEFAULT_SENSITIVE_LOG_KEYS,
-    redact_log_mapping,
 )
-from backend.core.logfmt import render_logfmt_fields
 
 _logger = logging.getLogger("pcbuild.security")
 
 # 避免敏感資訊進 log（key 比對採 lower）
 _SENSITIVE_KEYS = DEFAULT_SENSITIVE_LOG_KEYS
+_SECURITY_DEFAULT_FIELDS = {
+    "method": "-",
+    "client": "-",
+    "path": "-",
+}
 
 # 事件分級：成功/預期流程 INFO；阻擋/可疑 WARNING；真正異常 ERROR
 # 未列出的事件預設 WARNING（保守）
@@ -67,21 +71,16 @@ _EVENT_LEVELS: dict[str, int] = {
 }
 
 def log_security(event: str, **fields: Any) -> None:
-    # 最小防呆：避免敏感資訊進入 log
-    safe_fields = redact_log_mapping(fields, sensitive_keys=_SENSITIVE_KEYS, mode="drop")
-
-    # 通用欄位（若呼叫端未提供）
-    if "method" not in safe_fields:
-        safe_fields["method"] = "-"
-    if "client" not in safe_fields:
-        safe_fields["client"] = "-"
-    if "path" not in safe_fields:
-        safe_fields["path"] = "-"
-
-    # 統一 key=value（logfmt 風格），便於 Alloy stage.logfmt 解析
-    kv = render_logfmt_fields(safe_fields)
-    msg = f"category=security event={event}" + (f" {kv}" if kv else "")
-
+    msg = build_log_event_message(
+        prefix_pairs=(
+            ("category", "security"),
+            ("event", event),
+        ),
+        fields=fields,
+        default_fields=_SECURITY_DEFAULT_FIELDS,
+        sensitive_keys=_SENSITIVE_KEYS,
+        redaction_mode="drop",
+    )
     level = _EVENT_LEVELS.get(event, logging.WARNING)
     _logger.log(level, msg)
 

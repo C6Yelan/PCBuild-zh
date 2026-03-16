@@ -12,8 +12,6 @@ _WARRANTY_NUM_RE = re.compile(r"(\d+)\s*年(?!\s*(?:版|款|版本))(?:保固|�
 _WARRANTY_ZH_RE = re.compile(r"([一二三四五六七八九十]+)\s*年(?!\s*(?:版|款|版本))(?:保固|保)?")
 _HEAD_SLASH_SPLIT_RE = re.compile(r"[／/|｜]")
 _HEAD_PUNCT_SPLIT_RE = re.compile(r"[，,、:：]")
-_COUNT_TOKEN_RE = re.compile(r"(?:\*|×|(?<![A-Za-z0-9])x)\s*(\d+)", flags=re.IGNORECASE)
-_PORT_COUNT_RE = re.compile(r"(\d+)\s*埠")
 _BRAND_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{1,}")
 _CJK_BRAND_PREFIX_RE = re.compile(r"^([\u4e00-\u9fff]{1,20})")
 _CAPACITY_RE = re.compile(
@@ -178,35 +176,6 @@ def extract_limit_hint(texts: Sequence[str], limit_re: re.Pattern[str]) -> str |
     return None
 
 
-def extract_keyword_count(
-    texts: Sequence[str],
-    keyword_re: re.Pattern[str],
-    *,
-    before_keyword: str | None = None,
-) -> int | None:
-    zh_map = {"雙": 2, "兩": 2, "三": 3, "四": 4}
-    label_re = re.compile(before_keyword, flags=re.IGNORECASE) if before_keyword else keyword_re
-    for text in texts:
-        t = text or ""
-        for kw in keyword_re.finditer(t):
-            start = max(0, kw.start() - 10)
-            end = min(len(t), kw.end() + 20)
-            window = t[start:end]
-            if before_keyword and not label_re.search(window):
-                continue
-            forward = t[kw.end() : min(len(t), kw.end() + 20)]
-            m = _COUNT_TOKEN_RE.search(forward)
-            if m:
-                return int(m.group(1))
-            m = _PORT_COUNT_RE.search(window)
-            if m:
-                return int(m.group(1))
-            for zh, val in zh_map.items():
-                if zh in window:
-                    return val
-    return None
-
-
 def extract_capacity_gib(text: str) -> int | None:
     m = _CAPACITY_RE.search(text or "")
     if not m:
@@ -233,47 +202,3 @@ def normalize_length_mm(
     if value <= assume_cm_threshold:
         return int(round(value * 10))
     return int(round(value))
-
-
-def extract_labeled_length_mm(
-    text: str,
-    label_re: re.Pattern[str],
-    *,
-    split_re: re.Pattern[str] | None = _HEAD_SLASH_SPLIT_RE,
-    assume_cm_threshold: float = 80,
-) -> int | None:
-    m = label_re.search(text or "")
-    if not m:
-        return None
-    tail = (text or "")[m.end() :]
-    segment = split_re.split(tail, 1)[0] if split_re is not None else tail
-    nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", segment)]
-    if not nums:
-        return None
-    unit = (
-        "mm"
-        if re.search(r"mm", segment, flags=re.IGNORECASE)
-        else "cm"
-        if re.search(r"cm|公分", segment, flags=re.IGNORECASE)
-        else None
-    )
-    return normalize_length_mm(max(nums), unit, assume_cm_threshold=assume_cm_threshold)
-
-
-def extract_labeled_length_from_lines(
-    lines: Sequence[str],
-    label_re: re.Pattern[str],
-    *,
-    split_re: re.Pattern[str] | None = _HEAD_SLASH_SPLIT_RE,
-    assume_cm_threshold: float = 80,
-) -> int | None:
-    for line in lines:
-        value = extract_labeled_length_mm(
-            line,
-            label_re,
-            split_re=split_re,
-            assume_cm_threshold=assume_cm_threshold,
-        )
-        if value is not None:
-            return value
-    return None

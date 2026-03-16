@@ -4,7 +4,6 @@ import re
 
 from ..common import head_before_brackets, normalize_spaces
 from ..shared_specs import extract_brand_hint as shared_extract_brand_hint
-from ..shared_specs import extract_keyword_count
 from ..shared_specs import extract_limit_hint
 from ..shared_specs import extract_model_hint as shared_extract_model_hint
 from ..shared_specs import extract_warranty_years
@@ -52,6 +51,7 @@ _CJK_BRAND_ONLY_RE = re.compile(r"^[\u4e00-\u9fff]{1,6}$")
 _TAIL_MODEL_BRACKET_RE = re.compile(r"【\s*([A-Z0-9][A-Z0-9-]{3,})\s*】")
 _HYPER_M2_RE = re.compile(r"HYPER\s*M\.2", flags=re.IGNORECASE)
 _HYPER_GEN_RE = re.compile(r"GEN\s*([45])", flags=re.IGNORECASE)
+_COUNT_TOKEN_RE = re.compile(r"(?:\*|×|(?<![A-Za-z0-9])x)\s*(\d+)", flags=re.IGNORECASE)
 _BRAND_IGNORE = {
     "PCI",
     "PCIE",
@@ -69,6 +69,35 @@ _BRAND_IGNORE = {
     "TB4",
     "TB5",
 }
+
+
+def _extract_keyword_count(
+    texts: list[str],
+    keyword_re: re.Pattern[str],
+    *,
+    before_keyword: str | None = None,
+) -> int | None:
+    zh_map = {"雙": 2, "兩": 2, "三": 3, "四": 4}
+    label_re = re.compile(before_keyword, flags=re.IGNORECASE) if before_keyword else keyword_re
+    for text in texts:
+        t = text or ""
+        for kw in keyword_re.finditer(t):
+            start = max(0, kw.start() - 10)
+            end = min(len(t), kw.end() + 20)
+            window = t[start:end]
+            if before_keyword and not label_re.search(window):
+                continue
+            forward = t[kw.end() : min(len(t), kw.end() + 20)]
+            m = _COUNT_TOKEN_RE.search(forward)
+            if m:
+                return int(m.group(1))
+            m = _PORT_COUNT_RE.search(window)
+            if m:
+                return int(m.group(1))
+            for zh, val in zh_map.items():
+                if zh in window:
+                    return val
+    return None
 
 _SPEC_CLEAN_RE = re.compile(
     r"(?<![A-Za-z0-9])PCI-?E(?![A-Za-z0-9])|(?<![A-Za-z0-9])PCIE(?![A-Za-z0-9])"
@@ -251,15 +280,15 @@ def extract_expansion_card_spec_hints(
         "pcie_lanes_hint": pcie_lanes_hint,
         "m2_slot_count_hint": m2_slot_count_hint,
         "nvme_only_hint": nvme_only_hint,
-        "usb4_port_count_hint": extract_keyword_count(texts, _USB4_RE, before_keyword=r"USB\s*4"),
-        "thunderbolt_port_count_hint": extract_keyword_count(texts, _THUNDERBOLT_RE, before_keyword=r"Thunderbolt|TB[45]"),
-        "usb_typec_port_count_hint": extract_keyword_count(texts, _TYPEC_RE, before_keyword=r"Type-?C|TYPEC"),
-        "usb_typea_port_count_hint": extract_keyword_count(texts, _TYPEA_RE, before_keyword=r"Type-?A|TYPEA"),
-        "sata_port_count_hint": extract_keyword_count(texts, _SATA_RE, before_keyword=r"SATA"),
-        "rs232_port_count_hint": extract_keyword_count(texts, _SERIAL_RE, before_keyword=r"RS232|Serial"),
-        "parallel_port_count_hint": extract_keyword_count(texts, _PARALLEL_RE, before_keyword=r"Parallel|LPT"),
-        "displayport_in_count_hint": extract_keyword_count(texts, _DISPLAYPORT_RE, before_keyword=r"DisplayPort"),
-        "mini_dp_in_count_hint": extract_keyword_count(texts, _MINI_DP_RE, before_keyword=r"Mini\s*DP"),
+        "usb4_port_count_hint": _extract_keyword_count(texts, _USB4_RE, before_keyword=r"USB\s*4"),
+        "thunderbolt_port_count_hint": _extract_keyword_count(texts, _THUNDERBOLT_RE, before_keyword=r"Thunderbolt|TB[45]"),
+        "usb_typec_port_count_hint": _extract_keyword_count(texts, _TYPEC_RE, before_keyword=r"Type-?C|TYPEC"),
+        "usb_typea_port_count_hint": _extract_keyword_count(texts, _TYPEA_RE, before_keyword=r"Type-?A|TYPEA"),
+        "sata_port_count_hint": _extract_keyword_count(texts, _SATA_RE, before_keyword=r"SATA"),
+        "rs232_port_count_hint": _extract_keyword_count(texts, _SERIAL_RE, before_keyword=r"RS232|Serial"),
+        "parallel_port_count_hint": _extract_keyword_count(texts, _PARALLEL_RE, before_keyword=r"Parallel|LPT"),
+        "displayport_in_count_hint": _extract_keyword_count(texts, _DISPLAYPORT_RE, before_keyword=r"DisplayPort"),
+        "mini_dp_in_count_hint": _extract_keyword_count(texts, _MINI_DP_RE, before_keyword=r"Mini\s*DP"),
         "bandwidth_gbps_hint": _extract_bandwidth(texts),
         "chipset_hint": _extract_chipset(texts),
         "internal_header_hint": _extract_header(texts),

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from backend.services.crawler.parsers.sku_hints.case import extract_case_hints
+from backend.services.crawler.parsers.sku_hints.case_fan import (
+    extract_case_fan_listing_hints,
+)
 from backend.services.crawler.parsers.sku_hints.cooler import extract_cooler_hints
 from backend.services.crawler.parsers.sku_hints.expansion_card import (
     extract_expansion_card_hints,
@@ -77,3 +80,20 @@ def test_mb_hints_keep_socket_chipset_and_variant() -> None:
     assert extra["chipset_hint"] == "B850"
     assert extra["socket_hint"] == "AM5"
     assert extra["form_factor_hint"] == "ATX"
+
+
+def test_case_fan_hints_keep_pack_pwm_and_controller_details() -> None:
+    sku_hint, extra = extract_case_fan_listing_hints(
+        "聯力 UNI FAN SL-INF 120 RGB 三風扇組 / PWM / 120mm / 4-Pin / 5V 3-Pin / 含控制器 / 三年保",
+        None,
+    )
+
+    assert sku_hint == "聯力 UNI FAN SL-INF 120 RGB 三風扇組"
+    assert extra["fan_size_mm_hint"] == 120
+    assert extra["pack_count_hint"] == 3
+    assert extra["pwm_hint"] is True
+    assert extra["fan_connector_hint"] is None
+    assert extra["rgb_header_hint"] == "5v_3pin"
+    assert extra["controller_included_hint"] is True
+    assert extra["warranty_years"] == 3
+    assert extra["is_accessory"] is None

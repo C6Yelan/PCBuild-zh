@@ -12,7 +12,7 @@ from backend.services.crawler.staging.repo import (
     upsert_stg_gate_results,
     upsert_stg_items,
 )
-from backend.tools.db.staging_ingest_models import StagingCounts
+from backend.tools.db.staging_ingest_support.models import StagingCounts
 
 
 def stage_items_and_gate_results(

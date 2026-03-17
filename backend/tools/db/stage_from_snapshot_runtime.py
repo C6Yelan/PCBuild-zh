@@ -12,16 +12,16 @@ from backend.core.obs_events import log_loki_event
 from backend.db import SessionLocal
 from backend.services.crawler.staging.conventions import get_app_git_sha, get_crawler_env
 from backend.tools.crawler.io.artifact_io import emit_json_stdout
-from backend.tools.db.stage_from_snapshot_capture_runtime import (
+from backend.tools.db.stage_from_snapshot.capture_runtime import (
     build_stage_from_snapshot_context as build_stage_from_snapshot_context_runtime,
     run_stage_from_snapshot_capture as run_stage_from_snapshot_capture_runtime,
     stage_snapshot_capture as stage_snapshot_capture_runtime,
 )
-from backend.tools.db.stage_from_snapshot_models import (
+from backend.tools.db.stage_from_snapshot.models import (
     StageFromSnapshotCapture,
     StageFromSnapshotContext,
 )
-from backend.tools.db.stage_from_snapshot_reporting import (
+from backend.tools.db.stage_from_snapshot.reporting import (
     elapsed_milliseconds,
     emit_stage_from_snapshot_no_items as emit_stage_from_snapshot_no_items_runtime,
     emit_stage_from_snapshot_success as emit_stage_from_snapshot_success_runtime,
@@ -31,7 +31,8 @@ from backend.tools.db.stage_from_snapshot_reporting import (
 )
 from backend.tools.db.staging_artifacts import load_gate_artifacts, resolve_artifact_paths
 from backend.tools.db.staging_capture import build_crawl_parse_argv, run_crawl_parse_capture
-from backend.tools.db.staging_ingest import StagingCounts, stage_snapshot_items
+from backend.tools.db.staging_ingest import stage_snapshot_items
+from backend.tools.db.staging_ingest_support.models import StagingCounts
 
 
 def build_stage_from_snapshot_context(args: Any) -> StageFromSnapshotContext:

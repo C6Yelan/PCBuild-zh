@@ -8,8 +8,16 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from backend.services.crawler.fetch_state_repo import get_fetch_state
-from backend.tools.crawler.io.artifact_io import write_json_file
 
+from .incremental_fetch_support import (
+    apply_no_change_outcome,
+    apply_unexpected_fetch_status,
+    build_fetch_part_entry,
+    build_fetch_payload,
+    compute_no_change_reason,
+    record_fetch_exception,
+    write_fetch_snapshot_artifacts,
+)
 from .incremental_fetch_state import (
     build_fetch_headers,
     calculate_content_sha256,
@@ -38,17 +46,7 @@ def collect_changed_parts(
         part_dir = run_dir / "parts" / part_type
         snapshot_dir = part_dir / "snapshot"
 
-        part_entry: dict[str, Any] = {
-            "part_type": part_type,
-            "url": url,
-            "status": "pending",
-            "no_change": False,
-            "skip_reason": None,
-            "snapshot_dir": None,
-            "fetch": {},
-            "parse": None,
-            "stage": None,
-        }
+        part_entry = build_fetch_part_entry(part_type, url)
         summary["parts"].append(part_entry)
 
         state = get_fetch_state(db, source=source, part_type=part_type, url=url)
@@ -59,26 +57,17 @@ def collect_changed_parts(
         try:
             result = client.fetch(url, headers=req_headers or None)
         except Exception as exc:
-            part_entry["status"] = "fetch_error"
-            part_entry["fetch"] = {
-                "started_at": fetch_started.isoformat(),
-                "error": str(exc),
-                "exc_type": type(exc).__name__,
-                "used_conditional_headers": fetch_used_conditional,
-            }
-            summary["counts"]["parts_failed"] += 1
-            summary["errors"].append(f"fetch_failed[{part_type}]: {exc}")
-            log_event(
-                event="t10_fetch",
+            record_fetch_exception(
+                part_entry=part_entry,
+                summary=summary,
+                log_event=log_event,
                 source=source,
-                stage="fetch",
                 run_id=run_id,
                 part_type=part_type,
                 url=url,
-                status="error",
+                fetch_started_at=fetch_started.isoformat(),
                 used_conditional_headers=fetch_used_conditional,
-                error=str(exc),
-                exc_type=type(exc).__name__,
+                exc=exc,
             )
             rc = 2
             continue
@@ -91,33 +80,28 @@ def collect_changed_parts(
             fetch_used_conditional = False
 
         content_sha256 = calculate_content_sha256(result.text) if result.status_code == 200 else None
-        if result.status_code == 304:
-            no_change_reason = "http_304"
-        elif (
-            result.status_code == 200
-            and baseline_success
-            and state is not None
-            and state.content_sha256
-            and content_sha256
-            and str(state.content_sha256) == str(content_sha256)
-        ):
-            no_change_reason = "content_sha256_same"
+        no_change_reason = compute_no_change_reason(
+            status_code=int(result.status_code),
+            baseline_success=baseline_success,
+            previous_sha256=str(state.content_sha256) if state is not None and state.content_sha256 else None,
+            content_sha256=content_sha256,
+        )
 
         etag = header_value(result.headers, "etag")
         last_modified = header_value(result.headers, "last-modified")
         now = utc_now()
 
-        part_entry["fetch"] = {
-            "started_at": fetch_started.isoformat(),
-            "fetched_at": now.isoformat(),
-            "status_code": int(result.status_code),
-            "final_url": str(result.final_url),
-            "etag": etag,
-            "last_modified": last_modified,
-            "content_sha256": content_sha256,
-            "used_conditional_headers": fetch_used_conditional,
-            "request_headers": dict(req_headers),
-        }
+        part_entry["fetch"] = build_fetch_payload(
+            started_at=fetch_started.isoformat(),
+            fetched_at=now.isoformat(),
+            status_code=int(result.status_code),
+            final_url=str(result.final_url),
+            etag=etag,
+            last_modified=last_modified,
+            content_sha256=content_sha256,
+            used_conditional_headers=fetch_used_conditional,
+            request_headers=req_headers,
+        )
 
         log_event(
             event="t10_fetch",
@@ -132,10 +116,11 @@ def collect_changed_parts(
         )
 
         if result.status_code not in (200, 304):
-            part_entry["status"] = "fetch_error"
-            summary["counts"]["parts_failed"] += 1
-            summary["errors"].append(
-                f"unexpected_status[{part_type}]: status_code={result.status_code}"
+            apply_unexpected_fetch_status(
+                part_entry=part_entry,
+                summary=summary,
+                part_type=part_type,
+                status_code=int(result.status_code),
             )
             record_fetch_state(
                 db,
@@ -154,17 +139,15 @@ def collect_changed_parts(
         if result.status_code == 200:
             snapshot_dir.mkdir(parents=True, exist_ok=True)
             part_entry["snapshot_dir"] = str(snapshot_dir)
-            (snapshot_dir / "body.txt").write_text(result.text, encoding="utf-8", errors="replace")
-            write_json_file(
-                snapshot_dir / "meta.json",
-                {
-                    "retrieved_at_utc": now.strftime("%Y%m%dT%H%M%SZ"),
-                    "url": url,
-                    "final_url": str(result.final_url),
-                    "status_code": int(result.status_code),
-                    "content_sha256": content_sha256,
-                    "headers": dict(result.headers),
-                },
+            write_fetch_snapshot_artifacts(
+                snapshot_dir=snapshot_dir,
+                result_text=result.text,
+                retrieved_at_utc=now.strftime("%Y%m%dT%H%M%SZ"),
+                url=url,
+                final_url=str(result.final_url),
+                status_code=int(result.status_code),
+                content_sha256=content_sha256,
+                headers=dict(result.headers),
             )
 
         record_fetch_state(
@@ -180,14 +163,11 @@ def collect_changed_parts(
         )
 
         if no_change_reason:
-            part_entry["status"] = "no_change"
-            part_entry["no_change"] = True
-            part_entry["skip_reason"] = no_change_reason
-            summary["counts"]["parts_no_change"] += 1
-            log_event(
-                event="t10_no_change",
+            apply_no_change_outcome(
+                part_entry=part_entry,
+                summary=summary,
+                log_event=log_event,
                 source=source,
-                stage="fetch",
                 run_id=run_id,
                 part_type=part_type,
                 reason=no_change_reason,

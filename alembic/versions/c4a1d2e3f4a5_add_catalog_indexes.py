@@ -1,4 +1,4 @@
-"""t8 add catalog indexes
+"""add catalog indexes
 
 Revision ID: c4a1d2e3f4a5
 Revises: b8f2c9a0d7e1

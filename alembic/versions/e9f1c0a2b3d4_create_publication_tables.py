@@ -1,4 +1,4 @@
-"""T9 create publication tables
+"""Create publication tables
 
 Revision ID: e9f1c0a2b3d4
 Revises: c4a1d2e3f4a5

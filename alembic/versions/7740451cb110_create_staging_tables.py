@@ -1,4 +1,4 @@
-"""t7_create_staging_tables
+"""create_staging_tables
 
 Revision ID: 7740451cb110
 Revises: d6e0a1a18b73
@@ -88,4 +88,3 @@ def downgrade() -> None:
     op.drop_table("crawler_stg_item")
 
     op.drop_table("crawler_ingest_run")
-

@@ -1,4 +1,4 @@
-"""T8 create catalog tables
+"""Create catalog tables
 
 Revision ID: b8f2c9a0d7e1
 Revises: 7740451cb110

@@ -1,4 +1,4 @@
-"""t10 create crawler fetch state
+"""create crawler fetch state
 
 Revision ID: 8c1f4d2a9b6e
 Revises: f2b7c1d9e4a8

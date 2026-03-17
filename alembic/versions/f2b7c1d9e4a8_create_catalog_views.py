@@ -1,4 +1,4 @@
-"""t10 create catalog views
+"""create catalog views
 
 Revision ID: f2b7c1d9e4a8
 Revises: e9f1c0a2b3d4

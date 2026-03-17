@@ -1,3 +1,4 @@
+# backend/tools/db/staging_capture_argv.py
 """Compatibility shim for canonical crawl-parse staging argv helpers."""
 
 from backend.tools.db.staging_capture_support.argv import (

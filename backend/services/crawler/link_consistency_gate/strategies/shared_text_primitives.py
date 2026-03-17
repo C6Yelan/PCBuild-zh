@@ -1,3 +1,4 @@
+# backend/services/crawler/link_consistency_gate/strategies/shared_text_primitives.py
 """Shared low-risk text/token primitives for link consistency strategies."""
 
 from __future__ import annotations

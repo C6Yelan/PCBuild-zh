@@ -1,3 +1,4 @@
+# backend/tools/ops/crawler/list_publications_cli.py
 """Compatibility wrapper for the crawler publication list CLI module path."""
 
 from .publication.list_publications_cli import *  # noqa: F401,F403

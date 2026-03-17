@@ -1,3 +1,4 @@
+# backend/services/chat/provider_caller.py
 """Provider caller seam for chat orchestration.
 
 Round-1 stable seam:
@@ -6,7 +7,6 @@ Round-1 stable seam:
 - keep service-level wrappers thin so tests/harness can stop patching
   ``backend.services.chat.service`` internals directly
 """
-# backend/services/chat/provider_caller.py
 
 from __future__ import annotations
 

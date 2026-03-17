@@ -1,3 +1,4 @@
+# backend/services/chat/context_pack/retrieval.py
 """Chat retrieval implementation.
 
 ``retrieve_topk_candidates`` is the callable boundary used by chat orchestration.

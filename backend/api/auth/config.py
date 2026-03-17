@@ -1,4 +1,4 @@
-# backend/api/auth_config.py
+# backend/api/auth/config.py
 import os
 from pydantic import EmailStr, TypeAdapter
 from backend.services.auth.verification.core import (

@@ -1,4 +1,4 @@
-# backend/services/crawler/link_consistency_gate/strategies/cpu.py
+# backend/services/crawler/link_consistency_gate/strategies/compute/cpu.py
 from __future__ import annotations
 
 from dataclasses import dataclass

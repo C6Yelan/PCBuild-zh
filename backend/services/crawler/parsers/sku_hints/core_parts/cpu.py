@@ -1,4 +1,4 @@
-# backend/services/crawler/parsers/sku_hints/cpu.py
+# backend/services/crawler/parsers/sku_hints/core_parts/cpu.py
 from __future__ import annotations
 
 import re

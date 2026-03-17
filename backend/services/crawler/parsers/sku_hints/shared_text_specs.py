@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/shared_text_specs.py
 """Shared text/model primitives reused across sku_hints categories."""
 
 from __future__ import annotations

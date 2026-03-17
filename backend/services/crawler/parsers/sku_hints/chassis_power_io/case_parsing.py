@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/case_parsing.py
 from __future__ import annotations
 
 from .case_specs import (

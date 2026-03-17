@@ -1,3 +1,4 @@
+# backend/services/crawler/link_consistency_gate/strategies/shared_decision_primitives.py
 """Shared evidence and decision builders for link consistency strategies."""
 
 from __future__ import annotations

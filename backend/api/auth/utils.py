@@ -1,4 +1,4 @@
-# backend/api/auth_utils.py
+# backend/api/auth/utils.py
 from datetime import datetime, timezone
 from uuid import UUID
 

@@ -1,3 +1,4 @@
+# backend/tools/ops/chat/chat_regression_report.py
 """Official chat ops CLI: comparable regression report generation."""
 
 # backend/tools/ops/chat_regression_report.py

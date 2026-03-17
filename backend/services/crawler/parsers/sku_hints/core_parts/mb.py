@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/core_parts/mb.py
 from __future__ import annotations
 
 from .mb_parsing import extract_mb_hints, extract_mb_sku_hint

@@ -1,3 +1,4 @@
+# backend/services/crawler/link_consistency_gate/strategies/shared_primitives.py
 """Stable façade for shared link-consistency primitives."""
 
 from __future__ import annotations

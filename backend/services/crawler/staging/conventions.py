@@ -1,5 +1,5 @@
-"""Shared conventions for crawler staging identity and logging context."""
 # backend/services/crawler/staging/conventions.py
+"""Shared conventions for crawler staging identity and logging context."""
 
 from __future__ import annotations
 

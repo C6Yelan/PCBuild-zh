@@ -1,3 +1,4 @@
+# backend/services/chat/snapshot_persistence.py
 """Snapshot write orchestration helpers.
 
 Keep artifact payload building, artifact persistence, and meta writing bundled

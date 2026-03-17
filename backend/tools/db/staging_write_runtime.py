@@ -1,3 +1,4 @@
+# backend/tools/db/staging_write_runtime.py
 """Transactional staging write runtime for T7 helpers."""
 
 from __future__ import annotations

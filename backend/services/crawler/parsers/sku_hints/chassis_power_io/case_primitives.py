@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/case_primitives.py
 from .case_feature_specs import (
     extract_case_labeled_length_from_lines,
     extract_case_labeled_length_mm,

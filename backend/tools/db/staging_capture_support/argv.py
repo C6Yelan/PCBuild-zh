@@ -1,3 +1,4 @@
+# backend/tools/db/staging_capture_support/argv.py
 """Argv builders for crawl-parse and T7 staging CLI wrappers."""
 
 from __future__ import annotations

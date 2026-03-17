@@ -1,3 +1,4 @@
+# backend/tools/ops/chat_regression_report.py
 """Compatibility wrapper for the stable chat regression report CLI module path."""
 from __future__ import annotations
 

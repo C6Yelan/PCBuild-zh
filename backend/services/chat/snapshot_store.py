@@ -1,3 +1,4 @@
+# backend/services/chat/snapshot_store.py
 """Snapshot persistence seam for chat artifacts.
 
 Round-1 scope:
@@ -6,7 +7,6 @@ Round-1 scope:
 - expose minimal snapshot-root / JSON-loading helpers for inspect CLIs
 - serve as the stable snapshot patch point for service-level tests
 """
-# backend/services/chat/snapshot_store.py
 from __future__ import annotations
 
 from backend.core.oplog import log_operation

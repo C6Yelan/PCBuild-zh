@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/case_fan_specs.py
 from .case_fan_detail_specs import extract_case_fan_spec_hints
 from .case_fan_identity_specs import (
     detect_case_fan_accessory_hints,

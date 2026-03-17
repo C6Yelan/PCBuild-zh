@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/core_parts/gpu_specs.py
 from __future__ import annotations
 
 from .gpu_primitives import (

@@ -1,3 +1,4 @@
+# backend/tools/crawler/parse/artifacts.py
 """Artifact path and report writers for the crawl-parse CLI."""
 
 from __future__ import annotations

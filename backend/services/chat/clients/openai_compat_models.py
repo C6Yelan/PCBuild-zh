@@ -1,3 +1,4 @@
+# backend/services/chat/clients/openai_compat_models.py
 from __future__ import annotations
 
 from dataclasses import dataclass

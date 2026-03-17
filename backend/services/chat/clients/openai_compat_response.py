@@ -1,3 +1,4 @@
+# backend/services/chat/clients/openai_compat_response.py
 from __future__ import annotations
 
 from .openai_compat_models import (

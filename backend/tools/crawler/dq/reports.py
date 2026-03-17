@@ -1,3 +1,4 @@
+# backend/tools/crawler/dq/reports.py
 """Shared DQ report writers and stderr line formatters for crawler CLIs."""
 
 from __future__ import annotations

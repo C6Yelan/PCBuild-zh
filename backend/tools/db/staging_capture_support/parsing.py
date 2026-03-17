@@ -1,3 +1,4 @@
+# backend/tools/db/staging_capture_support/parsing.py
 """Stdout parsing helpers for crawl-parse and stage CLI wrappers."""
 
 from __future__ import annotations

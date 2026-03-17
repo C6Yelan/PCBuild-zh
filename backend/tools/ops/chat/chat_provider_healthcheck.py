@@ -1,3 +1,4 @@
+# backend/tools/ops/chat/chat_provider_healthcheck.py
 """Official chat ops CLI: provider smoke and health check."""
 
 # backend/tools/ops/chat_provider_healthcheck.py

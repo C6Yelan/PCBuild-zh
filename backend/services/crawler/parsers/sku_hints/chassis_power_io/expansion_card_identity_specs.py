@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/expansion_card_identity_specs.py
 from __future__ import annotations
 
 import re

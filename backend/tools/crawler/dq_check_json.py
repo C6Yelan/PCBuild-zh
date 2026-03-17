@@ -1,3 +1,4 @@
+# backend/tools/crawler/dq_check_json.py
 """Stable public CLI entrypoint for DQ check against a JSON file."""
 
 from backend.tools.crawler.dq.cli_json import *  # noqa: F401,F403

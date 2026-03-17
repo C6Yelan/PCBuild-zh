@@ -1,3 +1,4 @@
+# backend/tools/crawler/parse/t5_gate_runtime.py
 """T5 link consistency gate runtime façade for crawl-parse."""
 
 from __future__ import annotations

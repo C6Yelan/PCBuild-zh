@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/__init__.py
 from .case import extract_case_hints, extract_case_sku_hint
 from .case_fan import extract_case_fan_listing_hints, extract_case_fan_sku_hint
 from .expansion_card import extract_expansion_card_hints, extract_expansion_card_sku_hint

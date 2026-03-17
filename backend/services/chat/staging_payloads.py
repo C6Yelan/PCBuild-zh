@@ -1,3 +1,4 @@
+# backend/services/chat/staging_payloads.py
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

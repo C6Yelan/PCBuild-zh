@@ -1,3 +1,4 @@
+# backend/tools/ops/chat_release_check.py
 """Compatibility wrapper for the stable chat release check CLI module path."""
 from __future__ import annotations
 

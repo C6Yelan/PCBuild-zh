@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/storage/hdd_detail_specs.py
 from __future__ import annotations
 
 import re

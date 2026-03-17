@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/core_parts/ram.py
 from __future__ import annotations
 
 from .ram_specs import extract_ram_hints, extract_ram_sku_hint

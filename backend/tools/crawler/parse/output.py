@@ -1,3 +1,4 @@
+# backend/tools/crawler/parse/output.py
 """Stdout and stderr emitters for the crawl-parse CLI contract."""
 
 from __future__ import annotations

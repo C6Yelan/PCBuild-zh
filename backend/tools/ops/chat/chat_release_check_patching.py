@@ -1,3 +1,4 @@
+# backend/tools/ops/chat/chat_release_check_patching.py
 from __future__ import annotations
 
 import json

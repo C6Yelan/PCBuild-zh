@@ -1,3 +1,4 @@
+# backend/tools/ops/publish_publication.py
 """Stable public CLI surface for the crawler publication command."""
 from backend.tools.ops.crawler.publish_publication_cli import *  # noqa: F401,F403
 

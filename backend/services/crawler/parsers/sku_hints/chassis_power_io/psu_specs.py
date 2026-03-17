@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/psu_specs.py
 from .psu_detail_specs import extract_psu_hints
 from .psu_identity_specs import extract_psu_sku_hint
 

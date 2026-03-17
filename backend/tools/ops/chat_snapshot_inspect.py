@@ -1,3 +1,4 @@
+# backend/tools/ops/chat_snapshot_inspect.py
 """Compatibility wrapper for the stable chat snapshot inspect CLI module path."""
 from __future__ import annotations
 

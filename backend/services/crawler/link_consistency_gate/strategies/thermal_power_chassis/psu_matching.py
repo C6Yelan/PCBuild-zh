@@ -1,4 +1,4 @@
-# backend/services/crawler/link_consistency_gate/strategies/case.py
+# backend/services/crawler/link_consistency_gate/strategies/thermal_power_chassis/psu_matching.py
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,4 @@
+# backend/tools/db/stage_from_snapshot_result_reporting.py
 """Compatibility shim for the canonical T7 result reporting package."""
 
 from backend.tools.db.stage_from_snapshot.result_reporting import (

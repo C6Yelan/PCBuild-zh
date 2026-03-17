@@ -1,3 +1,4 @@
+# backend/tools/db/stage_from_snapshot/event_reporting.py
 """Event logging helpers for the T7 snapshot runtime."""
 
 from __future__ import annotations

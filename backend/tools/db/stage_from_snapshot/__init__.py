@@ -1,3 +1,4 @@
+# backend/tools/db/stage_from_snapshot/__init__.py
 """Canonical helpers for the T7 stage-from-snapshot runtime."""
 
 from backend.tools.db.stage_from_snapshot.capture_runtime import (

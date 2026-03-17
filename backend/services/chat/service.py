@@ -1,3 +1,4 @@
+# backend/services/chat/service.py
 """Chat orchestration entrypoint.
 
 Round-3 public boundary:
@@ -7,7 +8,6 @@ Round-3 public boundary:
   detailed orchestration helpers live in sibling modules.
 """
 
-# backend/services/chat/service.py
 from __future__ import annotations
 
 from sqlalchemy.orm import Session

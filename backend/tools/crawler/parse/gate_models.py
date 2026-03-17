@@ -1,3 +1,4 @@
+# backend/tools/crawler/parse/gate_models.py
 """Shared gate runtime config and outcome models."""
 
 from __future__ import annotations

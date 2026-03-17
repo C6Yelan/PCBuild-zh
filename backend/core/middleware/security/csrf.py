@@ -1,4 +1,4 @@
-# backend/core/cmiddleware/security/csrf.py
+# backend/core/middleware/security/csrf.py
 from __future__ import annotations
 
 from urllib.parse import urlparse

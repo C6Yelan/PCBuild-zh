@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/core_parts/gpu_primitives.py
 from .gpu_chip_specs import extract_gpu_chip_and_brand
 from .gpu_model_specs import (
     extract_gpu_aib_hint,

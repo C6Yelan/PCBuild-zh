@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/case_fan.py
 from __future__ import annotations
 
 from typing import Any

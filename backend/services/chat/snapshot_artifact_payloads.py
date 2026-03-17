@@ -1,3 +1,4 @@
+# backend/services/chat/snapshot_artifact_payloads.py
 from __future__ import annotations
 
 from dataclasses import dataclass

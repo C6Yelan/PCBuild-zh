@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/cooling/cooler_detail_specs.py
 from __future__ import annotations
 
 from .cooler_material_specs import (

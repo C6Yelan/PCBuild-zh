@@ -1,3 +1,4 @@
+# backend/tools/db/stage_from_snapshot_runtime.py
 """Thin public facade for the T7 stage-from-snapshot runtime."""
 
 from __future__ import annotations

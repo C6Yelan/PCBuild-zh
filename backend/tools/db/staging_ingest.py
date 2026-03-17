@@ -1,3 +1,4 @@
+# backend/tools/db/staging_ingest.py
 """Thin public facade for T7 staging ingest runtime helpers."""
 
 from __future__ import annotations

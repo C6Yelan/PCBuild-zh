@@ -1,3 +1,4 @@
+# backend/tools/db/staging_capture_support/__init__.py
 """Canonical helpers for crawl-parse capture wrappers used by T7 staging."""
 
 from backend.tools.db.staging_capture_support.argv import (

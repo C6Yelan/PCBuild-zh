@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/shared_value_specs.py
 """Shared warranty/capacity/length primitives reused across sku_hints categories."""
 
 from __future__ import annotations

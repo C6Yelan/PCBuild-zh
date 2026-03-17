@@ -1,3 +1,4 @@
+# backend/tools/ops/chat/chat_staging_inspect.py
 """Official chat ops CLI: inspect staging and quarantine artifacts."""
 
 # backend/tools/ops/chat_staging_inspect.py

@@ -1,3 +1,4 @@
+# backend/tools/ops/chat/chat_snapshot_inspect.py
 """Official chat ops CLI: inspect snapshot artifacts by request ID."""
 
 # backend/tools/ops/chat_snapshot_inspect.py

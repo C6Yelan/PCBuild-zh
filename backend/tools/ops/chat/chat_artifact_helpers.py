@@ -1,4 +1,4 @@
-# backend/tools/ops/chat_artifact_helpers.py
+# backend/tools/ops/chat/chat_artifact_helpers.py
 """Shared JSON and artifact payload helpers for chat ops CLIs."""
 
 from __future__ import annotations

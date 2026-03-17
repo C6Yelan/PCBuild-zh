@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/cooling/cooler_parsing.py
 from __future__ import annotations
 
 from ..common import first_line, head_before_brackets, normalize_spaces, strip_leading_note

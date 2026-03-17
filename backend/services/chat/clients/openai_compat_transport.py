@@ -1,3 +1,4 @@
+# backend/services/chat/clients/openai_compat_transport.py
 from __future__ import annotations
 
 from collections.abc import Callable

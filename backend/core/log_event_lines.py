@@ -1,3 +1,4 @@
+# backend/core/log_event_lines.py
 """Shared event-line formatting primitives for security and pipeline logging."""
 
 from __future__ import annotations

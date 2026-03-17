@@ -1,3 +1,4 @@
+# backend/services/chat/service_seams.py
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/cooling/cooler_primitives.py
 from .cooler_detail_specs import extract_cooler_detail_hints
 from .cooler_identity_specs import (
     detect_cooler_kind,

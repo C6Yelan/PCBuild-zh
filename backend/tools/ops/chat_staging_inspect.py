@@ -1,3 +1,4 @@
+# backend/tools/ops/chat_staging_inspect.py
 """Compatibility wrapper for the stable chat staging inspect CLI module path."""
 from __future__ import annotations
 

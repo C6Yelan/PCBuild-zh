@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/chassis_power_io/expansion_card_parsing.py
 from __future__ import annotations
 
 from .expansion_card_specs import (

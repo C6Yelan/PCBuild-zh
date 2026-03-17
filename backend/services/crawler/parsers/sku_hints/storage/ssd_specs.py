@@ -1,3 +1,4 @@
+# backend/services/crawler/parsers/sku_hints/storage/ssd_specs.py
 from .ssd_detail_specs import extract_ssd_hints
 from .ssd_identity_specs import extract_ssd_sku_hint
 

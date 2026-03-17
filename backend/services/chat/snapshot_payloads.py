@@ -1,3 +1,4 @@
+# backend/services/chat/snapshot_payloads.py
 """Compatibility surface for chat snapshot and staging payload helpers."""
 
 from __future__ import annotations

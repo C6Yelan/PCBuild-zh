@@ -1,3 +1,4 @@
+# backend/tools/ops/set_publication_pointer.py
 """Stable public CLI surface for the crawler pointer command."""
 from backend.tools.ops.crawler.set_publication_pointer_cli import *  # noqa: F401,F403
 

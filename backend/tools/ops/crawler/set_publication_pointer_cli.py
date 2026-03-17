@@ -1,3 +1,4 @@
+# backend/tools/ops/crawler/set_publication_pointer_cli.py
 """Compatibility wrapper for the crawler pointer CLI module path."""
 
 from .publication.set_publication_pointer_cli import *  # noqa: F401,F403

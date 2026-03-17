@@ -1,3 +1,4 @@
+# backend/tools/crawler/parse/t5_gate_execution_runtime.py
 """Execution helper for the T5 link-consistency gate runtime."""
 
 from __future__ import annotations

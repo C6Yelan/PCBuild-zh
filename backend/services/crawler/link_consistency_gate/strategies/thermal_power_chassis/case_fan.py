@@ -1,4 +1,4 @@
-# backend/services/crawler/link_consistency_gate/strategies/case_fan.py
+# backend/services/crawler/link_consistency_gate/strategies/thermal_power_chassis/case_fan.py
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,1 +1,1 @@
-# backend/api/routes/auth/__init__.py
+# backend/services/email/__init__.py

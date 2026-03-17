@@ -1,3 +1,4 @@
+# backend/tools/ops/chat_provider_healthcheck.py
 """Compatibility wrapper for the stable chat provider healthcheck CLI module path."""
 from __future__ import annotations
 

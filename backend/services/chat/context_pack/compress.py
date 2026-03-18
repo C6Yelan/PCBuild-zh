@@ -61,15 +61,15 @@ def _normalize_whitelist(
     return normalized
 
 
-def _extract_items_by_category(p1_result: Any) -> dict[str, list[Any]]:
-    if isinstance(p1_result, P1RetrievalResult):
-        return dict(p1_result.items_by_category)
-    if isinstance(p1_result, Mapping):
-        if "items_by_category" in p1_result and isinstance(p1_result["items_by_category"], Mapping):
-            raw = p1_result["items_by_category"]
+def _extract_items_by_category(retrieval_result: Any) -> dict[str, list[Any]]:
+    if isinstance(retrieval_result, P1RetrievalResult):
+        return dict(retrieval_result.items_by_category)
+    if isinstance(retrieval_result, Mapping):
+        if "items_by_category" in retrieval_result and isinstance(retrieval_result["items_by_category"], Mapping):
+            raw = retrieval_result["items_by_category"]
             return {str(k): list(v) for k, v in raw.items()}
-        return {str(k): list(v) for k, v in p1_result.items()}
-    items_by_category = getattr(p1_result, "items_by_category", {})
+        return {str(k): list(v) for k, v in retrieval_result.items()}
+    items_by_category = getattr(retrieval_result, "items_by_category", {})
     if isinstance(items_by_category, Mapping):
         return {str(k): list(v) for k, v in items_by_category.items()}
     return {}
@@ -137,7 +137,7 @@ def _build_drop_entry(
 
 
 def compress_candidates(
-    p1_result: Any,
+    retrieval_result: Any,
     *,
     spec_whitelist_by_category: Mapping[str, list[str]] | None,
     max_value_len: int,
@@ -146,7 +146,7 @@ def compress_candidates(
     whitelist_by_category = _normalize_whitelist(spec_whitelist_by_category)
     normalized_max_value_len = max(1, int(max_value_len))
     normalized_max_specs = max(1, int(max_specs_per_part))
-    items_by_category = _extract_items_by_category(p1_result)
+    items_by_category = _extract_items_by_category(retrieval_result)
 
     compressed_candidates: dict[str, list[dict[str, Any]]] = {}
     drop_log: dict[str, dict[str, Any]] = {}

@@ -7,6 +7,11 @@
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
+## 路徑 / 定位
+- canonical implementation 在 `backend.tools.ops.chat.chat_provider_healthcheck` 與 `backend.services.chat.health`。
+- stable public CLI wrapper 仍是 `python -m backend.tools.ops.chat_provider_healthcheck`。
+- `/api/chat` 對外 contract 未變；這份文件只描述 provider health flow 的維運檢查。
+
 ## 前置條件
 - `.env` 內的 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS` 已正確設定。
 - 若目前 provider 為 OpenAI-compatible，`AI_OAI_BASE_URL` 與 `AI_OAI_API_KEY` 也必須對應目前上游。
@@ -26,6 +31,10 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
   - 先看 `failed_cases`、`error_type_counts`、各 case 的 `request_id`。
   - 再用 `request_id` 去查既有 `ai_call` log 與 raw snapshot。
 - 若目前 `AI_PROVIDER=gemini`，在尚未做正式 adapter 前，health check 會忠實回報 `provider_not_ready`；這是預期行為，不會偷偷改走 OpenAI-compatible client。
+
+## Loki / Log Lookup 注意事項
+- 建議用 `provider`、`model`、`env`、`component` 這類低基數欄位做 label / filter。
+- `request_id`、`snapshot_id`、`context_pack_hash` 只用來做 structured metadata 或 log body 查詢，不應作為 label。
 
 ## Report 寫入位置
 - 報告會寫到：

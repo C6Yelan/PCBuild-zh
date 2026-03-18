@@ -8,6 +8,12 @@
 - 填寫時禁止寫入 API key、Authorization header、完整 `AI_OAI_BASE_URL` 明文。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
+## 1.1 Canonical / Compat 定位
+- chat 現行 canonical package 在 `backend/services/chat/{clients,context_pack,contracts,payloads,provider,service,staging}/`。
+- `backend/services/chat` 根下仍保留的 `provider_caller.py`、`service_seams.py`、`service_orchestration.py`、`chat_payload_context.py`、`snapshot_payloads.py` 等檔案，屬 compat / forwarding surface，不是新的主結構命名。
+- chat ops 的 canonical implementation 在 `backend.tools.ops.chat.*`；日常 CLI 仍以 `python -m backend.tools.ops.chat_*` 為 stable public surface。
+- `chat_release_check --mode p10` 中的 `p10` 是穩定 compat flag，不是新的正式命名標準。
+
 ## 2. 基線日期
 - 日期：`<YYYY-MM-DD>`
 - 時區：`<UTC 或 UTC+08:00>`
@@ -31,6 +37,10 @@
 備註：
 - `AI_OAI_BASE_URL_SHA12` 來源為 `sha256(AI_OAI_BASE_URL)` 前 12 碼。
 - 若目前 provider 不使用 OpenAI-compatible base URL，可填 `-`。
+
+## 4.1 Observability 記錄注意事項
+- Loki / Grafana label 應只使用低基數、穩定欄位，例如 `provider`、`model`、`env`、`component`、`status`。
+- `request_id`、`snapshot_id`、`context_pack_hash` 應記在 log body 或 structured metadata，不應升成 label。
 
 ## 5. 基線驗收結果
 | 檢查項目 | 結果 | 補充 |

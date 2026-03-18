@@ -3,6 +3,10 @@
 > 角色：歷史 / 過渡治理文件。這份文件保存 chat round 1 架構整理時的 boundary 與 compat 決策，不作為當前 chat ops 的唯一操作入口。
 >
 > 目前正式入口請先看 `docs/ops/chat-ops-index.md`，再依主題進入 `chat-provider-health.md`、`chat-snapshot-audit.md`、`ai-baseline-freeze.md`。
+>
+> 歷史路徑註記：本文若出現早期 flat file 寫法，請以目前 repo 為準：
+> `backend/services/chat/service.py` → `backend/services/chat/service/__init__.py`
+> `backend/services/chat/staging.py` → `backend/services/chat/staging/__init__.py`
 
 ## 目的
 - 記錄 chat round 1 目前已凍結的 public boundary 與 compat 點。
@@ -68,7 +72,7 @@
   - `persist_ai_snapshot`
   - `update_snapshot_meta`
   - `build_candidate_lineage_categories`
-- `backend/services/chat/staging.py`
+- `backend/services/chat/staging/__init__.py`
   - `ChatStagingRecord`
   - `persist_chat_staging_record`
   - `persist_chat_quarantine_entry`
@@ -83,10 +87,10 @@
 | 檔案 | 目前對外可見名稱 | 目前被誰引用 | round 1 狀態 | private helper 外溢 |
 | --- | --- | --- | --- | --- |
 | `backend/services/chat/__init__.py` | `generate_chat_reply` | `backend/api/routes/chat.py` | 保留正式 package public entrypoint | 否 |
-| `backend/services/chat/service.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、`backend/tests/chat/service/*.py` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已直接接到 seam | 否；不再提供跨模組可見的 provider / snapshot private patch 點 |
+| `backend/services/chat/service/__init__.py` | `generate_chat_reply` | `backend/services/chat/__init__.py`、`backend/services/chat/health.py`、`backend/tests/chat/service/*.py` | 保留路徑；現在以 orchestration 為主，provider 與 snapshot/staging 寫檔邏輯已直接接到 seam | 否；不再提供跨模組可見的 provider / snapshot private patch 點 |
 | `backend/services/chat/provider_caller.py` | `build_provider_messages`、`generate_provider_result`、`ProviderCallResult`、`ProviderDispatchError` | `service.py`、`chat_release_check.py`、`backend/tests/chat/provider/*.py`、`backend/tests/chat/service/*.py` | 已成 round-1 provider seam；先保留 path，不做 rename | 否 |
 | `backend/services/chat/snapshot_store.py` | `persist_ai_snapshot`、`update_snapshot_meta`、`snapshot_root`、`snapshot_dir`、`read_json_file`、`build_candidate_lineage_categories` | `service.py`、`staging.py`、inspect CLIs | 已成 round-1 snapshot persistence seam；保留 path | 否 |
-| `backend/services/chat/staging.py` | `ChatStagingRecord`、`persist_chat_staging_record`、`persist_chat_quarantine_entry`、`build_chat_staging_record`、`persist_chat_stage_or_quarantine` | `service.py` | 已成 round-1 staging/quarantine seam；保留 path | 否 |
+| `backend/services/chat/staging/__init__.py` | `ChatStagingRecord`、`persist_chat_staging_record`、`persist_chat_quarantine_entry`、`build_chat_staging_record`、`persist_chat_stage_or_quarantine` | `service/__init__.py` | 已成 round-1 staging/quarantine seam；保留 path | 否 |
 | `backend/services/chat/health.py` | `run_provider_health_check` | `backend/tools/ops/chat_provider_healthcheck.py`、`backend/tools/ops/chat_regression_report.py`、`backend/tests/chat/provider/test_provider_health.py` | 保留 official ops 的 service-side support | 否 |
 | `backend/services/chat/context_pack/retrieval.py` | `P1Demand`、`CandidatePart`、`P1RetrievalResult`、`retrieve_topk_candidates`、`build_category_retrieval_stmt` | `service.py`、`backend/tests/chat/context_pack/test_retrieval_contracts.py`、`backend/tests/chat/context_pack/test_retrieval_ordering.py` | 路徑先保留；`build_category_retrieval_stmt` 作為 SQL ordering contract seam | 否 |
 | `backend/services/chat/context_pack/compress.py` | `compress_candidates` | `service.py`、`backend/tests/chat/context_pack/test_compress_candidates.py`、`backend/tests/chat/service/test_service_compress_logging.py` | 保留 | 否 |
@@ -120,7 +124,7 @@
 - chat round 1 既知的 private-helper test dependency 已清零。
 - `backend/tests/chat/context_pack/test_retrieval_ordering.py` 已改走 `build_category_retrieval_stmt`。
 - `backend/tests/chat/service/test_service_demand_resolution.py` 已改 patch `backend.services.chat.snapshot_store.persist_ai_snapshot`。
-- `backend/services/chat/service.py` 仍有 internal-only `_...` orchestration helpers，但它們不再作為跨模組 patch / import 點。
+- `backend/services/chat/service/__init__.py` 仍有 internal-only `_...` orchestration helpers，但它們不再作為跨模組 patch / import 點。
 
 ## 必須保留的 compat 點
 - import path 不能直接消失：

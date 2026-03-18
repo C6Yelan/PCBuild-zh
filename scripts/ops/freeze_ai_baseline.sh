@@ -15,7 +15,7 @@ Usage:
   scripts/ops/freeze_ai_baseline.sh
 
 Description:
-  Collect phase-0 AI baseline fingerprint and existing ops check outputs into:
+  Collect AI baseline fingerprint and existing ops check outputs into:
   /tmp/ai-baseline-freeze-<UTC timestamp>/
 EOF
 }

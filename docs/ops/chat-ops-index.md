@@ -4,6 +4,11 @@
 
 ## 目前正式入口
 
+### Canonical / Compat 定位
+- canonical implementation tree 在 `backend.tools.ops.chat.*`。
+- stable public wrapper 仍是 `python -m backend.tools.ops.chat_provider_healthcheck`、`python -m backend.tools.ops.chat_regression_report`、`python -m backend.tools.ops.chat_snapshot_inspect`、`python -m backend.tools.ops.chat_staging_inspect`、`python -m backend.tools.ops.chat_release_check`。
+- `--mode p10` 仍是 release acceptance 的 compat flag，不作為新的命名標準。
+
 ### Provider smoke / health
 - 文件：`docs/ops/chat-provider-health.md`
 - 用途：確認目前 `.env` 指向的 provider / model 能否走完既有 chat service 主流程。
@@ -27,11 +32,11 @@
 
 ## 歷史 / 過渡文件
 - `docs/ops/chat-round1-boundary.md`
-  - 用途：保存 round 1 架構整理時的 boundary 與 compat 決策。
+  - 用途：保存當時 chat 架構整理的 boundary 與 compat 決策。
   - 現況：歷史文件，不作為當前 chat ops 唯一入口。
 
 ## 使用順序建議
 1. 日常 smoke / provider 檢查：先看 `chat-provider-health.md`
 2. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
 3. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
-4. 需要理解 round 1 為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`
+4. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`

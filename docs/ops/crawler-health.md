@@ -4,6 +4,12 @@
 - 快速分辨 `coolpc` 這類 crawler source 是「真的沒更新」還是「fetch / gate / publish 卡住」。
 - 對應目前專案的增量 scheduler、publish runtime、Loki log、PostgreSQL 狀態表。
 
+## 路徑 / 命名定位
+- 本文件使用的 stable public wrapper 以 `backend.tools.ops.run_incremental`、`backend.tools.ops.scheduler_loop`、`backend.tools.ops.list_publications`、`backend.tools.ops.publish_publication` 為準。
+- canonical implementation tree 在 `backend.tools.ops.crawler.incremental.*`、`backend.tools.ops.crawler.publication.*`、`backend.tools.crawler.parse.*`、`backend.tools.db.stage_from_snapshot.*`。
+- `t9_*` / `t10_*` event key、artifact path（例如 `temp/t7/...`、`temp/t10/...`）與 legacy alias 目前屬穩定 compat / contract，不是 canonical module naming。
+- Loki / Grafana label 建議只放低基數欄位，例如 `source`、`stage`、`env`、`component`；`request_id`、`snapshot_id`、`source_url` 應留在 log body 或 structured metadata。
+
 ## 一鍵檢查
 在 repo 根目錄執行：
 

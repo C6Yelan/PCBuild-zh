@@ -8,6 +8,11 @@
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 - `docs/ops/chat-round1-boundary.md` 只保留 round 1 的歷史 boundary / compat 背景，不作為目前 snapshot ops 的現行說明。
 
+## 路徑 / 定位
+- chat 現行 canonical package 在 `backend/services/chat/clients/`、`backend/services/chat/context_pack/`、`backend/services/chat/contracts/`、`backend/services/chat/payloads/`、`backend/services/chat/provider/`、`backend/services/chat/service/`、`backend/services/chat/staging/`。
+- `backend/services/chat` 根下的 `chat_payload_context.py`、`service_seams.py`、`service_orchestration.py`、`service_state.py`、`snapshot_payloads.py` 等，仍是 compat / forwarding surface，不是新的 canonical 主結構。
+- inspect / acceptance 的 canonical implementation 在 `backend.tools.ops.chat.*`；日常 CLI 仍以 `python -m backend.tools.ops.chat_snapshot_inspect`、`python -m backend.tools.ops.chat_staging_inspect`、`python -m backend.tools.ops.chat_release_check` 作為 stable public surface。
+
 ## Snapshot 目錄結構範例
 
 ```text
@@ -145,7 +150,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
 ```
 
 ## Release Acceptance 工具
-- `chat_release_check.py` 用於 release / acceptance check；CLI mode 仍固定為 `p10`。
+- stable wrapper `python -m backend.tools.ops.chat_release_check --mode p10` 用於 release / acceptance check；canonical implementation 在 `backend.tools.ops.chat.chat_release_check`，CLI mode 仍固定為 `p10`。
 - 它會以可重跑、deterministic 的方式驗證：
   - staged success
   - validation_failed
@@ -179,3 +184,4 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --
 ## 重要說明
 - 這些檔案僅供後端稽核、除錯、交叉測試與回放，不提供前端直接使用。
 - snapshot 仍是檔案型 artifact，不會寫入資料庫。
+- `request_id`、`snapshot_id`、`context_pack_hash` 適合作為 structured metadata 或 log body 查詢鍵，不應被當作 Loki label。

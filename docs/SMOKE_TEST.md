@@ -3,6 +3,19 @@
 ## 服務名稱註記
 本文件依 `docker-compose.yml` 現況撰寫，服務 key 為：`fastapi`、`pcbuild-db`、`pcbuild-scheduler`、`pcbuild-retention`。若未來 key 變更，請以 `docker-compose.yml` 為準替換命令中的服務名稱。
 
+## 路徑 / 命名定位
+- 本文件使用的 stable public CLI 入口：
+  - `python -m backend.tools.crawler.crawl_parse_snapshot`
+  - `python -m backend.tools.db.stage_from_snapshot_cli`
+  - `python -m backend.tools.ops.run_incremental`
+- 目前 canonical implementation package 已在：
+  - `backend.tools.crawler.parse.*`
+  - `backend.tools.db.stage_from_snapshot.*`
+  - `backend.tools.db.staging_capture_support.*`
+  - `backend.tools.db.staging_ingest_support.*`
+  - `backend.tools.ops.crawler.*`
+- `t9_*` / `t10_*` module 名稱、event key 與 artifact path（例如 `temp/t7/...`、`temp/t10/...`）目前屬穩定 compat / contract，不是新的 canonical 命名。
+
 ## 目的
 快速驗證增量更新管線核心流程可用：`fetch -> parse/gates -> stage -> merge ->（可選 publish）`，並確認 link consistency 檢查（`t5` artifacts）會在每輪增量 stage 被執行。
 

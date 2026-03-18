@@ -1,22 +1,24 @@
-"""Compatibility surface for chat snapshot and staging payload helpers."""
+"""Payload builders and cross-boundary dataclasses for chat artifacts."""
 
-from __future__ import annotations
-
-from backend.services.chat.payloads import (
+from .context import (
     ChatPayloadContext,
+    build_snapshot_store_kwargs,
+    build_staging_persist_kwargs,
+)
+from .provider_exchange import (
     ProviderExchangePayload,
     RawResponseArtifact,
+    build_provider_exchange_payload,
+    build_raw_request_payload,
+    build_raw_response_payload,
+)
+from .snapshot_artifacts import (
     SnapshotArtifactPayloads,
     build_candidate_lineage_categories,
     build_dq_payload,
     build_lineage_payload,
-    build_provider_exchange_payload,
-    build_raw_request_payload,
-    build_raw_response_payload,
     build_request_context_payload,
     build_snapshot_artifact_payloads,
-    build_snapshot_store_kwargs,
-    build_staging_persist_kwargs,
     build_validation_payload,
 )
 

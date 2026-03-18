@@ -1,8 +1,7 @@
-"""Compatibility shim for provider call models."""
+"""Provider package for chat upstream dispatch and contracts."""
 
-from __future__ import annotations
-
-from backend.services.chat.provider.models import (
+from .caller import build_provider_messages, generate_provider_result
+from .models import (
     ProviderCallResult,
     ProviderCompletionGenerator,
     ProviderDispatchError,
@@ -14,4 +13,6 @@ __all__ = [
     "ProviderCompletionGenerator",
     "ProviderDispatchError",
     "ProviderTextGenerator",
+    "build_provider_messages",
+    "generate_provider_result",
 ]

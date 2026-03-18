@@ -98,7 +98,7 @@ def _calc_item_stats(db: Session, *, run_id: UUID) -> dict[str, int]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T9: publish a run as current release (pointer-based)")
+    ap = argparse.ArgumentParser(description="Publish a run as current release (pointer-based)")
     ap.add_argument("--run-id", required=True, help="crawler_ingest_run.run_id (UUID)")
     ap.add_argument("--env", default="prod", help="publication pointer env (default: prod)")
     ap.add_argument("--note", default=None, help="optional note stored in crawler_publication")

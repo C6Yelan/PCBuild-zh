@@ -35,7 +35,7 @@ def _stats_summary(stats: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T9: list publications & pointers")
+    ap = argparse.ArgumentParser(description="List publications and pointers")
     ap.add_argument("--limit", type=int, default=20, help="number of publications to show (default: 20)")
     ap.add_argument("--env", default=None, help="filter pointer env (default: all)")
     ap.add_argument("--with-stats-json", action="store_true", help="include full stats_json (may be large)")

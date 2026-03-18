@@ -134,7 +134,7 @@ def main() -> int:
                         spec_n += 1
 
         print(
-            f"T8 merge OK: run_id={run_id} items(pass)={len(items)} "
+            f"catalog merge OK: run_id={run_id} items(pass)={len(items)} "
             f"product_upsert={product_n} price_upsert={price_n} spec_upsert={spec_n}"
         )
         return 0

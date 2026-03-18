@@ -1,5 +1,5 @@
 # backend/tools/db/staging_ingest_support/payload.py
-"""JSON payload loaders for T7 ingest CLI/runtime."""
+"""JSON payload loaders for crawler staging ingest CLI/runtime."""
 
 from __future__ import annotations
 

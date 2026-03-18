@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from backend.db import SessionLocal
 from backend.services.crawler.fetch_state_repo import get_fetch_state
-from backend.tools.db.stage_from_snapshot_cli import main as t7_stage_main
+from backend.tools.db.stage_from_snapshot_cli import main as stage_from_snapshot_main
 from backend.tools.db.staging_capture import build_stage_from_snapshot_argv, load_stage_summary
 
 from .incremental_fetch_state import record_fetch_state, utc_now
@@ -34,13 +34,13 @@ def run_stage_steps(
             snapshot_dir = str(part["snapshot_dir"])
             part_entry = part["entry_ref"]
             part_logs = run_dir / "parts" / part_type / "logs"
-            part_t7_artifact_dir = run_dir / "parts" / part_type / "t7_artifacts"
+            part_stage_artifact_dir = run_dir / "parts" / part_type / "t7_artifacts"
 
             stage_argv = build_stage_from_snapshot_argv(
                 source=source,
                 snapshot_dir=snapshot_dir,
                 run_id=run_id,
-                artifact_dir=part_t7_artifact_dir,
+                artifact_dir=part_stage_artifact_dir,
                 t5_limit=int(args.t5_limit),
                 t5_min_interval_ms=int(args.t5_min_interval_ms),
                 t5_timeout_s=float(args.t5_timeout_s),
@@ -48,7 +48,7 @@ def run_stage_steps(
                 t5_max_bytes=int(args.t5_max_bytes),
                 t5_block_pattern=[str(value) for value in args.t5_block_pattern],
             )
-            stage_rc, stage_stdout, stage_stderr = run_cli_main(t7_stage_main, stage_argv)
+            stage_rc, stage_stdout, stage_stderr = run_cli_main(stage_from_snapshot_main, stage_argv)
             write_text_file(part_logs / "stage.stdout.log", stage_stdout)
             write_text_file(part_logs / "stage.stderr.log", stage_stderr)
 
@@ -61,13 +61,13 @@ def run_stage_steps(
                 "rc": int(stage_rc),
                 "item_total": staged_total,
                 "over_limit": over_limit,
-                "note": "t7 stage includes parse/gates before DB write",
+                "note": "stage-from-snapshot includes parse and gates before DB write",
             }
             part_entry["stage"] = {
                 "rc": int(stage_rc),
                 "result": stage_obj,
                 "over_limit": over_limit,
-                "artifact_dir": str(part_t7_artifact_dir),
+                "artifact_dir": str(part_stage_artifact_dir),
                 "stdout_log": str(part_logs / "stage.stdout.log"),
                 "stderr_log": str(part_logs / "stage.stderr.log"),
             }

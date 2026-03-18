@@ -11,7 +11,7 @@ from backend.models.base import Base
 
 class CrawlerFetchState(Base):
     """
-    每個 source + part + url 的抓取狀態（供 T10 增量更新使用）。
+    每個 source + part + url 的抓取狀態（供增量更新 runtime 使用）。
     """
 
     __tablename__ = "crawler_fetch_state"

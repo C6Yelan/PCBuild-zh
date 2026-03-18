@@ -18,7 +18,7 @@ _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T7: ingest canonical JSON into staging (ORM only)")
+    ap = argparse.ArgumentParser(description="Ingest canonical JSON into staging (ORM only)")
     ap.add_argument("--source", required=True, help="e.g. coolpc")
     ap.add_argument("--note", default=None)
     ap.add_argument("--input", required=True, help="JSON file path, or '-' for stdin")

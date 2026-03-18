@@ -9,7 +9,7 @@ from backend.services.catalog.query import list_products_with_latest_price
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T8: query catalog products with latest price")
+    ap = argparse.ArgumentParser(description="Query catalog products with latest price")
     ap.add_argument("--category", default=None)
     ap.add_argument("--q", default=None)
     ap.add_argument("--limit", type=int, default=20)

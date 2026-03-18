@@ -3,7 +3,7 @@
 > 角色：治理 / baseline 文件。這份文件負責保存 provider health、regression、release acceptance 與回退依據，不是日常單一步驟 SOP 入口。
 
 ## 1. 目的
-- 用於在第 0 階段凍結目前 AI 行為基線，建立後續比對與回退依據。
+- 用於在本次基線凍結中保存目前 AI 行為基線，建立後續比對與回退依據。
 - 本文件只記錄營運驗收與環境指紋，不修改 backend 主邏輯，不涉及 API 契約變更。
 - 填寫時禁止寫入 API key、Authorization header、完整 `AI_OAI_BASE_URL` 明文。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
@@ -43,7 +43,7 @@
 - 基線檢查輸出目錄：`/tmp/ai-baseline-freeze-<UTC timestamp>/`
 - `provider_healthcheck.stdout.json`
 - `chat_regression_report.stdout.json`
-- `chat_release_check_p10.stdout.json`
+- `chat_release_acceptance.stdout.json`
 - `baseline_summary.txt`
 
 ## 6. 真實 request 樣本
@@ -62,7 +62,7 @@
 - 實際觀察：`<是否符合目前線上預期>`
 
 ### 已填範例關鍵字（2026-03-10）
-以下為一筆已 staged 的真實 request 摘錄，可作為第 0 階段基線參考：
+以下為一筆已 staged 的真實 request 摘錄，可作為本次基線參考：
 
 | 欄位 | 值 |
 | --- | --- |
@@ -114,7 +114,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
 1. 先找出上一份已確認可接受的基線紀錄，確認其 `git commit SHA` 與 AI 設定指紋。
 2. 將部署環境回退到前一版 commit，並把 `.env` 內 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS`、`AI_OAI_BASE_URL` 恢復到上一份基線值。
 3. 重新啟動 `fastapi` 服務，確認容器內環境與回退目標一致。
-4. 重新執行第 0 階段固定驗收指令，確認：
+4. 重新執行固定驗收指令，確認：
    - provider health check 回到預期結果
    - regression report 與前一份基線一致或差異可解釋
    - `chat_release_check --mode p10` 回到 `pass`

@@ -21,7 +21,9 @@ _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T7: stage from snapshot-dir (run crawl_parse_snapshot then ORM ingest)")
+    ap = argparse.ArgumentParser(
+        description="Stage from snapshot-dir (run crawl_parse_snapshot then ORM ingest)"
+    )
     ap.add_argument("--source", required=True)
     ap.add_argument("--snapshot-dir", required=True)
     ap.add_argument("--note", default=None)
@@ -29,10 +31,10 @@ def main() -> int:
     ap.add_argument(
         "--artifact-dir",
         default=None,
-        help="(optional) output dir for DQ/T5 artifacts; default temp/t7/<run_id>",
+        help="(optional) output dir for DQ/link-consistency artifacts; default temp/t7/<run_id>",
     )
 
-    # 是否啟用 T5：crawl_parse_snapshot 是「有 t5-outdir 才會跑」
+    # 是否啟用 link consistency 檢查：crawl_parse_snapshot 只有在提供 t5-outdir 時才會執行。
     ap.add_argument("--enable-t5", action="store_true")
     ap.add_argument("--t5-limit", default=0, type=int)
     ap.add_argument("--t5-min-interval-ms", default=1500, type=int)

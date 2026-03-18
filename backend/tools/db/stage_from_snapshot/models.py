@@ -1,5 +1,5 @@
 # backend/tools/db/stage_from_snapshot/models.py
-"""Shared models for the T7 stage-from-snapshot runtime."""
+"""Shared models for the stage-from-snapshot runtime."""
 
 from __future__ import annotations
 

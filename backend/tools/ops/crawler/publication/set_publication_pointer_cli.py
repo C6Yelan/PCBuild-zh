@@ -17,7 +17,7 @@ _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T9: set publication pointer (env -> published run_id)")
+    ap = argparse.ArgumentParser(description="Set publication pointer (env -> published run_id)")
     ap.add_argument("--env", default="prod", help="pointer env (default: prod)")
     ap.add_argument("--run-id", required=True, help="target published run_id (UUID)")
     ap.add_argument("--dry-run", action="store_true", help="print changes only; no DB write")

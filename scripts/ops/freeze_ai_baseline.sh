@@ -185,12 +185,12 @@ provider_status="$RUN_MODULE_STATUS"
 run_python_module "chat_regression_report" backend.tools.ops.chat_regression_report
 regression_status="$RUN_MODULE_STATUS"
 
-run_python_module "chat_release_check_p10" backend.tools.ops.chat_release_check --mode p10
+run_python_module "chat_release_acceptance" backend.tools.ops.chat_release_check --mode p10
 release_status="$RUN_MODULE_STATUS"
 
 provider_report_path="$(extract_json_string report_path "$OUT_DIR/provider_healthcheck.stdout.json")"
 regression_report_path="$(extract_json_string report_path "$OUT_DIR/chat_regression_report.stdout.json")"
-release_snapshot_root="$(extract_json_string snapshot_root "$OUT_DIR/chat_release_check_p10.stdout.json")"
+release_snapshot_root="$(extract_json_string snapshot_root "$OUT_DIR/chat_release_acceptance.stdout.json")"
 
 cat >"$OUT_DIR/baseline_summary.txt" <<EOF
 generated_at_utc=${RUN_TS_UTC}
@@ -204,8 +204,8 @@ provider_healthcheck_exit_code=${provider_status}
 provider_healthcheck_report_path=${provider_report_path}
 chat_regression_report_exit_code=${regression_status}
 chat_regression_report_path=${regression_report_path}
-chat_release_check_p10_exit_code=${release_status}
-chat_release_check_p10_snapshot_root=${release_snapshot_root}
+chat_release_acceptance_exit_code=${release_status}
+chat_release_acceptance_snapshot_root=${release_snapshot_root}
 EOF
 
 overall_status=0

@@ -1,5 +1,5 @@
 # backend/tools/crawler/parse/t5_gate_outcomes.py
-"""Outcome builders for the T5 link-consistency runtime."""
+"""Outcome builders for the link-consistency runtime."""
 
 from __future__ import annotations
 

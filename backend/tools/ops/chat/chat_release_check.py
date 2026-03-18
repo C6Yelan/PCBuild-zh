@@ -13,18 +13,18 @@ from typing import Any, Sequence
 
 from backend.tools.ops.chat.chat_artifact_helpers import emit_json_payload, read_json_artifact
 from backend.tools.ops.chat.chat_release_check_patching import _isolated_snapshot_root, _run_service_case
-from backend.tools.ops.chat.chat_release_check_scenarios import _build_p10_checks
+from backend.tools.ops.chat.chat_release_check_scenarios import _build_release_acceptance_checks
 from backend.tools.ops.chat.chat_release_check_summary import (
-    _build_p10_setup_failure_summary,
-    _build_p10_summary,
+    _build_release_check_setup_failure_summary,
+    _build_release_check_summary,
     _run_release_checks,
 )
 
 
 def run_p10_release_check() -> dict[str, Any]:
     snapshot_root = _isolated_snapshot_root()
-    summary = _build_p10_summary(snapshot_root=snapshot_root)
-    checks = _build_p10_checks(
+    summary = _build_release_check_summary(snapshot_root=snapshot_root)
+    checks = _build_release_acceptance_checks(
         snapshot_root,
         read_json_artifact=read_json_artifact,
         run_service_case=_run_service_case,
@@ -41,7 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         summary = run_p10_release_check()
     except Exception as exc:
-        summary = _build_p10_setup_failure_summary(exc)
+        summary = _build_release_check_setup_failure_summary(exc)
     emit_json_payload(summary)
     if not summary["failed_checks"]:
         print("P10_CHECK_OK")

@@ -27,7 +27,7 @@
 - 每日 `03:30`：執行 `/opt/pcbuild-backups/bin/backup_now.sh`
 - 每週日 `05:10`：執行 `/opt/pcbuild-backups/bin/retention_weekly.sh`
 - 每週日 `05:40`：執行 `/opt/pcbuild-backups/bin/check_weekly.sh`
-- 排程刻意避開 `04:30` 的 t9 job，降低同時段 I/O 與資源競爭。
+- 排程刻意避開 `04:30` 的 publish job，降低同時段 I/O 與資源競爭。
 
 ## 4) Repo retention
 - 週期性保留策略指令：

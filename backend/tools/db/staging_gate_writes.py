@@ -1,5 +1,5 @@
 # backend/tools/db/staging_gate_writes.py
-"""Gate-result payload builders for T7 staging runtimes."""
+"""Gate-result payload builders for crawler staging runtimes."""
 
 from __future__ import annotations
 

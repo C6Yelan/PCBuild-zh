@@ -24,7 +24,7 @@ _PIPELINE_LOGGER = logging.getLogger("pcbuild.pipeline")
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
-        description="T10: run incremental refresh (fetch -> parse/gates -> stage -> merge -> publish)"
+        description="Run incremental refresh (fetch -> parse/gates -> stage -> merge -> publish)"
     )
     ap.add_argument("--source", required=True, help="crawler source id, e.g. coolpc")
     ap.add_argument("--parts", default="all", help="comma-separated part list, default: all")
@@ -36,7 +36,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     ap.set_defaults(publish=False)
 
     ap.add_argument("--max-items", type=int, default=0, help="per-part protection cap; <=0 means unlimited")
-    ap.add_argument("--t5-limit", type=int, default=0, help="T5 check first N rows; <=0 means full")
+    ap.add_argument(
+        "--t5-limit",
+        type=int,
+        default=0,
+        help="link consistency check first N rows; <=0 means full",
+    )
     ap.add_argument("--t5-min-interval-ms", type=int, default=1500)
     ap.add_argument("--t5-timeout-s", type=float, default=10.0)
     ap.add_argument("--t5-max-redirects", type=int, default=5)

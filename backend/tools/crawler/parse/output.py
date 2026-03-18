@@ -36,7 +36,7 @@ def emit_stderr(message: str) -> None:
 
 def emit_t5_status(*, summary: dict[str, Any], outdir: Path) -> None:
     print(
-        "T5 status_counts=%s reason_counts=%s outdir=%s"
+        "link_consistency status_counts=%s reason_counts=%s outdir=%s"
         % (summary["status_counts"], summary["reason_counts"], str(outdir)),
         file=sys.stderr,
     )

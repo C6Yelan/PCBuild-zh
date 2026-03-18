@@ -1,5 +1,5 @@
 # backend/tools/db/stage_from_snapshot_capture_runtime.py
-"""Compatibility shim for the canonical T7 capture runtime package."""
+"""Compatibility shim for the canonical stage-from-snapshot capture package."""
 
 from backend.tools.db.stage_from_snapshot.capture_runtime import (
     build_stage_from_snapshot_context,

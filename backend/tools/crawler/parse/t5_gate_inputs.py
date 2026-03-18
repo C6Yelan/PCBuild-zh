@@ -1,5 +1,5 @@
 # backend/tools/crawler/parse/t5_gate_inputs.py
-"""Input coercion and argv helpers for the T5 link-consistency runtime."""
+"""Input coercion and argv helpers for the link-consistency runtime."""
 
 from __future__ import annotations
 

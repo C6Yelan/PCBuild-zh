@@ -1,5 +1,5 @@
 # backend/tools/ops/crawler/incremental/incremental_cli.py
-"""Shared incremental CLI option payload and argv builder for T10 tools."""
+"""Shared incremental CLI option payload and argv builder for incremental crawler tools."""
 
 from __future__ import annotations
 

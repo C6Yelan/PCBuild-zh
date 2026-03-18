@@ -10,7 +10,7 @@ from typing import Any
 from backend.tools.crawler.io.artifact_io import extract_last_json_object
 
 
-_T8_COUNTS_RE = re.compile(
+_MERGE_COUNTS_RE = re.compile(
     r"items\(pass\)=(?P<items>\d+)\s+product_upsert=(?P<product>\d+)\s+price_upsert=(?P<price>\d+)\s+spec_upsert=(?P<spec>\d+)"
 )
 
@@ -40,8 +40,8 @@ def extract_json_array(text: str) -> list[dict[str, Any]] | None:
     return None
 
 
-def parse_t8_counts(text: str) -> dict[str, int] | None:
-    match = _T8_COUNTS_RE.search(text)
+def parse_merge_counts(text: str) -> dict[str, int] | None:
+    match = _MERGE_COUNTS_RE.search(text)
     if not match:
         return None
     return {

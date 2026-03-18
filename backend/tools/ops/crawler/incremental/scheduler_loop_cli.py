@@ -40,7 +40,7 @@ def _log_scheduler(event: str, *, source: str, **fields: Any) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="T10 scheduler loop: run incremental refresh periodically")
+    ap = argparse.ArgumentParser(description="Scheduler loop: run incremental refresh periodically")
     ap.add_argument("--source", required=True)
     ap.add_argument("--parts", default="all")
     ap.add_argument("--interval-seconds", type=int, default=900, help="loop interval in seconds (default: 900)")

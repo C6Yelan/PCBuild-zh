@@ -42,8 +42,17 @@ def main() -> int:
         default=None,
         help="(optional) 落檔 DQ 產物：dq_report.json / dq_pass.json / dq_quarantine.json",
     )
-    ap.add_argument("--t5-outdir", default=None, help="(optional) 啟用 T5 並將輸出落檔到此資料夾")
-    ap.add_argument("--t5-limit", default=0, type=int, help="(optional) 只檢查前 N 筆，N<=0 代表全量")
+    ap.add_argument(
+        "--t5-outdir",
+        default=None,
+        help="(optional) 啟用 link consistency 檢查並將輸出落檔到此資料夾",
+    )
+    ap.add_argument(
+        "--t5-limit",
+        default=0,
+        type=int,
+        help="(optional) link consistency 只檢查前 N 筆，N<=0 代表全量",
+    )
     ap.add_argument("--t5-min-interval-ms", default=1500, type=int)
     ap.add_argument("--t5-timeout-s", default=10, type=float)
     ap.add_argument("--t5-max-redirects", default=5, type=int)

@@ -2,7 +2,7 @@
 
 ## 目的
 - 快速分辨 `coolpc` 這類 crawler source 是「真的沒更新」還是「fetch / gate / publish 卡住」。
-- 對應目前專案的 T10 scheduler, T9 publish, Loki log, PostgreSQL 狀態表。
+- 對應目前專案的增量 scheduler、publish runtime、Loki log、PostgreSQL 狀態表。
 
 ## 一鍵檢查
 在 repo 根目錄執行：
@@ -26,8 +26,8 @@ scripts/ops/check_crawler_health.sh --source coolpc --env prod
 - `tick_done > 0` 代表 scheduler 最近有實際跑完一輪；如果是 `0`，先查 `pcbuild-scheduler` 容器。
 - `t10_no_change` 和 `publish_skipped_no_changed_parts` 很高，但沒有 `fetch_errors` / `stage_fail` / `publish_fail`，比較像來源站真的沒更新。
 - `fetch_errors`、`fetch_http_403_429_503`、`robots_block` 有值，才比較像被擋、上游錯誤或連線層問題。
-- `stage_fail` 或 `gate_fail` 有值，代表 fetch 後面還有 parse / DQ / T5 gate 問題。
-- `publish_fail` 有值，代表 staging / merge 之後卡在 T9 publish。
+- `stage_fail` 或 `gate_fail` 有值，代表 fetch 後面還有 parse / DQ / link consistency gate 問題。
+- `publish_fail` 有值，代表 staging / merge 之後卡在 publish runtime。
 
 ## 手動指令
 最近 publish：
@@ -96,6 +96,6 @@ limit 50;"
 ```
 
 ## 補充
-- Grafana 的 `T9 No Successful Publish (24h)` 告警只代表 24 小時內沒有 `published=true` 的 T9 成功事件，不等於 crawler 一定被封鎖。
+- Grafana 的 `T9 No Successful Publish (24h)` 告警名稱沿用舊代號；它只代表 24 小時內沒有 `published=true` 的 publish 成功事件，不等於 crawler 一定被封鎖。
 - `crawler_fetch_state` 只保留每個 part 最新一次狀態，適合看現在最後結果，不適合單靠它還原完整時間線。
 - `temp/t10/<run_id>/summary.json` 是單次執行最完整的摘要；腳本也會把最新一份抓出來。

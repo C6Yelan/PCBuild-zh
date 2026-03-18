@@ -1,5 +1,5 @@
 # backend/tools/db/stage_from_snapshot/reporting.py
-"""Reporting façade for the T7 snapshot runtime."""
+"""Reporting facade for the stage-from-snapshot runtime."""
 
 from __future__ import annotations
 

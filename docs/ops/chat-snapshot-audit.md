@@ -3,7 +3,7 @@
 > 角色：正式操作文件。這份文件負責 snapshot / staging / quarantine artifact 稽核與 inspect 流程。
 
 ## 目的
-- 這是 P5 的原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
+- 這是原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
 - 這不是 provider health check；provider smoke/health 仍看 `docs/ops/chat-provider-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 - `docs/ops/chat-round1-boundary.md` 只保留 round 1 的歷史 boundary / compat 背景，不作為目前 snapshot ops 的現行說明。
@@ -53,7 +53,7 @@
 - 也會包含 DQ 結果：
   - `dq_status`（`pass` / `fail` / `skipped`）
   - `dq_reasons`
-- 也會包含 P9 暫存/隔離結果：
+- 也會包含 staging / quarantine 結果：
   - `staging_status`（`staged` / `skipped`）
   - `quarantine_status`（`not_quarantined` / `quarantined` / `not_applicable`）
 - 也會列出本次實際寫出的 artifact 檔名。
@@ -71,7 +71,7 @@
 - `warnings` 也可能包含 normalize / truncation / gate warning，例如 `usage_unavailable`、`output_truncated`、`control_chars_removed`。
 
 ### validation_report.json
-- 保存 P7 文字版輕量 Gate 結果。
+- 保存文字版 validation gate 結果。
 - 包含：
   - `passed`
   - `reasons`
@@ -83,7 +83,7 @@
 - 若本次為較舊 snapshot 或未經 gate 路徑，則可能不存在。
 
 ### dq_report.json
-- 保存 P8 文字版 DQ Gate 結果。
+- 保存文字版 DQ gate 結果。
 - 包含：
   - `passed`
   - `reasons`
@@ -93,7 +93,7 @@
 - 若本次 gate 已失敗、或為較舊 snapshot，則可能不存在。
 
 ### staging_record.json
-- 保存 P9 staged 成功的摘要記錄。
+- 保存 staged 成功的摘要記錄。
 - 只有 gate 與 DQ 都通過時才會寫出。
 - 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_staging/<request_id>.staging.json`。
 - 會包含：
@@ -102,7 +102,7 @@
   - `publish_reason`（目前 staged 成功時為 `staged_pass`）
 
 ### quarantine_entry.json
-- 保存 P9 quarantined 的摘要記錄。
+- 保存 quarantined 的摘要記錄。
 - 若 gate fail 或 DQ fail，則不寫 staging，而改寫 quarantine。
 - 也會同步複製到 `<AI_RAW_SNAPSHOT_DIR>/_quarantine/<request_id>.quarantine.json`。
 - 會包含：
@@ -128,11 +128,11 @@
 - 若本次沒有 retrieval / context pack，則可能不存在。
 
 ### compressed_candidates.json
-- 保存 P2 壓縮後候選資料。
+- 保存壓縮後候選資料。
 - 供稽核與回放使用，不提供前端直接使用。
 
 ### drop_log.json
-- 保存 P2 壓縮階段被丟棄欄位與裁切摘要。
+- 保存壓縮階段被丟棄欄位與裁切摘要。
 
 ### lineage.json
 - 由 `compressed_candidates.json` 推導出的 lineage 摘要。
@@ -144,8 +144,8 @@
 docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect --request-id <REQUEST_ID>
 ```
 
-## P10 營運驗收工具
-- `chat_release_check.py` 用於 P10 release / acceptance check。
+## Release Acceptance 工具
+- `chat_release_check.py` 用於 release / acceptance check；CLI mode 仍固定為 `p10`。
 - 它會以可重跑、deterministic 的方式驗證：
   - staged success
   - validation_failed

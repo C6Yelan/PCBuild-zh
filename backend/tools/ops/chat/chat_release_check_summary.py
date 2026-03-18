@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-_P10_CHECK_NAMES = (
+_RELEASE_CHECK_NAMES = (
     "staged_success",
     "validation_failed",
     "dq_failed",
@@ -15,7 +15,7 @@ _ReleaseCheckRunner = Callable[[], dict[str, Any]]
 _ReleaseCheck = tuple[str, _ReleaseCheckRunner]
 
 
-def _build_p10_summary(*, snapshot_root: Path) -> dict[str, Any]:
+def _build_release_check_summary(*, snapshot_root: Path) -> dict[str, Any]:
     return {
         "mode": "p10",
         "snapshot_root": str(snapshot_root),
@@ -52,12 +52,12 @@ def _run_release_checks(
         _record_release_check_result(summary, check_name=check_name, runner=runner)
 
 
-def _build_p10_setup_failure_summary(exc: Exception) -> dict[str, Any]:
+def _build_release_check_setup_failure_summary(exc: Exception) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "mode": "p10",
         "snapshot_root": "-",
         "passed_checks": [],
-        "failed_checks": list(_P10_CHECK_NAMES),
+        "failed_checks": list(_RELEASE_CHECK_NAMES),
         "details": {
             "setup": {
                 "error_type": type(exc).__name__,
@@ -65,6 +65,6 @@ def _build_p10_setup_failure_summary(exc: Exception) -> dict[str, Any]:
             }
         },
     }
-    for check_name in _P10_CHECK_NAMES:
+    for check_name in _RELEASE_CHECK_NAMES:
         summary[check_name] = "fail"
     return summary

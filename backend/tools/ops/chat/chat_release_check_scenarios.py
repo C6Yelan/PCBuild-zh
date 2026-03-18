@@ -181,7 +181,7 @@ def _check_retry_backoff() -> dict[str, Any]:
     }
 
 
-def _build_p10_checks(
+def _build_release_acceptance_checks(
     snapshot_root: Path,
     *,
     read_json_artifact: _ReadJsonArtifact,

@@ -261,7 +261,7 @@ from crawler_publication_pointer
 where env = '${ENV_SQL}';
 "
 
-print_section "Latest T10 Summary"
+print_section "Latest Incremental Summary"
 latest_summary="$(latest_summary_path || true)"
 if [[ -n "${latest_summary:-}" && -f "$latest_summary" ]]; then
   printf 'path=%s\n' "$latest_summary"
@@ -290,7 +290,7 @@ if [[ -n "${latest_summary:-}" && -f "$latest_summary" ]]; then
     cat "$latest_summary"
   fi
 else
-  printf 'No temp/t10 summary.json found.\n'
+  printf 'No incremental summary.json found under temp/t10.\n'
 fi
 
 print_section "Diagnosis Hint"

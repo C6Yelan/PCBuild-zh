@@ -1,5 +1,5 @@
 # backend/tools/db/stage_from_snapshot/capture_runtime.py
-"""Capture and staging runtime helpers for the T7 snapshot path."""
+"""Capture and staging runtime helpers for the stage-from-snapshot path."""
 
 from __future__ import annotations
 

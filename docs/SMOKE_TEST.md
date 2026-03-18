@@ -4,7 +4,7 @@
 本文件依 `docker-compose.yml` 現況撰寫，服務 key 為：`fastapi`、`pcbuild-db`、`pcbuild-scheduler`、`pcbuild-retention`。若未來 key 變更，請以 `docker-compose.yml` 為準替換命令中的服務名稱。
 
 ## 目的
-快速驗證增量更新管線核心流程可用：`fetch -> parse/gates -> stage -> merge ->（可選 publish）`，並確認 T5（link consistency）會在每輪 T10 stage 被執行。
+快速驗證增量更新管線核心流程可用：`fetch -> parse/gates -> stage -> merge ->（可選 publish）`，並確認 link consistency 檢查（`t5` artifacts）會在每輪增量 stage 被執行。
 
 ## 前置條件
 1. `docker compose` 可正常操作此專案服務。
@@ -30,7 +30,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.run_incremental --sou
 docker compose exec -T pcbuild-db psql -U pcbuild -d pcbuild -c "select part_type, content_sha256, last_status_code, last_success_at, updated_at from crawler_fetch_state where source='coolpc' and part_type='cpu';"
 ```
 
-4. 驗證 T5 產物落地（在最新含 cpu snapshot 的 run 目錄中找到 t5 artifacts）：
+4. 驗證 link consistency 產物落地（在最新含 cpu snapshot 的 run 目錄中找到 `t5` artifacts）：
 
 ```bash
 docker compose exec -T fastapi sh -lc 'RUN=""; for d in $(ls -td /app/temp/t10/* 2>/dev/null); do [ -f "$d/parts/cpu/snapshot/meta.json" ] && RUN="$d" && break; done; echo "RUN=$RUN"; ls -la "$RUN/parts/cpu/t7_artifacts/t5" && find "$RUN/parts/cpu/t7_artifacts/t5" -maxdepth 1 -type f -print | sort'
@@ -41,7 +41,7 @@ docker compose exec -T fastapi sh -lc 'RUN=""; for d in $(ls -td /app/temp/t10/*
 2. 第 3 步查詢至少回傳 `1` 筆資料，且 `content_sha256`、`last_status_code`、`last_success_at`、`updated_at` 皆有值。
 3. `t5` 目錄存在，且可看到 `t5.summary.json`、`t5.passed.json`、`t5.quarantine.json`、`t5.input.json`、`t5.link_report.jsonl`（實際檔案數可依執行結果略有差異）。
 
-## Smoke Test（排程驗證：scheduler 週期運作與 T5 觸發）
+## Smoke Test（排程驗證：scheduler 週期運作與 link consistency 觸發）
 查看 scheduler 日誌：
 
 ```bash

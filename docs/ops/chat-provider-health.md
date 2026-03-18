@@ -3,7 +3,7 @@
 > 角色：正式操作文件。這份文件負責 provider smoke / health check 的日常操作與判讀。
 
 ## 目的
-- 這是 P4 的 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
+- 這是 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 

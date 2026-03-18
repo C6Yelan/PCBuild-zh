@@ -1,7 +1,7 @@
 # backend/tools/ops/maintenance/db_retention_cli.py
 from __future__ import annotations
 
-"""T9 DB retention cleanup tool.
+"""Crawler DB retention cleanup tool.
 
 Usage:
   python -m backend.tools.ops.db_retention --dry-run
@@ -154,7 +154,7 @@ def _print_cutoff_summary(
     unpublished_days: int,
     published_staging_days: int,
 ) -> None:
-    print("=== T9 DB retention ===")
+    print("=== crawler DB retention ===")
     print(f"now_utc: {now_utc.isoformat()}")
     print(
         "cutoff_unpublished: "
@@ -235,7 +235,7 @@ def _run_vacuum() -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="T9: DB retention cleanup for crawler staging data")
+    ap = argparse.ArgumentParser(description="DB retention cleanup for crawler staging data")
     ap.add_argument("--unpublished-days", type=_non_negative_int, default=30)
     ap.add_argument("--published-staging-days", type=_non_negative_int, default=180)
     ap.add_argument("--batch-size", type=_positive_int, default=5000)

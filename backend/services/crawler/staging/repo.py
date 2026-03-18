@@ -1,8 +1,9 @@
 # backend/services/crawler/staging/repo.py
 """Crawler staging ORM repo surface.
 
-Keep this module as the stable persistence entrypoint for t7 callers while
-item payloads, row mapping, and event logging live in sibling helpers.
+Keep this module as the stable persistence entrypoint for stage-from-snapshot
+callers while item payloads, row mapping, and event logging live in sibling
+helpers.
 """
 
 from __future__ import annotations

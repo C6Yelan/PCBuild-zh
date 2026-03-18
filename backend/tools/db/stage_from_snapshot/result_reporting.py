@@ -1,5 +1,5 @@
 # backend/tools/db/stage_from_snapshot/result_reporting.py
-"""Branch/result emit helpers for the T7 snapshot runtime."""
+"""Branch/result emit helpers for the stage-from-snapshot runtime."""
 
 from __future__ import annotations
 

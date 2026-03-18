@@ -1,5 +1,5 @@
 # backend/tools/db/staging_write_runtime.py
-"""Transactional staging write runtime for T7 helpers."""
+"""Transactional staging write runtime for crawler staging helpers."""
 
 from __future__ import annotations
 

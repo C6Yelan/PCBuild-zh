@@ -160,7 +160,9 @@ class AISettings(BaseSettings):
             elif isinstance(keys, (list, tuple, set)):
                 key_values = list(keys)
             else:
-                raise ValueError(f"P2 whitelist keys for {category_name!r} must be a list or string")
+                raise ValueError(
+                    f"Compression whitelist keys for {category_name!r} must be a list or string"
+                )
 
             normalized_keys = sorted({str(key).strip() for key in key_values if str(key).strip()})
             normalized[category_name] = normalized_keys

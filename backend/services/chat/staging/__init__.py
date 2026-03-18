@@ -1,4 +1,4 @@
-# backend/services/chat/staging.py
+# backend/services/chat/staging/__init__.py
 from __future__ import annotations
 
 import json
@@ -6,11 +6,11 @@ from pathlib import Path
 
 from backend.core.oplog import log_operation
 from backend.services.chat.config import AISettings
-from backend.services.chat.chat_payload_context import ChatPayloadContext
+from backend.services.chat.payloads.context import ChatPayloadContext
 from backend.services.chat.snapshot_artifacts import write_json_file
 from backend.services.chat.snapshot_meta import update_snapshot_meta
 from backend.services.chat.snapshot_paths import snapshot_root
-from backend.services.chat.staging_payloads import (
+from .payloads import (
     ChatStagingRecord,
     build_chat_staging_record,
     build_quarantine_index_entry,
@@ -151,3 +151,14 @@ def persist_chat_stage_or_quarantine(
             model=context.model,
             error_type=type(exc).__name__,
         )
+
+
+__all__ = [
+    "ChatStagingRecord",
+    "build_chat_staging_record",
+    "build_quarantine_index_entry",
+    "build_staging_record_payload",
+    "persist_chat_quarantine_entry",
+    "persist_chat_stage_or_quarantine",
+    "persist_chat_staging_record",
+]

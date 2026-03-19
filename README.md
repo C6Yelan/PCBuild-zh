@@ -1,5 +1,5 @@
 # PCBuild-zh
-
+![PCBuild-zh preview](docs/images/readme-preview.png)
 台灣零售導向的中文 AI 電腦配單平台，核心以 RAG 與相容性規則引擎產生可溯源的配單建議。
 
 目前版本定位為維護期基線（`v1.0.0`）：

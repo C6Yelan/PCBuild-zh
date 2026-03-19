@@ -63,9 +63,20 @@ from backend.services.chat.staging import (
 _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
 
 
-def _resolve_chat_demand(chat_request: ChatRequest) -> object:
+def _resolve_chat_demand(
+    chat_request: ChatRequest,
+    *,
+    settings: object,
+    request_id: str,
+    generate_provider_result: object,
+    log_operation: object,
+) -> object:
     return resolve_demand(
         chat_request,
+        settings=settings,
+        request_id=request_id,
+        generate_provider_result=generate_provider_result,
+        log_operation=log_operation,
         infer_chat_demand=infer_chat_demand,
     )
 
@@ -78,6 +89,7 @@ def _prepare_chat_retrieval_artifacts(
     top_k: int,
     retrieval_demand: object,
     build_profile: object,
+    normalized_demand: object,
     env: str,
     warnings: list[str],
 ) -> object:
@@ -88,6 +100,7 @@ def _prepare_chat_retrieval_artifacts(
         top_k=top_k,
         retrieval_demand=retrieval_demand,
         build_profile=build_profile,
+        normalized_demand=normalized_demand,
         env=env,
         warnings=warnings,
         retrieve_topk_candidates=retrieve_topk_candidates,
@@ -102,11 +115,13 @@ def _generate_chat_provider_result(
     settings: object,
     messages: list[dict[str, str]],
     request_id: str,
+    extra_payload: dict[str, object] | None = None,
 ) -> object:
     return chat_provider_caller.generate_provider_result(
         settings=settings,
         messages=messages,
         request_id=request_id,
+        extra_payload=extra_payload,
         text_generator=generate_openai_compat_text,
         completion_generator=generate_openai_compat_completion,
         original_text_generator=_ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT,

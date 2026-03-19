@@ -10,6 +10,7 @@
 
 ## 1.1 目前收尾範圍
 - 正式 AI 主線以 `openai_compat` 為準。
+- chat 回答主流程固定為 `NormalizedDemand -> retrieval / semantic policy / compatibility gate -> clean context pack -> final answer`。
 - `.env` 是唯一切換 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL` 的入口。
 - Windows + WSL 本機只負責改碼、純 Python 驗證與 git 操作；所有 `docker compose` 驗收命令都只在伺服器主機執行。
 - 本輪驗收只要求 provider health、regression report、release check `--mode p10`。
@@ -74,10 +75,13 @@
 | `staging_status` | `<staged/skipped>` |
 | `quarantine_status` | `<not_quarantined/quarantined/not_applicable>` |
 | `context_pack_hash` | `<hash or ->` |
+| `normalization_source` | `<ai_structured/ai_repaired_json/rule_fallback>` |
+| `normalized_request_mode` | `<single_part/build/upgrade/unknown>` |
 
 補充紀錄建議：
 - request 摘要：`<一句話描述，不貼完整敏感內容>`
 - 實際觀察：`<是否符合目前線上預期>`
+- 若 normalization fail 或 clean candidate 不足，應看到保守降級，而不是 provider 擴充或任意放寬 hard compatibility。
 
 ### 已填範例關鍵字（2026-03-10）
 以下為一筆已 staged 的真實 request 摘錄，可作為本次基線參考：
@@ -123,6 +127,8 @@ scripts/ops/freeze_ai_baseline.sh
 若需要在伺服器主機逐項重跑，固定指令如下：
 
 ```bash
+git pull
+docker compose up -d --build fastapi
 docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck
 docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_report
 docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10

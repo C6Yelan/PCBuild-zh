@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import re
+import json
 
 from backend.services.chat.clients.openai_compat_client import (
     generate_openai_compat_completion,
     generate_openai_compat_text,
 )
+from backend.services.chat.build_policy import BuildRequestProfile
 from backend.services.chat.config import (
     AISettings,
     SYSTEM_PROMPT,
     build_provider_runtime_config,
 )
-from backend.services.chat.contracts import ChatRequest
+from backend.services.chat.contracts import ChatRequest, NormalizedDemand
 from backend.services.chat.prompt import build_prompt
+from backend.services.chat.service.normalization import rule_fallback_normalized_demand
 
 from .models import (
     ProviderCallResult,
@@ -28,34 +30,6 @@ from .runtime_dispatch import (
 )
 
 _ORIGINAL_GENERATE_OPENAI_COMPAT_TEXT = generate_openai_compat_text
-_BUDGET_SIGNAL_RE = re.compile(r"(?:^|\D)\d+(?:\.\d+)?\s*(?:萬|w|k|千|元|塊)", re.IGNORECASE)
-_BUILD_PATTERNS = (
-    re.compile(r"配\s*單"),
-    re.compile(r"配\s*置"),
-    re.compile(r"組\s*(?:一?台)?\s*(?:電腦|主機|機)"),
-    re.compile(r"整\s*機"),
-    re.compile(r"文\s*書\s*機"),
-    re.compile(r"遊\s*戲\s*機"),
-    re.compile(r"工\s*作\s*站"),
-    re.compile(r"推\s*薦.*(?:電腦|主機(?!板)|機)"),
-)
-_UPGRADE_PATTERNS = (
-    re.compile(r"升\s*級"),
-    re.compile(r"升級"),
-    re.compile(r"換(?:掉|成)?"),
-    re.compile(r"更新"),
-    re.compile(r"沿用"),
-    re.compile(r"保留"),
-)
-_CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "CPU": ("cpu", "處理器"),
-    "MB": ("mb", "主機板", "motherboard"),
-    "GPU": ("gpu", "顯卡", "獨顯", "rtx", "gtx", "radeon"),
-    "RAM": ("ram", "記憶體"),
-    "SSD": ("ssd", "固態", "nvme", "m.2"),
-    "PSU": ("psu", "電供", "火牛"),
-    "CASE": ("case", "機殼", "chassis"),
-}
 
 
 def _normalize_role(role: str) -> str:
@@ -73,95 +47,112 @@ def _strip_internal_system_prompt(prompt: str) -> str:
     return prompt
 
 
-def _normalize_text(value: str) -> str:
-    return " ".join(value.strip().lower().split())
-
-
-def _request_text(chat_request: ChatRequest) -> str:
-    parts: list[str] = []
+def _message_text_for_normalization(chat_request: ChatRequest) -> tuple[str, list[object]]:
     if chat_request.user_text:
-        parts.append(chat_request.user_text)
-    if chat_request.messages:
-        parts.extend(
-            message.content
-            for message in chat_request.messages
-            if message.role == "user" and message.content.strip()
-        )
-    if chat_request.history:
-        parts.extend(
-            message.content
-            for message in chat_request.history
-            if message.role == "user" and message.content.strip()
-        )
-    return _normalize_text("\n".join(parts))
+        return chat_request.user_text, list(chat_request.history)
+
+    if not chat_request.messages:
+        return "", []
+
+    last_user_index: int | None = None
+    for index in range(len(chat_request.messages) - 1, -1, -1):
+        if chat_request.messages[index].role == "user":
+            last_user_index = index
+            break
+    if last_user_index is None:
+        return "", list(chat_request.messages)
+    return (
+        chat_request.messages[last_user_index].content,
+        list(chat_request.messages[:last_user_index]),
+    )
 
 
-def _detect_requested_categories(request_text: str) -> list[str]:
-    categories: list[str] = []
-    for category, keywords in _CATEGORY_KEYWORDS.items():
-        if any(keyword in request_text for keyword in keywords):
-            categories.append(category)
-    return categories
-
-
-def _detect_request_shape(chat_request: ChatRequest) -> tuple[str, list[str], bool]:
-    request_text = _request_text(chat_request)
-    requested_categories = _detect_requested_categories(request_text)
-    is_upgrade = any(pattern.search(request_text) for pattern in _UPGRADE_PATTERNS)
-    is_build = any(pattern.search(request_text) for pattern in _BUILD_PATTERNS)
-
-    if is_upgrade:
-        return "upgrade", requested_categories, bool(_BUDGET_SIGNAL_RE.search(request_text))
-    if is_build:
-        return "build", requested_categories, bool(_BUDGET_SIGNAL_RE.search(request_text))
-    if requested_categories:
-        return "component", requested_categories, bool(_BUDGET_SIGNAL_RE.search(request_text))
-    return "generic", [], bool(_BUDGET_SIGNAL_RE.search(request_text))
-
-
-def _build_retrieval_answer_constraints(chat_request: ChatRequest) -> str:
-    request_shape, requested_categories, has_budget = _detect_request_shape(chat_request)
+def _build_retrieval_answer_constraints(
+    normalized_demand: NormalizedDemand,
+    *,
+    build_profile: BuildRequestProfile | None,
+    context_pack_meta: dict[str, object] | None,
+) -> str:
+    requested_categories = list(normalized_demand.categories)
+    category_counts = dict((context_pack_meta or {}).get("counts", {}))
     lines = [
         "## ANSWER_CONSTRAINTS",
-        "你必須優先根據 CONTEXT_PACK 裡的候選回答。",
-        "不要推薦 CONTEXT_PACK 沒出現的具體零件型號或品牌組合。",
-        "如果候選不足、價格不符、或條件不清楚，請直接說資料不足並指出需要補哪些條件。",
+        "你只能根據 CLEAN_CONTEXT_PACK 裡存在的候選作答。",
+        "不可推薦 CLEAN_CONTEXT_PACK 以外的零件、品牌組合或規格。",
+        "若候選不足、價格不符、或資料不完整，必須直接說資料不足或候選不足，不可硬湊。",
+        "先給結論，再給理由；全部使用繁體中文。",
     ]
-    if has_budget:
-        lines.append("若使用者有提預算，回答時必須明確說明候選是否在預算內、接近預算上限，或目前沒有符合預算的候選。")
+    if normalized_demand.budget_max is not None or normalized_demand.budget_target is not None:
+        lines.append("若有預算，必須明確說明候選是否接近預算或目前沒有符合預算的候選。")
 
-    if request_shape == "build":
-        lines.append("這是整機/配單需求：請優先用候選組合回答，不要改成通用型夢幻配單。")
-    elif request_shape == "upgrade":
-        lines.append("這是升級需求：請聚焦要升級的零件與相容性，不要改回整機推薦。")
-    elif request_shape == "component":
+    if normalized_demand.request_mode == "build":
+        lines.append("這是整機 build 需求：優先維持需求一致性與相容性，不可改成單品問答。")
+    elif normalized_demand.request_mode == "upgrade":
+        lines.append("這是升級需求：聚焦升級目標與相容性，不可改回整機夢幻單。")
+    elif normalized_demand.request_mode == "single_part":
         if len(requested_categories) == 1:
-            lines.append(
-                f"這是單零件需求：回答限制在 {requested_categories[0]} 候選，不要跳去其他零件類別。"
-            )
-        else:
-            joined = ", ".join(requested_categories)
-            lines.append(
-                f"這是多零件比較需求：回答限制在 {joined} 候選，不要擴張到未要求的類別。"
-            )
+            lines.append(f"這是單品需求：回答限制在 {requested_categories[0]} 候選，不可轉成整機 build。")
+        elif requested_categories:
+            lines.append(f"這是多單品需求：回答限制在 {', '.join(requested_categories)} 候選。")
+
+    if "GPU" in requested_categories and not normalized_demand.allow_workstation_gpu:
+        lines.append("若使用者問的是遊戲顯卡或一般顯卡單品，預設不可把 workstation/pro 卡當主推薦。")
+    if build_profile is not None and build_profile.minimum_budget_utilization is not None:
+        lines.append(
+            f"若 build 清單總價明顯低於 {build_profile.minimum_budget_utilization}，必須保守說明候選不足或條件過嚴。"
+        )
+    if normalized_demand.missing_information:
+        lines.append(
+            f"若需要更精準建議，可明確指出目前仍缺少：{', '.join(normalized_demand.missing_information)}。"
+        )
+    if requested_categories:
+        joined = ", ".join(f"{category}:{category_counts.get(category, 0)}" for category in requested_categories)
+        lines.append(f"目前 clean candidate counts：{joined}。")
 
     return "\n".join(lines)
 
 
 def _build_context_pack_message(
-    chat_request: ChatRequest,
     *,
+    normalized_demand: NormalizedDemand,
+    build_profile: BuildRequestProfile | None,
+    context_pack_meta: dict[str, object] | None,
     context_pack_text: str,
 ) -> str:
-    constraints = _build_retrieval_answer_constraints(chat_request)
-    return f"{constraints}\n\n## CONTEXT_PACK\n{context_pack_text}"
+    constraints = _build_retrieval_answer_constraints(
+        normalized_demand,
+        build_profile=build_profile,
+        context_pack_meta=context_pack_meta,
+    )
+    normalized_payload = json.dumps(
+        normalized_demand.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+    )
+    return (
+        f"{constraints}\n\n"
+        f"## NORMALIZED_DEMAND\n{normalized_payload}\n\n"
+        f"## CONTEXT_PACK\nclean_context_pack=true\n{context_pack_text}"
+    )
 
 
 def build_provider_messages(
     chat_request: ChatRequest,
     *,
     context_pack_text: str | None = None,
+    context_pack_meta: dict[str, object] | None = None,
+    normalized_demand: NormalizedDemand | None = None,
+    build_profile: BuildRequestProfile | None = None,
 ) -> list[dict[str, str]]:
+    if normalized_demand is None:
+        message_text, history = _message_text_for_normalization(chat_request)
+        resolved_normalized_demand = rule_fallback_normalized_demand(
+            message_text=message_text,
+            history=history,
+        )
+    else:
+        resolved_normalized_demand = normalized_demand
     if chat_request.messages:
         provider_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         provider_messages.extend(
@@ -173,8 +164,23 @@ def build_provider_messages(
                 {
                     "role": "user",
                     "content": _build_context_pack_message(
-                        chat_request,
+                        normalized_demand=resolved_normalized_demand,
+                        build_profile=build_profile,
+                        context_pack_meta=context_pack_meta,
                         context_pack_text=context_pack_text,
+                    ),
+                }
+            )
+        else:
+            provider_messages.append(
+                {
+                    "role": "user",
+                    "content": "## NORMALIZED_DEMAND\n"
+                    + json.dumps(
+                        resolved_normalized_demand.model_dump(mode="json"),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        indent=2,
                     ),
                 }
             )
@@ -190,7 +196,12 @@ def build_provider_messages(
     if context_pack_text:
         prompt = (
             f"{prompt}\n\n"
-            f"{_build_context_pack_message(chat_request, context_pack_text=context_pack_text)}"
+            f"{_build_context_pack_message(normalized_demand=resolved_normalized_demand, build_profile=build_profile, context_pack_meta=context_pack_meta, context_pack_text=context_pack_text)}"
+        )
+    else:
+        prompt = (
+            f"{prompt}\n\n## NORMALIZED_DEMAND\n"
+            f"{json.dumps(resolved_normalized_demand.model_dump(mode='json'), ensure_ascii=False, sort_keys=True, indent=2)}"
         )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -203,6 +214,7 @@ def generate_provider_result(
     settings: AISettings,
     messages: list[dict[str, str]],
     request_id: str,
+    extra_payload: dict[str, object] | None = None,
     text_generator: ProviderTextGenerator | None = None,
     completion_generator: ProviderCompletionGenerator | None = None,
     original_text_generator: ProviderTextGenerator | None = None,
@@ -232,6 +244,7 @@ def generate_provider_result(
         text_generator=resolved_text_generator,
         completion_generator=resolved_completion_generator,
         original_text_generator=resolved_original_text_generator,
+        extra_payload=extra_payload,
     )
 
 

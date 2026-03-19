@@ -94,7 +94,9 @@ def log_ai_call(
     warning_count: int,
     demand_source: str,
     triggered_retrieval: bool,
+    normalization_summary: dict[str, Any] | None = None,
 ) -> None:
+    summary = dict(normalization_summary or {})
     log_operation(
         "ai_call",
         request_id=request_id,
@@ -112,6 +114,18 @@ def log_ai_call(
         warning_count=warning_count,
         demand_source=demand_source,
         triggered_retrieval=triggered_retrieval,
+        normalization_source=summary.get("normalization_source", "-"),
+        normalization_confidence=summary.get("normalization_confidence"),
+        normalized_request_mode=summary.get("normalized_request_mode", "unknown"),
+        normalized_categories=",".join(summary.get("normalized_categories", []) or []) or "-",
+        normalized_budget_max=summary.get("normalized_budget_max"),
+        normalized_budget_target=summary.get("normalized_budget_target"),
+        normalized_cpu_vendor=summary.get("normalized_cpu_vendor", "-") or "-",
+        normalized_gpu_vendor=summary.get("normalized_gpu_vendor", "-") or "-",
+        normalized_size_preference=summary.get("normalized_size_preference", "-") or "-",
+        normalization_missing_information=",".join(summary.get("normalization_missing_information", []) or [])
+        or "-",
+        normalization_fallback_used=bool(summary.get("normalization_fallback_used", False)),
     )
 
 

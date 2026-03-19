@@ -39,6 +39,7 @@ class ChatOrchestrationState:
             categories=list(self.demand.categories),
             top_k=self.demand.top_k,
             env=self.demand.env,
+            normalization_summary=self.demand.normalization_summary(),
         )
 
     def persist_snapshot(
@@ -67,6 +68,8 @@ class ChatOrchestrationState:
             context_pack_text=self.retrieval.context_pack_text,
             compressed_candidates=self.retrieval.compressed_candidates,
             drop_log=self.retrieval.drop_log,
+            normalized_demand=self.demand.normalized_demand.model_dump(mode="json"),
+            normalization_report=self.demand.normalization_report,
             validation_report=validation_report,
             dq_report=dq_report,
             provider_result=provider_result,
@@ -102,6 +105,8 @@ class ChatOrchestrationState:
             dq_reasons=dq_reasons,
             has_context_pack=bool(self.retrieval.context_pack_text),
             compressed_candidates=self.retrieval.compressed_candidates,
+            normalized_demand=self.demand.normalized_demand.model_dump(mode="json"),
+            normalization_report=self.demand.normalization_report,
             publish_reason=publish_reason,
             error_type=error_type,
         )
@@ -138,4 +143,5 @@ class ChatOrchestrationState:
             warning_count=len(self.warnings),
             demand_source=context.demand_source,
             triggered_retrieval=context.triggered_retrieval,
+            normalization_summary=context.normalization_summary,
         )

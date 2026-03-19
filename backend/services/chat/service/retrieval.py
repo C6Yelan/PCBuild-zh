@@ -16,6 +16,7 @@ class RetrievalArtifacts:
     drop_log: dict[str, dict[str, object]]
     context_pack_text: str | None
     context_pack_hash: str
+    context_pack_meta: dict[str, object]
 
     @classmethod
     def empty(cls) -> RetrievalArtifacts:
@@ -24,6 +25,7 @@ class RetrievalArtifacts:
             drop_log={},
             context_pack_text=None,
             context_pack_hash="-",
+            context_pack_meta={},
         )
 
 
@@ -82,6 +84,7 @@ def prepare_retrieval_artifacts(
     top_k: int,
     retrieval_demand: P1Demand | None,
     build_profile: BuildRequestProfile,
+    normalized_demand: object,
     env: str,
     warnings: list[str],
     retrieve_topk_candidates: Callable[..., Any],
@@ -145,10 +148,11 @@ def prepare_retrieval_artifacts(
             compressed_by_category=compressed_candidates,
             category_order=categories,
             enable_rerank=True,
-            demand=retrieval_demand,
+            demand=normalized_demand,
         )
         context_pack_text = context_pack.text
         context_pack_hash = context_pack.hash
+        context_pack_meta = dict(getattr(context_pack, "meta", None) or {})
         log_operation(
             "p3_context_pack",
             env=env,
@@ -161,6 +165,7 @@ def prepare_retrieval_artifacts(
             drop_log=drop_log,
             context_pack_text=context_pack_text,
             context_pack_hash=context_pack_hash,
+            context_pack_meta=context_pack_meta,
         )
     except Exception as exc:
         warnings.append("p1_retrieval_failed")

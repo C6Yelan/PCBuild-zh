@@ -7,6 +7,8 @@ here so ``snapshot_store`` can remain a thin stable facade for service/tests/ops
 
 from __future__ import annotations
 
+from typing import Any
+
 from backend.services.chat.chat_payload_context import ChatPayloadContext
 from backend.services.chat.clients.openai_compat_client import OpenAICompatError
 from backend.services.chat.config import AISettings
@@ -44,6 +46,8 @@ def write_ai_snapshot_bundle(
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
+    normalized_demand: dict[str, Any],
+    normalization_report: dict[str, Any],
     validation_report: TextValidationReport | None = None,
     dq_report: DQReport | None = None,
     provider_result: ProviderCallResult | None = None,
@@ -78,6 +82,8 @@ def write_ai_snapshot_bundle(
         compressed_candidates=compressed_candidates,
         drop_log=drop_log,
         lineage=artifact_payloads.lineage,
+        normalized_demand=normalized_demand,
+        normalization_report=normalization_report,
     )
 
     meta = build_snapshot_meta_payload(

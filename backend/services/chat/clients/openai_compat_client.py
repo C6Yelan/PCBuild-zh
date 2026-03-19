@@ -33,6 +33,7 @@ def generate_openai_compat_completion(
     timeout_seconds: float,
     client_request_id: str | None = None,
     provider: str = "openai_compat",
+    extra_payload: dict[str, object] | None = None,
 ) -> OpenAICompatResult:
     request = build_openai_compat_request(
         base_url=base_url,
@@ -41,6 +42,7 @@ def generate_openai_compat_completion(
         messages=messages,
         timeout_seconds=timeout_seconds,
         client_request_id=client_request_id,
+        extra_payload=extra_payload,
     )
 
     attempt = 1
@@ -73,6 +75,7 @@ def generate_openai_compat_text(
     timeout_seconds: float,
     client_request_id: str | None = None,
     provider: str = "openai_compat",
+    extra_payload: dict[str, object] | None = None,
 ) -> str:
     result = generate_openai_compat_completion(
         base_url=base_url,
@@ -82,5 +85,6 @@ def generate_openai_compat_text(
         timeout_seconds=timeout_seconds,
         client_request_id=client_request_id,
         provider=provider,
+        extra_payload=extra_payload,
     )
     return result.text

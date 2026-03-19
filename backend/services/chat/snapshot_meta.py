@@ -42,6 +42,7 @@ def build_snapshot_meta_payload(
         "status_code": status_code,
         "request_mode": request_mode,
         "demand_source": context.demand_source,
+        **context.normalization_summary,
         "triggered_retrieval": context.triggered_retrieval,
         "gate_status": (
             "pass"

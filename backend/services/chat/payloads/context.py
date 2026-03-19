@@ -24,6 +24,7 @@ class ChatPayloadContext:
     categories: list[str]
     top_k: int
     env: str
+    normalization_summary: dict[str, Any]
 
 
 def build_snapshot_store_kwargs(
@@ -38,6 +39,8 @@ def build_snapshot_store_kwargs(
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
+    normalized_demand: dict[str, Any],
+    normalization_report: dict[str, Any],
     latency_ms: int,
     ok: bool,
     error_type: str,
@@ -60,6 +63,8 @@ def build_snapshot_store_kwargs(
         "context_pack_text": context_pack_text,
         "compressed_candidates": compressed_candidates,
         "drop_log": drop_log,
+        "normalized_demand": normalized_demand,
+        "normalization_report": normalization_report,
         "validation_report": validation_report,
         "dq_report": dq_report,
         "provider_result": provider_result,
@@ -82,6 +87,8 @@ def build_staging_persist_kwargs(
     dq_reasons: list[str],
     has_context_pack: bool,
     compressed_candidates: dict[str, list[dict[str, object]]],
+    normalized_demand: dict[str, Any],
+    normalization_report: dict[str, Any],
     publish_reason: str,
     error_type: str | None,
 ) -> dict[str, Any]:
@@ -99,6 +106,8 @@ def build_staging_persist_kwargs(
         "dq_reasons": dq_reasons,
         "has_context_pack": has_context_pack,
         "compressed_candidates": compressed_candidates,
+        "normalized_demand": normalized_demand,
+        "normalization_report": normalization_report,
         "publish_reason": publish_reason,
         "error_type": error_type,
     }

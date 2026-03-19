@@ -5,6 +5,7 @@
 ## 目的
 - 這是 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
 - 目前收尾版本的正式 AI 主線是 `openai_compat` + env-only 切換；本文件以這條主線為準。
+- smoke 會覆蓋新的 `NormalizedDemand -> clean context pack -> final answer` 主線；若 normalization fail，系統應保守回退到 rule fallback，而不是直接擴 provider 或硬湊推薦。
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
@@ -20,6 +21,13 @@
 - `AI_OAI_BASE_URL` 與 `AI_OAI_API_KEY` 必須對應目前上游。
 - `fastapi` 容器已使用最新 `.env` 啟動完成。
 
+本機只做：
+
+```bash
+PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat
+PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas
+```
+
 ## 伺服器主機容器內執行命令
 
 ```bash
@@ -34,6 +42,11 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
   - 先看 `failed_cases`、`error_type_counts`、各 case 的 `request_id`。
   - 再用 `request_id` 去查既有 `ai_call` log 與 raw snapshot。
 - 若目前 `.env` 不是 `openai_compat`，這代表執行環境偏離目前收尾主線；先回到既定 `.env` 再做基線驗收。
+- 對 build / upgrade 類題目，應額外人工確認：
+  - 主機板候選未混入 bundle / combo / 搭板價
+  - GPU 預設不再優先 workstation / professional 卡
+  - RAM build 預設不先選 single DIMM
+  - 候選不足時會保守說明，不硬湊垃圾單
 
 ## Loki / Log Lookup 注意事項
 - 建議用 `provider`、`model`、`env`、`component` 這類低基數欄位做 label / filter。

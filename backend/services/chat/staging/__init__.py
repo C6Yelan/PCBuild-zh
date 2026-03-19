@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from backend.core.oplog import log_operation
 from backend.services.chat.config import AISettings
@@ -73,6 +74,8 @@ def persist_chat_stage_or_quarantine(
     dq_reasons: list[str],
     has_context_pack: bool,
     compressed_candidates: dict[str, list[dict[str, object]]],
+    normalized_demand: dict[str, Any],
+    normalization_report: dict[str, Any],
     publish_reason: str,
     error_type: str | None,
 ) -> None:

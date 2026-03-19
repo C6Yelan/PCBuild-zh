@@ -125,12 +125,20 @@ def _extract_budget_target(demand: Any | None) -> float | None:
         return None
 
     if isinstance(demand, Mapping):
+        budget_target = _to_float(demand.get("budget_target"))
+        budget_max = _to_float(demand.get("budget_max"))
         min_price = _to_float(demand.get("min_price"))
         max_price = _to_float(demand.get("max_price"))
     else:
+        budget_target = _to_float(getattr(demand, "budget_target", None))
+        budget_max = _to_float(getattr(demand, "budget_max", None))
         min_price = _to_float(getattr(demand, "min_price", None))
         max_price = _to_float(getattr(demand, "max_price", None))
 
+    if budget_target is not None:
+        return budget_target
+    if budget_max is not None:
+        return budget_max
     if min_price is not None and max_price is not None:
         low, high = sorted((min_price, max_price))
         return (low + high) / 2.0

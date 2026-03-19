@@ -49,6 +49,7 @@ def build_openai_compat_request(
     messages: list[dict[str, str]],
     timeout_seconds: float,
     client_request_id: str | None,
+    extra_payload: dict[str, object] | None = None,
 ) -> OpenAICompatRequest:
     headers: dict[str, str] = {
         "Content-Type": "application/json",
@@ -61,13 +62,17 @@ def build_openai_compat_request(
     if resolved_api_key:
         headers["Authorization"] = f"Bearer {resolved_api_key}"
 
+    payload: dict[str, object] = {
+        "model": model,
+        "messages": messages,
+    }
+    if extra_payload:
+        payload.update(extra_payload)
+
     return OpenAICompatRequest(
         endpoint=build_chat_completions_endpoint(base_url),
         headers=headers,
-        payload={
-            "model": model,
-            "messages": messages,
-        },
+        payload=payload,
         timeout_seconds=timeout_seconds,
     )
 

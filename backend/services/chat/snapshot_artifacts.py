@@ -38,6 +38,8 @@ def persist_snapshot_artifacts(
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
     lineage: dict[str, Any] | None,
+    normalized_demand: dict[str, Any] | None,
+    normalization_report: dict[str, Any] | None,
 ) -> list[str]:
     artifacts: list[str] = []
 
@@ -49,6 +51,14 @@ def persist_snapshot_artifacts(
 
     write_json_file(snapshot_dir / "request_context.json", request_context)
     artifacts.append("request_context.json")
+
+    if normalized_demand is not None:
+        write_json_file(snapshot_dir / "normalized_demand.json", normalized_demand)
+        artifacts.append("normalized_demand.json")
+
+    if normalization_report is not None:
+        write_json_file(snapshot_dir / "normalization_report.json", normalization_report)
+        artifacts.append("normalization_report.json")
 
     if validation_report is not None:
         write_json_file(snapshot_dir / "validation_report.json", validation_report)

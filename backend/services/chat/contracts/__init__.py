@@ -5,6 +5,7 @@ from .types import (
     ChatResponse,
     ContextPack,
     ContextPackItem,
+    NormalizedDemand,
     P3ContextPack,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "ChatResponse",
     "ContextPack",
     "ContextPackItem",
+    "NormalizedDemand",
     "P3ContextPack",
 ]

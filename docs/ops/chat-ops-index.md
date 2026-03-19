@@ -6,9 +6,11 @@
 
 ### 收尾版本主線
 - 目前正式支援的 AI 主線是 `openai_compat` + env-only 切換。
+- chat 主流程固定為 `NormalizedDemand -> retrieval / semantic policy / compatibility gate -> clean context pack -> final answer`。
 - `.env` 是唯一切換入口；前端不負責選 provider / model / base_url。
 - Windows + WSL 本機只負責改碼、純 Python 驗證與 git 操作；所有 `docker compose` 與 chat ops 驗收都只在伺服器主機執行。
 - Gemini、本地模型、多平台比較、dashboard 都不是這一階段的主線工作。
+- 若 normalization 失敗或 clean candidate 不足，系統必須保守降級並直接說明資料不足，不得硬湊 build。
 
 ### Canonical / Compat 定位
 - canonical implementation tree 在 `backend.tools.ops.chat.*`。
@@ -43,8 +45,9 @@
 
 ## 使用順序建議
 1. 本機 Windows + WSL：只做改碼、純 Python 驗證、`git add` / `git commit` / `git push`
-2. 伺服器主機：先看 `chat-provider-health.md`
-3. 要做最小必要驗收：只在伺服器主機依序跑 provider health、regression report、release check `--mode p10`
-4. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
-5. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
-6. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`
+2. 本機最小驗收：`PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat`、`PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas`
+3. 伺服器主機：先看 `chat-provider-health.md`
+4. 要做最小必要驗收：只在伺服器主機依序跑 provider health、regression report、release check `--mode p10`
+5. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
+6. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
+7. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`

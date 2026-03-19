@@ -39,6 +39,7 @@ def fallback_text_result(
     messages: list[dict[str, str]],
     request_id: str,
     text: str,
+    extra_payload: dict[str, object] | None = None,
 ) -> ProviderCallResult:
     request_headers = {
         "Content-Type": "application/json",
@@ -50,7 +51,7 @@ def fallback_text_result(
         endpoint=runtime.base_url or "-",
         status_code=200,
         request_headers=request_headers,
-        request_json={"model": runtime.model, "messages": messages},
+        request_json={"model": runtime.model, "messages": messages, **(extra_payload or {})},
         response_headers={},
         response_json=None,
         raw_response_text=text,
@@ -92,6 +93,7 @@ def dispatch_provider_runtime(
     text_generator: ProviderTextGenerator,
     completion_generator: ProviderCompletionGenerator,
     original_text_generator: ProviderTextGenerator,
+    extra_payload: dict[str, object] | None = None,
 ) -> ProviderCallResult:
     if isinstance(runtime, OpenAICompatRuntimeConfig):
         return _dispatch_openai_compat_runtime(
@@ -101,6 +103,7 @@ def dispatch_provider_runtime(
             text_generator=text_generator,
             completion_generator=completion_generator,
             original_text_generator=original_text_generator,
+            extra_payload=extra_payload,
         )
     if isinstance(runtime, GeminiRuntimeConfig):
         raise _dispatch_gemini_runtime(
@@ -118,6 +121,7 @@ def _dispatch_openai_compat_runtime(
     text_generator: ProviderTextGenerator,
     completion_generator: ProviderCompletionGenerator,
     original_text_generator: ProviderTextGenerator,
+    extra_payload: dict[str, object] | None,
 ) -> ProviderCallResult:
     if not runtime.base_url:
         raise ProviderDispatchError(
@@ -136,12 +140,14 @@ def _dispatch_openai_compat_runtime(
             timeout_seconds=runtime.timeout_seconds,
             client_request_id=request_id,
             provider=runtime.provider,
+            extra_payload=extra_payload,
         )
         return fallback_text_result(
             runtime=runtime,
             messages=messages,
             request_id=request_id,
             text=text,
+            extra_payload=extra_payload,
         )
 
     result = completion_generator(
@@ -152,6 +158,7 @@ def _dispatch_openai_compat_runtime(
         timeout_seconds=runtime.timeout_seconds,
         client_request_id=request_id,
         provider=runtime.provider,
+        extra_payload=extra_payload,
     )
     return coerce_provider_result(result)
 

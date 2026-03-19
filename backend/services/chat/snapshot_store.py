@@ -9,6 +9,8 @@ Round-1 scope:
 """
 from __future__ import annotations
 
+from typing import Any
+
 from backend.core.oplog import log_operation
 from backend.services.chat.chat_payload_context import ChatPayloadContext
 from backend.services.chat.clients.openai_compat_client import OpenAICompatError
@@ -42,6 +44,8 @@ def persist_ai_snapshot(
     context_pack_text: str | None,
     compressed_candidates: dict[str, list[dict[str, object]]],
     drop_log: dict[str, dict[str, object]],
+    normalized_demand: dict[str, Any],
+    normalization_report: dict[str, Any],
     validation_report: TextValidationReport | None = None,
     dq_report: DQReport | None = None,
     provider_result: ProviderCallResult | None = None,
@@ -62,6 +66,8 @@ def persist_ai_snapshot(
             context_pack_text=context_pack_text,
             compressed_candidates=compressed_candidates,
             drop_log=drop_log,
+            normalized_demand=normalized_demand,
+            normalization_report=normalization_report,
             validation_report=validation_report,
             dq_report=dq_report,
             provider_result=provider_result,

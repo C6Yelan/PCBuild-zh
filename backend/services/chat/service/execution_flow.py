@@ -29,7 +29,13 @@ def build_orchestration_state(
     settings: object,
     warnings: list[str],
 ) -> ChatOrchestrationState:
-    demand = seams.policy.resolve_demand(chat_request)
+    demand = seams.policy.resolve_demand(
+        chat_request,
+        settings=settings,
+        request_id=request_id,
+        generate_provider_result=seams.provider.generate_provider_result,
+        log_operation=seams.observability.log_operation,
+    )
     triggered_retrieval = db is not None and bool(demand.categories)
     seams.policy.log_demand_resolution(
         log_operation=seams.observability.log_operation,
@@ -47,6 +53,7 @@ def build_orchestration_state(
             top_k=demand.top_k,
             retrieval_demand=demand.retrieval_demand,
             build_profile=demand.build_profile,
+            normalized_demand=demand.normalized_demand,
             env=demand.env,
             warnings=warnings,
         )
@@ -54,6 +61,9 @@ def build_orchestration_state(
     provider_messages = seams.provider.build_provider_messages(
         chat_request,
         context_pack_text=retrieval.context_pack_text,
+        context_pack_meta=retrieval.context_pack_meta,
+        normalized_demand=demand.normalized_demand,
+        build_profile=demand.build_profile,
     )
     return ChatOrchestrationState(
         settings=settings,

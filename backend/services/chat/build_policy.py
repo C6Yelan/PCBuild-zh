@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Callable, Mapping, Sequence
 
+from backend.services.chat.contracts import NormalizedDemand
 from backend.services.chat.context_pack.retrieval import CandidatePart, P1Demand, P1RetrievalResult
 
 _BUILD_CORE_CATEGORIES = frozenset({"CPU", "MB", "RAM", "SSD", "PSU", "CASE", "GPU"})
@@ -134,8 +135,15 @@ _CPU_SOCKET_MEMORY_SUPPORT = {
 @dataclass(frozen=True, slots=True)
 class BuildRequestProfile:
     enabled: bool
+    request_mode: str = "unknown"
+    usage_profile: str = "unknown"
+    budget_max: int | None = None
+    budget_target: int | None = None
     target_total_price: int | None = None
     minimum_budget_utilization: int | None = None
+    allow_bundle: bool = False
+    allow_board_bundle: bool = False
+    allow_workstation_gpu: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,27 +189,56 @@ def _joined_candidate_text(candidate: CandidatePart) -> str:
 
 def build_request_profile(
     *,
-    message_text: str,
-    categories: Sequence[str],
+    normalized_demand: NormalizedDemand | None = None,
     retrieval_demand: P1Demand | None,
+    message_text: str | None = None,
+    categories: Sequence[str] | None = None,
 ) -> BuildRequestProfile:
-    normalized_message = _normalize_text(message_text)
-    requested_categories = {str(category).strip() for category in categories if str(category).strip()}
+    resolved_normalized_demand = normalized_demand
+    if resolved_normalized_demand is None:
+        resolved_categories = [str(category).strip() for category in (categories or []) if str(category).strip()]
+        resolved_request_mode = "build" if len(set(resolved_categories) & _BUILD_CORE_CATEGORIES) >= 3 else "single_part"
+        resolved_normalized_demand = NormalizedDemand(
+            request_mode=resolved_request_mode,
+            categories=resolved_categories,
+            normalization_source="rule_fallback",
+        )
+
+    requested_categories = {
+        str(category).strip()
+        for category in resolved_normalized_demand.categories
+        if str(category).strip()
+    }
     explicit_build_categories = len(requested_categories & _BUILD_CORE_CATEGORIES) >= 3
-    has_build_intent = bool(normalized_message) and any(
-        pattern.search(normalized_message) for pattern in _BUILD_INTENT_PATTERNS
-    )
-    enabled = explicit_build_categories or has_build_intent
+    enabled = resolved_normalized_demand.request_mode in {"build", "upgrade"} or explicit_build_categories
     if not enabled:
         return BuildRequestProfile(enabled=False)
 
-    budget = retrieval_demand.budget if retrieval_demand is not None else None
+    budget = resolved_normalized_demand.budget_max
+    if budget is None and retrieval_demand is not None:
+        budget = retrieval_demand.budget
     if budget is None or budget <= 0:
-        return BuildRequestProfile(enabled=True)
+        return BuildRequestProfile(
+            enabled=True,
+            request_mode=resolved_normalized_demand.request_mode,
+            usage_profile=resolved_normalized_demand.usage_profile,
+            budget_max=resolved_normalized_demand.budget_max,
+            budget_target=resolved_normalized_demand.budget_target,
+            allow_bundle=resolved_normalized_demand.allow_bundle,
+            allow_board_bundle=resolved_normalized_demand.allow_board_bundle,
+            allow_workstation_gpu=resolved_normalized_demand.allow_workstation_gpu,
+        )
     return BuildRequestProfile(
         enabled=True,
+        request_mode=resolved_normalized_demand.request_mode,
+        usage_profile=resolved_normalized_demand.usage_profile,
+        budget_max=resolved_normalized_demand.budget_max,
+        budget_target=resolved_normalized_demand.budget_target,
         target_total_price=max(1, int(round(budget * 0.95))),
         minimum_budget_utilization=max(1, int(round(budget * 0.90))),
+        allow_bundle=resolved_normalized_demand.allow_bundle,
+        allow_board_bundle=resolved_normalized_demand.allow_board_bundle,
+        allow_workstation_gpu=resolved_normalized_demand.allow_workstation_gpu,
     )
 
 
@@ -277,16 +314,21 @@ def apply_build_candidate_gate(
         category: list(items)
         for category, items in retrieval_result.items_by_category.items()
     }
-    filtered_items, semantic_events = _apply_semantic_filters(items_by_category)
+    filtered_items, semantic_events = _apply_semantic_filters(items_by_category, profile=profile)
     compatible_items, compatibility_events = _apply_compatibility_filters(filtered_items)
+    psu_items, psu_events = _apply_psu_capacity_filters(compatible_items)
+    if "PSU" in compatible_items or psu_items:
+        compatible_items["PSU"] = psu_items
     return BuildGateResult(
         retrieval_result=P1RetrievalResult(items_by_category=compatible_items),
-        events=[*semantic_events, *compatibility_events],
+        events=[*semantic_events, *compatibility_events, *psu_events],
     )
 
 
 def _apply_semantic_filters(
     items_by_category: Mapping[str, Sequence[CandidatePart]],
+    *,
+    profile: BuildRequestProfile,
 ) -> tuple[dict[str, list[CandidatePart]], list[dict[str, str]]]:
     classified = {
         category: [(item, classify_candidate(item)) for item in items]
@@ -298,10 +340,21 @@ def _apply_semantic_filters(
     for category, entries in classified.items():
         kept = list(entries)
         strict_rules: list[tuple[str, Callable[[SemanticClassification], bool]]] = [
-            ("offer_type", lambda c: c.offer_type == "single_part"),
+            (
+                "offer_type",
+                lambda c: c.offer_type == "single_part"
+                or (
+                    c.offer_type == "bundle"
+                    and profile.allow_bundle
+                )
+                or (
+                    c.offer_type == "board_bundle"
+                    and profile.allow_board_bundle
+                ),
+            ),
             ("pricing_mode", lambda c: c.pricing_mode not in {"搭板價", "限搭"}),
         ]
-        if category == "GPU":
+        if category == "GPU" and not profile.allow_workstation_gpu:
             strict_rules.append(("market_segment", lambda c: c.market_segment != "workstation"))
 
         for reason, predicate in strict_rules:
@@ -420,6 +473,87 @@ def _apply_compatibility_filters(
                 )
                 changed = True
     return current, events
+
+
+def _estimate_required_psu_wattage(
+    *,
+    cpu: CandidatePart | None,
+    gpu: CandidatePart | None,
+) -> int | None:
+    cpu_specs = cpu.key_specs if cpu is not None and isinstance(cpu.key_specs, Mapping) else {}
+    gpu_specs = gpu.key_specs if gpu is not None and isinstance(gpu.key_specs, Mapping) else {}
+    cpu_tdp = _to_int(cpu_specs.get("tdp")) or _to_int(cpu_specs.get("tdp_hint"))
+    gpu_power = _to_int(gpu_specs.get("power_w")) or _to_int(gpu_specs.get("power_w_hint"))
+
+    if cpu_tdp is None and gpu_power is None:
+        return None
+
+    base = 150
+    total = base
+    if cpu_tdp is not None:
+        total += cpu_tdp
+    if gpu_power is not None:
+        total += gpu_power
+    rounded = int((total + 49) / 50) * 50
+    return rounded
+
+
+def _apply_psu_capacity_filters(
+    items_by_category: Mapping[str, Sequence[CandidatePart]],
+) -> tuple[list[CandidatePart], list[dict[str, str]]]:
+    psus = list(items_by_category.get("PSU", []))
+    if not psus:
+        return psus, []
+
+    cpus = list(items_by_category.get("CPU", []))
+    gpus = list(items_by_category.get("GPU", []))
+    workloads: list[tuple[CandidatePart | None, CandidatePart | None]] = []
+    if cpus and gpus:
+        workloads.extend((cpu, gpu) for cpu in cpus for gpu in gpus)
+    elif cpus:
+        workloads.extend((cpu, None) for cpu in cpus)
+    elif gpus:
+        workloads.extend((None, gpu) for gpu in gpus)
+    else:
+        return psus, []
+
+    kept: list[CandidatePart] = []
+    dropped_count = 0
+    for psu in psus:
+        specs = psu.key_specs if isinstance(psu.key_specs, Mapping) else {}
+        wattage = _to_int(specs.get("wattage_w")) or _to_int(specs.get("wattage_w_hint"))
+        if wattage is None:
+            kept.append(psu)
+            continue
+
+        requirements = [
+            requirement
+            for requirement in (
+                _estimate_required_psu_wattage(cpu=cpu, gpu=gpu)
+                for cpu, gpu in workloads
+            )
+            if requirement is not None
+        ]
+        if not requirements:
+            kept.append(psu)
+            continue
+        if any(wattage >= requirement for requirement in requirements):
+            kept.append(psu)
+            continue
+        dropped_count += 1
+
+    events: list[dict[str, str]] = []
+    if dropped_count:
+        events.append(
+            {
+                "stage": "compatibility_gate",
+                "category": "PSU",
+                "reason": "psu_capacity",
+                "action": "drop",
+                "dropped_count": str(dropped_count),
+            }
+        )
+    return kept, events
 
 
 def _filter_compatible_side(

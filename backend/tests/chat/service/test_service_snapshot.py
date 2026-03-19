@@ -108,6 +108,8 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert (snapshot_dir / "compressed_candidates.json").exists()
     assert (snapshot_dir / "drop_log.json").exists()
     assert (snapshot_dir / "request_context.json").exists()
+    assert (snapshot_dir / "normalized_demand.json").exists()
+    assert (snapshot_dir / "normalization_report.json").exists()
     assert (snapshot_dir / "validation_report.json").exists()
     assert (snapshot_dir / "dq_report.json").exists()
     assert (snapshot_dir / "lineage.json").exists()
@@ -123,6 +125,7 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
     assert request_context["top_k"] == 2
     assert request_context["env"] == "prod"
     assert request_context["has_context_pack"] is True
+    assert "normalized_request_mode" in request_context
 
     lineage = json.loads((snapshot_dir / "lineage.json").read_text(encoding="utf-8"))
     assert lineage == {
@@ -170,6 +173,8 @@ def test_snapshot_writes_extended_artifacts_with_retrieval(
         "raw_request.json",
         "raw_response.json",
         "request_context.json",
+        "normalized_demand.json",
+        "normalization_report.json",
         "validation_report.json",
         "dq_report.json",
         "context_pack.txt",
@@ -220,6 +225,8 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
     assert (snapshot_dir / "raw_response.json").exists()
     assert (snapshot_dir / "meta.json").exists()
     assert (snapshot_dir / "request_context.json").exists()
+    assert (snapshot_dir / "normalized_demand.json").exists()
+    assert (snapshot_dir / "normalization_report.json").exists()
     assert (snapshot_dir / "validation_report.json").exists()
     assert (snapshot_dir / "dq_report.json").exists()
     assert (snapshot_dir / "staging_record.json").exists()
@@ -247,6 +254,8 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
         "raw_request.json",
         "raw_response.json",
         "request_context.json",
+        "normalized_demand.json",
+        "normalization_report.json",
         "validation_report.json",
         "dq_report.json",
         "staging_record.json",

@@ -26,6 +26,17 @@ class ChatStagingRecord:
     dq_reasons: list[str]
     warnings: list[str]
     demand_source: str
+    normalization_source: str
+    normalization_confidence: float | None
+    normalized_request_mode: str
+    normalized_categories: list[str]
+    normalized_budget_max: int | None
+    normalized_budget_target: int | None
+    normalized_cpu_vendor: str | None
+    normalized_gpu_vendor: str | None
+    normalized_size_preference: str | None
+    normalization_missing_information: list[str]
+    normalization_fallback_used: bool
     triggered_retrieval: bool
     categories: list[str]
     top_k: int
@@ -48,6 +59,7 @@ class ChatStagingRequestContext:
     model: str
     context_pack_hash: str
     demand_source: str
+    normalization_summary: dict[str, object]
     triggered_retrieval: bool
     categories: list[str]
     top_k: int
@@ -125,6 +137,7 @@ def build_chat_staging_record(
         model=context.model,
         context_pack_hash=context.context_pack_hash,
         demand_source=context.demand_source,
+        normalization_summary=dict(context.normalization_summary),
         triggered_retrieval=context.triggered_retrieval,
         categories=list(context.categories),
         top_k=context.top_k,
@@ -165,6 +178,21 @@ def build_chat_staging_record(
         dq_reasons=outcome.dq_reasons,
         warnings=outcome.warnings,
         demand_source=request_context.demand_source,
+        normalization_source=str(request_context.normalization_summary.get("normalization_source", "-")),
+        normalization_confidence=request_context.normalization_summary.get("normalization_confidence"),
+        normalized_request_mode=str(request_context.normalization_summary.get("normalized_request_mode", "unknown")),
+        normalized_categories=list(request_context.normalization_summary.get("normalized_categories", []) or []),
+        normalized_budget_max=request_context.normalization_summary.get("normalized_budget_max"),
+        normalized_budget_target=request_context.normalization_summary.get("normalized_budget_target"),
+        normalized_cpu_vendor=request_context.normalization_summary.get("normalized_cpu_vendor"),
+        normalized_gpu_vendor=request_context.normalization_summary.get("normalized_gpu_vendor"),
+        normalized_size_preference=request_context.normalization_summary.get("normalized_size_preference"),
+        normalization_missing_information=list(
+            request_context.normalization_summary.get("normalization_missing_information", []) or []
+        ),
+        normalization_fallback_used=bool(
+            request_context.normalization_summary.get("normalization_fallback_used", False)
+        ),
         triggered_retrieval=request_context.triggered_retrieval,
         categories=request_context.categories,
         top_k=request_context.top_k,

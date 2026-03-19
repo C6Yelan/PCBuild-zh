@@ -6,6 +6,11 @@
 - 後端 `.env` 決定 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL`
 - 正式支援與驗收基線以 `openai_compat` 為主
 - 前端不負責選模型，也不接受 provider / base_url 覆寫
+- chat 回答主線固定為：
+  1. 先做 AI 前置需求正規化 `NormalizedDemand`
+  2. 後端依正規化需求做 retrieval / semantic policy / compatibility gate
+  3. 只把乾淨候選交給 AI 做最終中文回答
+  4. 若 normalization 失敗或候選不足，必須保守降級，不硬湊推薦
 
 最小必要文件入口：
 - [Chat Ops Index](/home/ayaya/projects/PCBuild-zh/docs/ops/chat-ops-index.md)
@@ -31,6 +36,13 @@
 本機（Windows + WSL）：
 - 只做程式碼修改、本機純 Python / 靜態檢查 / 單元測試、`git add` / `git commit` / `git push`。
 - 不在本機 WSL 執行 `docker compose up`、`docker compose exec`、Typesense sync、provider health、regression、release check。
+
+本機最小驗收：
+
+```bash
+PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat
+PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas
+```
 
 伺服器主機：
 - 才執行部署與驗收。
@@ -71,8 +83,6 @@ docker compose up -d --build fastapi
 - 本機先完成 `git add`、`git commit`、`git push`
 - 伺服器主機再依序執行 `git pull`
 - 伺服器主機執行 `docker compose up -d --build fastapi`
-- 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.typesense_parts_sync ensure-collection`
-- 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.typesense_parts_sync sync --env prod`
 - 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck`
 - 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_report`
 - 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10`

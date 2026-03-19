@@ -253,3 +253,27 @@ def test_resolve_demand_creates_query_text_only_retrieval_demand_when_filters_ab
     assert demand.retrieval_demand is not None
     assert demand.retrieval_demand.query_text == "最近有推薦的 CPU 嗎？"
     assert demand.retrieval_demand.min_price is None
+
+
+def test_resolve_demand_merges_explicit_and_ai_normalized_fields() -> None:
+    demand = resolve_demand(
+        ChatRequest(
+            user_text="幫我配一台 4 萬內遊戲機，想要 AMD CPU + NVIDIA 顯卡",
+            demand={
+                "categories": ["CPU", "GPU", "MB", "RAM", "SSD", "PSU", "CASE"],
+                "filters": {"budget": 40000},
+                "preferred_cpu_vendor": "AMD",
+            },
+        ),
+        settings=SimpleNamespace(ai_provider="openai_compat", ai_model="test-model"),
+        request_id="req-merge",
+        generate_provider_result=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("no provider")),
+        log_operation=lambda *args, **kwargs: None,
+        infer_chat_demand=lambda message, history=None: None,
+    )
+
+    assert demand.normalized_demand.categories == ["CPU", "GPU", "MB", "RAM", "SSD", "PSU", "CASE"]
+    assert demand.normalized_demand.preferred_cpu_vendor == "AMD"
+    assert demand.retrieval_demand is not None
+    assert demand.retrieval_demand.budget == 40000
+    assert "merge_trace" in demand.normalization_report

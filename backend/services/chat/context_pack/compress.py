@@ -19,6 +19,90 @@ _FIXED_FIELDS = (
 )
 _LINEAGE_FIELDS = ("snapshot_id", "run_id")
 _SPACE_RE = re.compile(r"\s+")
+_DEFAULT_SPEC_WHITELIST_BY_CATEGORY: dict[str, tuple[str, ...]] = {
+    "CPU": (
+        "brand_hint",
+        "model_hint",
+        "socket",
+        "socket_hint",
+        "cores",
+        "cores_hint",
+        "threads",
+        "threads_hint",
+        "base_clock_ghz_hint",
+        "boost_clock_ghz_hint",
+        "tdp_w",
+        "igpu_hint",
+    ),
+    "MB": (
+        "brand_hint",
+        "model_hint",
+        "chipset",
+        "chipset_hint",
+        "socket",
+        "socket_hint",
+        "form_factor",
+        "form_factor_hint",
+        "memory_type_hint",
+        "wifi_hint",
+    ),
+    "GPU": (
+        "brand_hint",
+        "model_hint",
+        "gpu_chip_hint",
+        "aib_hint",
+        "vram_gb",
+        "vram_gb_hint",
+        "length_mm_hint",
+        "power_w_hint",
+    ),
+    "RAM": (
+        "maker_hint",
+        "model_hint",
+        "ddr_gen_hint",
+        "speed_mts_hint",
+        "capacity_gb_hint",
+        "kit_dimms_hint",
+        "per_dimm_gb_hint",
+        "cl_hint",
+        "expo_hint",
+        "xmp_hint",
+        "rgb_hint",
+        "form_factor_hint",
+    ),
+    "SSD": (
+        "brand_hint",
+        "model_hint",
+        "capacity_gib",
+        "form_factor_hint",
+        "interface_hint",
+        "pcie_gen_hint",
+        "protocol_hint",
+        "seq_read_mb_s",
+        "seq_write_mb_s",
+        "warranty_years",
+    ),
+    "PSU": (
+        "brand_hint",
+        "model_hint",
+        "wattage_w_hint",
+        "efficiency_hint",
+        "atx_version_hint",
+        "native_12v_connector_hint",
+        "native_12v_connector_count_hint",
+        "modular_hint",
+        "form_factor_hint",
+        "warranty_years",
+    ),
+    "CASE": (
+        "brand_hint",
+        "model_hint",
+        "form_factor_hint",
+        "gpu_max_length_mm_hint",
+        "cpu_cooler_max_height_mm_hint",
+        "radiator_support_mm_hint",
+    ),
+}
 
 
 def _model_to_dict(value: Any) -> dict[str, Any]:
@@ -61,6 +145,10 @@ def _normalize_whitelist(
     return normalized
 
 
+def _default_whitelist_for_category(category: str) -> list[str]:
+    return list(_DEFAULT_SPEC_WHITELIST_BY_CATEGORY.get(category, ()))
+
+
 def _extract_items_by_category(retrieval_result: Any) -> dict[str, list[Any]]:
     if isinstance(retrieval_result, P1RetrievalResult):
         return dict(retrieval_result.items_by_category)
@@ -91,7 +179,9 @@ def _compress_specs(
 
     specs_map = {str(key): raw_specs[key] for key in raw_specs}
     sorted_keys = sorted(specs_map.keys())
-    category_whitelist = whitelist_by_category.get(category, [])
+    category_whitelist = whitelist_by_category.get(category) or _default_whitelist_for_category(
+        category
+    )
 
     if category_whitelist:
         allowed = set(category_whitelist)
@@ -100,6 +190,8 @@ def _compress_specs(
         if removed_by_whitelist:
             reasons.add("not_whitelisted")
             dropped_specs.extend(removed_by_whitelist)
+        if category not in whitelist_by_category:
+            reasons.add("default_whitelist_used")
     else:
         reasons.add("fallback_used")
         kept_keys = sorted_keys

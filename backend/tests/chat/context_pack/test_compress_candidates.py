@@ -99,6 +99,9 @@ def test_compress_candidates_trims_specs_by_sorted_keys_when_too_many() -> None:
                         "z_key": "z",
                         "a_key": "a",
                         "m_key": "m",
+                        "ddr_gen_hint": "DDR5",
+                        "capacity_gb_hint": 32,
+                        "speed_mts_hint": 6000,
                     },
                     "price": 2500,
                     "source": "coolpc",
@@ -116,10 +119,94 @@ def test_compress_candidates_trims_specs_by_sorted_keys_when_too_many() -> None:
         max_specs_per_part=2,
     )
 
-    assert list(compressed["RAM"][0]["key_specs"].keys()) == ["a_key", "m_key"]
-    assert drop_log["ram-1"]["dropped_specs"] == ["z_key"]
+    assert list(compressed["RAM"][0]["key_specs"].keys()) == [
+        "capacity_gb_hint",
+        "ddr_gen_hint",
+    ]
+    assert drop_log["ram-1"]["dropped_specs"] == [
+        "a_key",
+        "m_key",
+        "speed_mts_hint",
+        "z_key",
+    ]
     assert "too_many_specs" in drop_log["ram-1"]["reason"]
-    assert "fallback_used" in drop_log["ram-1"]["reason"]
+    assert "default_whitelist_used" in drop_log["ram-1"]["reason"]
+    assert "fallback_used" not in drop_log["ram-1"]["reason"]
+
+
+def test_compress_candidates_core_categories_no_longer_fallback_to_full_spec_set() -> None:
+    p1_result = {
+        "items_by_category": {
+            "CPU": [
+                {
+                    "part_id": "cpu-3",
+                    "category": "CPU",
+                    "display_name": "CPU Y",
+                    "key_specs": {
+                        "socket_hint": "AM5",
+                        "cores_hint": 8,
+                        "marketing_copy": "lots of words",
+                        "bundle_note": "includes game code",
+                    },
+                    "price": 6000,
+                    "source": "coolpc",
+                    "source_url": "https://example.invalid/cpu-3",
+                    "run_id": "run-5",
+                }
+            ]
+        }
+    }
+
+    compressed, drop_log = compress_candidates(
+        p1_result,
+        spec_whitelist_by_category={},
+        max_value_len=120,
+        max_specs_per_part=12,
+    )
+
+    assert compressed["CPU"][0]["key_specs"] == {
+        "cores_hint": "8",
+        "socket_hint": "AM5",
+    }
+    assert drop_log["cpu-3"]["dropped_specs"] == ["bundle_note", "marketing_copy"]
+    assert "default_whitelist_used" in drop_log["cpu-3"]["reason"]
+    assert "fallback_used" not in drop_log["cpu-3"]["reason"]
+
+
+def test_compress_candidates_non_core_categories_still_use_legacy_fallback() -> None:
+    p1_result = {
+        "items_by_category": {
+            "COOLER": [
+                {
+                    "part_id": "cooler-1",
+                    "category": "COOLER",
+                    "display_name": "Cooler X",
+                    "key_specs": {
+                        "height_mm_hint": 155,
+                        "warranty_years": 5,
+                    },
+                    "price": 1290,
+                    "source": "coolpc",
+                    "source_url": "https://example.invalid/cooler-1",
+                    "run_id": "run-6",
+                }
+            ]
+        }
+    }
+
+    compressed, drop_log = compress_candidates(
+        p1_result,
+        spec_whitelist_by_category={},
+        max_value_len=120,
+        max_specs_per_part=12,
+    )
+
+    assert compressed["COOLER"][0]["key_specs"] == {
+        "height_mm_hint": "155",
+        "warranty_years": "5",
+    }
+    assert drop_log["cooler-1"]["dropped_specs"] == []
+    assert "fallback_used" in drop_log["cooler-1"]["reason"]
 
 
 def test_compress_candidates_is_deterministic() -> None:

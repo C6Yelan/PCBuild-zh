@@ -14,13 +14,13 @@ _CATEGORY_ORDER = _DEFAULT_BUILD_CATEGORIES + ("GPU",)
 _BUDGET_SIGNAL_RE = re.compile(r"(?:^|\D)\d+(?:\.\d+)?\s*(?:萬|w|k|千|元|塊)", re.IGNORECASE)
 _BUILD_INTENT_PATTERNS = (
     re.compile(r"配\s*單"),
+    re.compile(r"配\s*置"),
     re.compile(r"組\s*(?:一?台)?\s*(?:電腦|主機|機)"),
     re.compile(r"整\s*機"),
     re.compile(r"文\s*書\s*機"),
     re.compile(r"遊\s*戲\s*機"),
     re.compile(r"工\s*作\s*站"),
-    re.compile(r"預\s*算"),
-    re.compile(r"主機(?!板)"),
+    re.compile(r"推\s*薦.*(?:電腦|主機(?!板)|機)"),
 )
 _GPU_INTENT_PATTERNS = (
     re.compile(r"獨\s*顯"),
@@ -77,6 +77,20 @@ def _detect_categories(text: str) -> list[str]:
     return categories
 
 
+def _merge_build_categories(
+    categories: Sequence[str],
+    *,
+    wants_gpu: bool,
+) -> list[str]:
+    merged_categories = list(_DEFAULT_BUILD_CATEGORIES)
+    for category in categories:
+        if category not in merged_categories:
+            merged_categories.append(category)
+    if wants_gpu and "GPU" not in merged_categories:
+        merged_categories.append("GPU")
+    return merged_categories
+
+
 def infer_chat_demand(
     message: str,
     history: Sequence[ChatMessage] | None = None,
@@ -102,13 +116,12 @@ def infer_chat_demand(
         categories = [category for category in categories if category != "GPU"]
 
     if categories:
-        if has_build_intent or has_budget_signal:
-            merged_categories = list(_DEFAULT_BUILD_CATEGORIES)
-            for category in categories:
-                if category not in merged_categories:
-                    merged_categories.append(category)
-            if wants_gpu and "GPU" not in merged_categories:
-                merged_categories.append("GPU")
+        # Keep component questions narrow unless the text clearly asks for a full build.
+        if has_build_intent:
+            merged_categories = _merge_build_categories(
+                categories,
+                wants_gpu=wants_gpu,
+            )
             return {
                 "categories": merged_categories,
                 "top_k": _DEFAULT_TOP_K,
@@ -120,12 +133,12 @@ def infer_chat_demand(
             "env": _DEFAULT_ENV,
         }
 
-    if not (has_build_intent or has_budget_signal):
+    # Budget-only chat should not silently turn into a full build request unless
+    # there is already clear build context in the current turn or recent history.
+    if not has_build_intent:
         return None
 
-    inferred_categories = list(_DEFAULT_BUILD_CATEGORIES)
-    if wants_gpu and not avoids_gpu:
-        inferred_categories.append("GPU")
+    inferred_categories = _merge_build_categories((), wants_gpu=wants_gpu and not avoids_gpu)
     return {
         "categories": inferred_categories,
         "top_k": _DEFAULT_TOP_K,

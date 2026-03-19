@@ -34,6 +34,30 @@ def test_infer_chat_demand_keeps_single_component_question_narrow() -> None:
     }
 
 
+def test_infer_chat_demand_keeps_component_question_narrow_even_with_budget() -> None:
+    demand = infer_chat_demand("CPU 預算 1 萬內有什麼推薦？", history=None)
+
+    assert demand == {
+        "categories": ["CPU"],
+        "top_k": 2,
+        "env": "prod",
+    }
+
+
+def test_infer_chat_demand_returns_none_for_budget_only_chat_without_build_context() -> None:
+    assert infer_chat_demand("預算 2 萬內", history=None) is None
+
+
+def test_infer_chat_demand_detects_recommend_a_pc_as_build_intent() -> None:
+    demand = infer_chat_demand("推薦一台 3 萬內的電腦", history=None)
+
+    assert demand == {
+        "categories": ["CPU", "MB", "RAM", "SSD", "PSU", "CASE"],
+        "top_k": 2,
+        "env": "prod",
+    }
+
+
 def test_infer_chat_demand_can_use_recent_user_history() -> None:
     history = [
         ChatMessage(role="user", content="我想組一台文書機"),

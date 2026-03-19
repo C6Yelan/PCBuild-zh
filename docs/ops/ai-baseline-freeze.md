@@ -8,7 +8,13 @@
 - 填寫時禁止寫入 API key、Authorization header、完整 `AI_OAI_BASE_URL` 明文。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
-## 1.1 Canonical / Compat 定位
+## 1.1 目前收尾範圍
+- 正式 AI 主線以 `openai_compat` 為準。
+- `.env` 是唯一切換 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL` 的入口。
+- 本輪驗收只要求 provider health、regression report、release check `--mode p10`。
+- Gemini、本地模型、多平台比較、前端模型選擇、Grafana / Loki / dashboard 都不列入這份基線。
+
+## 1.2 Canonical / Compat 定位
 - chat 現行 canonical package 在 `backend/services/chat/{clients,context_pack,contracts,payloads,provider,service,staging}/`。
 - `backend/services/chat` 根下仍保留的 `provider_caller.py`、`service_seams.py`、`service_orchestration.py`、`chat_payload_context.py`、`snapshot_payloads.py` 等檔案，屬 compat / forwarding surface，不是新的主結構命名。
 - chat ops 的 canonical implementation 在 `backend.tools.ops.chat.*`；日常 CLI 仍以 `python -m backend.tools.ops.chat_*` 為 stable public surface。
@@ -33,6 +39,7 @@
 | `AI_TIMEOUT_SECONDS` | `<value>` |
 | `AI_MAX_OUTPUT_CHARS` | `<value>` |
 | `AI_OAI_BASE_URL_SHA12` | `<12-char sha256 prefix 或 ->` |
+| `AI_RAW_SNAPSHOT_DIR` | `<value>` |
 
 備註：
 - `AI_OAI_BASE_URL_SHA12` 來源為 `sha256(AI_OAI_BASE_URL)` 前 12 碼。
@@ -119,6 +126,12 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
 補充：
 - 若只做 provider smoke / health，不必整份重跑，直接看 `docs/ops/chat-provider-health.md`
 - 若只做 snapshot / quarantine 稽核，直接看 `docs/ops/chat-snapshot-audit.md`
+
+## 7.1 結果判讀
+- `chat_provider_healthcheck` exit code `0`：固定 smoke cases 全通過；`2`：至少一題失敗。
+- `chat_regression_report` exit code `0`：目前固定題組無失敗；`2`：至少一題失敗，需比對 `failed_cases` 與 `report_path`。
+- `chat_release_check --mode p10` exit code `0`：acceptance harness 通過；`2`：至少一個 deterministic check 失敗。
+- 三者任一不通過，都不應更新本次基線。
 
 ## 8. 回退 SOP
 1. 先找出上一份已確認可接受的基線紀錄，確認其 `git commit SHA` 與 AI 設定指紋。

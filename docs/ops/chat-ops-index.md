@@ -4,6 +4,11 @@
 
 ## 目前正式入口
 
+### 收尾版本主線
+- 目前正式支援的 AI 主線是 `openai_compat` + env-only 切換。
+- `.env` 是唯一切換入口；前端不負責選 provider / model / base_url。
+- Gemini、本地模型、多平台比較、dashboard 都不是這一階段的主線工作。
+
 ### Canonical / Compat 定位
 - canonical implementation tree 在 `backend.tools.ops.chat.*`。
 - stable public wrapper 仍是 `python -m backend.tools.ops.chat_provider_healthcheck`、`python -m backend.tools.ops.chat_regression_report`、`python -m backend.tools.ops.chat_snapshot_inspect`、`python -m backend.tools.ops.chat_staging_inspect`、`python -m backend.tools.ops.chat_release_check`。
@@ -37,6 +42,7 @@
 
 ## 使用順序建議
 1. 日常 smoke / provider 檢查：先看 `chat-provider-health.md`
-2. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
-3. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
-4. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`
+2. 要做最小必要驗收：依序跑 provider health、regression report、release check `--mode p10`
+3. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
+4. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
+5. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`

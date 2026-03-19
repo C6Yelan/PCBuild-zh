@@ -27,6 +27,14 @@ PCBuild-zh 目標是把台灣零售端的零件資料、相容性規則、可追
 - chat 主線不是直接把資料庫丟給模型，而是經過 demand normalization、retrieval、context pack、gate / DQ、staging / publish。
 - crawler / catalog / chat 都保留 traceability，重點欄位包含 `request_id`、`provider`、`model`、`context_pack_hash`、`snapshot_id`、`run_id`。
 
+## 快速導覽
+
+- [正式站點](https://pcbuild.redfiretw.xyz/)
+- [最新版本（Release）](../../releases/latest)
+- [後端結構與維護文件](docs/project-architecture.md)
+- [AI 接入與基線文件](docs/ops/chat-ops-index.md)
+- [觀測與儀表板相關檔案](observability/)
+
 ## 為什麼要做這個專案
 
 - 讓中文使用者可以用自然語言描述需求，得到更接近台灣零售現況的零件建議。

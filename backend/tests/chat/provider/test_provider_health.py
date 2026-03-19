@@ -154,3 +154,57 @@ def test_build_provider_messages_prepends_internal_system_prompt_for_user_text_m
     assert provider_messages[1]["role"] == "user"
     assert "幫我推薦文書機" in provider_messages[1]["content"]
     assert not provider_messages[1]["content"].startswith(SYSTEM_PROMPT)
+
+
+def test_build_provider_messages_adds_build_constraints_when_context_pack_exists() -> None:
+    request = ChatRequest(user_text="幫我組一台 3 萬內的遊戲主機")
+
+    provider_messages = chat_provider_caller.build_provider_messages(
+        request,
+        context_pack_text="=== CPU CANDIDATES ===\n[CPU#cpu-1] CPU 1",
+    )
+
+    assert provider_messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+    assert provider_messages[1]["role"] == "user"
+    assert "## ANSWER_CONSTRAINTS" in provider_messages[1]["content"]
+    assert "你必須優先根據 CONTEXT_PACK 裡的候選回答。" in provider_messages[1]["content"]
+    assert "若使用者有提預算" in provider_messages[1]["content"]
+    assert "這是整機/配單需求：請優先用候選組合回答，不要改成通用型夢幻配單。" in provider_messages[1]["content"]
+    assert "## CONTEXT_PACK" in provider_messages[1]["content"]
+
+
+def test_build_provider_messages_adds_component_constraints_for_single_category() -> None:
+    request = ChatRequest(user_text="請推薦一顆 CPU，預算 8000 元")
+
+    provider_messages = chat_provider_caller.build_provider_messages(
+        request,
+        context_pack_text="=== CPU CANDIDATES ===\n[CPU#cpu-1] CPU 1",
+    )
+
+    assert provider_messages[1]["content"] == (
+        "以下是先前對話紀錄（舊→新，最多8則）：\n\n\n"
+        "現在的使用者訊息：請推薦一顆 CPU，預算 8000 元\n"
+        "請在理解脈絡後以繁體中文回答。\n\n"
+        "## ANSWER_CONSTRAINTS\n"
+        "你必須優先根據 CONTEXT_PACK 裡的候選回答。\n"
+        "不要推薦 CONTEXT_PACK 沒出現的具體零件型號或品牌組合。\n"
+        "如果候選不足、價格不符、或條件不清楚，請直接說資料不足並指出需要補哪些條件。\n"
+        "若使用者有提預算，回答時必須明確說明候選是否在預算內、接近預算上限，或目前沒有符合預算的候選。\n"
+        "這是單零件需求：回答限制在 CPU 候選，不要跳去其他零件類別。\n\n"
+        "## CONTEXT_PACK\n"
+        "=== CPU CANDIDATES ===\n[CPU#cpu-1] CPU 1"
+    )
+
+
+def test_build_provider_messages_adds_upgrade_constraints_when_context_pack_exists() -> None:
+    request = ChatRequest(
+        user_text="我想升級 GPU，其他零件先保留，預算 15000 元"
+    )
+
+    provider_messages = chat_provider_caller.build_provider_messages(
+        request,
+        context_pack_text="=== GPU CANDIDATES ===\n[GPU#gpu-1] GPU 1",
+    )
+
+    assert "這是升級需求：請聚焦要升級的零件與相容性，不要改回整機推薦。" in provider_messages[1]["content"]
+    assert "這是整機/配單需求" not in provider_messages[1]["content"]

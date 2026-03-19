@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from backend.services.chat.build_policy import BuildRequestProfile, apply_build_candidate_gate
 from backend.services.chat.context_pack import P1Demand
 
 
@@ -63,6 +64,16 @@ def _category_counts(
     )
 
 
+def _retrieval_category_counts(retrieval_result: Any) -> str:
+    items_by_category = getattr(retrieval_result, "items_by_category", {})
+    if not isinstance(items_by_category, dict):
+        return ""
+    return ",".join(
+        f"{category}:{len(items_by_category.get(category, []))}"
+        for category in sorted(items_by_category.keys())
+    )
+
+
 def prepare_retrieval_artifacts(
     *,
     db: Any,
@@ -70,6 +81,7 @@ def prepare_retrieval_artifacts(
     categories: list[str],
     top_k: int,
     retrieval_demand: P1Demand | None,
+    build_profile: BuildRequestProfile,
     env: str,
     warnings: list[str],
     retrieve_topk_candidates: Callable[..., Any],
@@ -85,6 +97,26 @@ def prepare_retrieval_artifacts(
             demand=retrieval_demand,
             env=env,
         )
+        category_counts_before = _retrieval_category_counts(retrieval_result)
+        build_gate_result = apply_build_candidate_gate(
+            retrieval_result,
+            profile=build_profile,
+        )
+        retrieval_result = build_gate_result.retrieval_result
+        if build_gate_result.events:
+            warnings.extend(
+                f"build_gate:{event['stage']}:{event['category']}:{event['reason']}:{event['action']}"
+                for event in build_gate_result.events
+            )
+            log_operation(
+                "build_candidate_gate",
+                enabled=build_profile.enabled,
+                target_total_price=build_profile.target_total_price,
+                minimum_budget_utilization=build_profile.minimum_budget_utilization,
+                category_counts_before=category_counts_before,
+                category_counts_after=_retrieval_category_counts(retrieval_result),
+                gate_events=build_gate_result.events,
+            )
         compressed_candidates, drop_log = compress_candidates(
             retrieval_result,
             spec_whitelist_by_category=settings.p2_spec_whitelist_by_category,

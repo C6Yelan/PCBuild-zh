@@ -77,6 +77,7 @@ def _prepare_chat_retrieval_artifacts(
     categories: list[str],
     top_k: int,
     retrieval_demand: object,
+    build_profile: object,
     env: str,
     warnings: list[str],
 ) -> object:
@@ -86,6 +87,7 @@ def _prepare_chat_retrieval_artifacts(
         categories=categories,
         top_k=top_k,
         retrieval_demand=retrieval_demand,
+        build_profile=build_profile,
         env=env,
         warnings=warnings,
         retrieve_topk_candidates=retrieve_topk_candidates,

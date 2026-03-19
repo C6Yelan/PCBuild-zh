@@ -46,6 +46,7 @@ def build_orchestration_state(
             categories=demand.categories,
             top_k=demand.top_k,
             retrieval_demand=demand.retrieval_demand,
+            build_profile=demand.build_profile,
             env=demand.env,
             warnings=warnings,
         )

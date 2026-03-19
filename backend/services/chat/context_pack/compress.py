@@ -98,6 +98,7 @@ _DEFAULT_SPEC_WHITELIST_BY_CATEGORY: dict[str, tuple[str, ...]] = {
         "brand_hint",
         "model_hint",
         "form_factor_hint",
+        "mb_form_factor_support_hint",
         "gpu_max_length_mm_hint",
         "cpu_cooler_max_height_mm_hint",
         "radiator_support_mm_hint",

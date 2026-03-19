@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
+from backend.services.chat.build_policy import BuildRequestProfile, build_request_profile
 from backend.services.chat.context_pack import P1Demand
 from backend.services.chat.contracts import ChatRequest
 from backend.services.chat.retrieval_defaults import DEFAULT_RETRIEVAL_TOP_K
@@ -26,6 +27,7 @@ class DemandResolution:
     request_mode: str
     message_chars: int
     history_turns: int
+    build_profile: BuildRequestProfile
 
 
 def _inference_inputs(chat_request: ChatRequest) -> tuple[str, list[Any]]:
@@ -127,6 +129,11 @@ def resolve_demand(
         retrieval_demand,
         query_text=message_for_inference,
     )
+    build_profile = build_request_profile(
+        message_text=message_for_inference,
+        categories=categories,
+        retrieval_demand=retrieval_demand,
+    )
     request_mode = "messages" if chat_request.messages else "user_text"
     return DemandResolution(
         raw_demand=raw_demand,
@@ -140,6 +147,7 @@ def resolve_demand(
         request_mode=request_mode,
         message_chars=len(message_for_inference),
         history_turns=len(history_for_inference),
+        build_profile=build_profile,
     )
 
 
@@ -160,6 +168,7 @@ def log_demand_resolution(
         message_chars=demand.message_chars,
         history_turns=demand.history_turns,
         triggered_retrieval=triggered_retrieval,
+        build_mode=demand.build_profile.enabled,
     )
 
 

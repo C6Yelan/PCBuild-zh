@@ -9,8 +9,13 @@ tests and future refactors without reaching into private helpers.
 from __future__ import annotations
 
 from .retrieval_contracts import CandidatePart, P1Demand, P1RetrievalResult
-from .retrieval_runtime import retrieve_topk_candidates
-from .retrieval_sql import P1_ORDER_BY, build_category_retrieval_stmt, describe_order_by
+from .retrieval_runtime import detect_pg_trgm_support, retrieve_topk_candidates
+from .retrieval_sql import (
+    P1_ORDER_BY,
+    build_category_retrieval_stmt,
+    describe_order_by,
+    has_search_query,
+)
 
 __all__ = [
     "CandidatePart",
@@ -18,6 +23,8 @@ __all__ = [
     "P1RetrievalResult",
     "P1_ORDER_BY",
     "build_category_retrieval_stmt",
+    "detect_pg_trgm_support",
     "describe_order_by",
+    "has_search_query",
     "retrieve_topk_candidates",
 ]

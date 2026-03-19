@@ -64,6 +64,26 @@ class _MissingPointerDB:
         return None
 
 
+class _FakeBind:
+    def __init__(self, dialect_name: str = "postgresql") -> None:
+        self.dialect = SimpleNamespace(name=dialect_name)
+
+
+class _FakePGTrgmDB(_FakeDB):
+    def __init__(self) -> None:
+        super().__init__()
+        self.info: dict[str, object] = {}
+
+    def get_bind(self) -> object:
+        return _FakeBind()
+
+    def execute(self, stmt: object) -> _FakeExecuteResult:
+        sql = str(stmt)
+        if "pg_extension" in sql:
+            return _FakeExecuteResult(scalar=1)
+        return super().execute(stmt)
+
+
 def test_retrieve_topk_candidates_normalizes_inputs_and_logs(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
@@ -77,7 +97,7 @@ def test_retrieve_topk_candidates_normalizes_inputs_and_logs(monkeypatch: pytest
         _FakeDB(),
         categories=["CPU", "CPU", "  "],
         top_k=1,
-        demand=P1Demand(min_price=1000),
+        demand=P1Demand(query_text="Ryzen 7", min_price=1000),
         env="prod",
     )
 
@@ -102,10 +122,15 @@ def test_retrieve_topk_candidates_normalizes_inputs_and_logs(monkeypatch: pytest
     assert fields["publication_run_id"] == "publication-run-1"
     assert fields["top_k"] == 1
     assert fields["effective_top_k"] == 1
+    assert fields["query_text"] == "Ryzen 7"
+    assert fields["parsed_categories"] == "CPU"
     assert fields["matched_count"] == 3
     assert fields["returned_count"] == 1
-    assert fields["order_by"] == describe_order_by(P1Demand(min_price=1000))
+    assert fields["order_by"] == describe_order_by(P1Demand(query_text="Ryzen 7", min_price=1000))
     assert fields["filters"] == "min_price>=1000"
+    assert fields["used_fts"] is True
+    assert fields["used_trigram"] is False
+    assert fields["budget_aware_sorting"] is True
     assert isinstance(fields["latency_ms"], int)
     assert fields["latency_ms"] >= 0
 
@@ -141,3 +166,30 @@ def test_retrieve_topk_candidates_logs_budget_alias_filters(monkeypatch: pytest.
     _, fields = events[0]
     assert fields["filters"] == "budget<=12000,max_price<=12000"
     assert fields["order_by"] == describe_order_by(P1Demand(budget=12000))
+
+
+def test_retrieve_topk_candidates_uses_trigram_when_extension_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        retrieval_runtime,
+        "log_operation",
+        lambda event, **fields: events.append((event, fields)),
+    )
+
+    retrieve_topk_candidates(
+        _FakePGTrgmDB(),
+        categories=["GPU"],
+        top_k=5,
+        demand=P1Demand(query_text="RTX 5070"),
+        env="prod",
+    )
+
+    assert len(events) == 1
+    _, fields = events[0]
+    assert fields["used_fts"] is True
+    assert fields["used_trigram"] is True
+    assert fields["budget_aware_sorting"] is False
+    assert fields["order_by"] == describe_order_by(P1Demand(query_text="RTX 5070"), use_trigram=True)

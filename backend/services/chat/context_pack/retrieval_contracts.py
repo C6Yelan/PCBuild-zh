@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class P1Demand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    query_text: str | None = Field(default=None)
     budget: int | None = Field(default=None, ge=0)
     target_price: int | None = Field(default=None, ge=0)
     min_price: int | None = Field(default=None, ge=0)
@@ -28,6 +29,9 @@ class P1Demand(BaseModel):
     def _validate_price_range(self) -> "P1Demand":
         if self.min_price is not None and self.max_price is not None and self.min_price > self.max_price:
             raise ValueError("min_price must be <= max_price")
+        if self.query_text is not None:
+            normalized = self.query_text.strip()
+            self.query_text = normalized or None
         return self
 
 

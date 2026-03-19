@@ -13,17 +13,23 @@ def _normalize_sql(sql: str) -> str:
 
 
 def test_p1_query_has_deterministic_order_by() -> None:
-    demand = P1Demand(min_price=1000, max_price=5000)
+    demand = P1Demand(
+        query_text="RTX 5070 gaming",
+        min_price=1000,
+        max_price=5000,
+    )
 
     stmt1 = build_category_retrieval_stmt(
         category="CPU",
         top_k=3,
         demand=demand,
+        use_trigram=True,
     )
     stmt2 = build_category_retrieval_stmt(
         category="CPU",
         top_k=3,
         demand=demand,
+        use_trigram=True,
     )
 
     sql1 = _normalize_sql(
@@ -44,11 +50,16 @@ def test_p1_query_has_deterministic_order_by() -> None:
     )
 
     assert sql1 == sql2
+    assert "websearch_to_tsquery('simple', 'RTX 5070 gaming')" in sql1
+    assert "to_tsvector('simple'" in sql1
+    assert "ts_rank_cd(" in sql1
+    assert "similarity(" in sql1
     assert "catalog_price_snapshot.price >= 1000" in sql1
     assert "catalog_price_snapshot.price <= 5000" in sql1
-    assert "ORDER BY CASE WHEN (catalog_price_snapshot.price IS NOT NULL AND catalog_price_snapshot.price >= 1000 AND catalog_price_snapshot.price <= 5000) THEN 0 WHEN (catalog_price_snapshot.price IS NOT NULL) THEN 1 ELSE 2 END ASC" in sql1
+    assert "ORDER BY CASE WHEN (to_tsvector('simple'" in sql1
+    assert "THEN 0 WHEN (greatest(similarity" in sql1
     assert "abs(catalog_price_snapshot.price - 3000)" in sql1
-    assert "catalog_price_snapshot.price ASC NULLS LAST, catalog_product.product_id ASC" in sql1
+    assert "catalog_product.product_id ASC" in sql1
     assert "LIMIT 3" in sql1
     assert "catalog_price_snapshot.run_id = catalog_product.last_seen_run_id" in sql1
     assert "catalog_product.last_seen_run_id = '11111111-1111-1111-1111-111111111111'" not in sql1
@@ -91,3 +102,26 @@ def test_p1_query_uses_target_price_when_provided() -> None:
     )
 
     assert "abs(catalog_price_snapshot.price - 18000)" in sql
+
+
+def test_p1_query_uses_fts_without_trigram_when_disabled() -> None:
+    stmt = build_category_retrieval_stmt(
+        category="GPU",
+        top_k=5,
+        demand=P1Demand(query_text="Ryzen 9700X"),
+        use_trigram=False,
+    )
+
+    sql = _normalize_sql(
+        str(
+            stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+    )
+
+    assert "websearch_to_tsquery('simple', 'Ryzen 9700X')" in sql
+    assert "ts_rank_cd(" in sql
+    assert "similarity(" not in sql
+    assert describe_order_by(P1Demand(query_text="Ryzen 9700X"), use_trigram=False) == "search_match, fts_rank DESC, part_id ASC"

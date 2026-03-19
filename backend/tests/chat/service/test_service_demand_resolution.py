@@ -232,6 +232,24 @@ def test_resolve_demand_preserves_budget_filters_for_retrieval() -> None:
 
     assert demand.top_k == 5
     assert demand.retrieval_demand is not None
+    assert demand.retrieval_demand.query_text == "幫我找零件"
     assert demand.retrieval_demand.budget == 20000
     assert demand.retrieval_demand.max_price == 20000
     assert demand.retrieval_demand.target_price == 18000
+
+
+def test_resolve_demand_creates_query_text_only_retrieval_demand_when_filters_absent() -> None:
+    demand = resolve_demand(
+        ChatRequest(
+            user_text="最近有推薦的 CPU 嗎？",
+            demand={
+                "categories": ["CPU"],
+            },
+        ),
+        infer_chat_demand=lambda message, history=None: None,
+    )
+
+    assert demand.top_k == 5
+    assert demand.retrieval_demand is not None
+    assert demand.retrieval_demand.query_text == "最近有推薦的 CPU 嗎？"
+    assert demand.retrieval_demand.min_price is None

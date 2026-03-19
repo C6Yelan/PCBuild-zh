@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from time import perf_counter
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from backend.core.oplog import log_operation
@@ -15,6 +16,7 @@ from .retrieval_sql import (
     build_category_retrieval_stmt,
     build_retrieval_count_stmt,
     describe_order_by,
+    has_search_query,
 )
 
 
@@ -49,6 +51,37 @@ def summarize_retrieval_filters(demand: P1Demand | None) -> str:
     return ",".join(parts) if parts else "none"
 
 
+def detect_pg_trgm_support(db: Session) -> bool:
+    info = getattr(db, "info", None)
+    if isinstance(info, dict) and "pg_trgm_available" in info:
+        return bool(info["pg_trgm_available"])
+
+    bind_getter = getattr(db, "get_bind", None)
+    if bind_getter is None:
+        return False
+
+    try:
+        bind = bind_getter()
+    except Exception:
+        return False
+
+    if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
+        return False
+
+    try:
+        available = bool(
+            db.execute(
+                sa.text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')")
+            ).scalar_one()
+        )
+    except Exception:
+        available = False
+
+    if isinstance(info, dict):
+        info["pg_trgm_available"] = available
+    return available
+
+
 def build_candidate_part(row: Mapping[str, Any]) -> CandidatePart:
     return CandidatePart(
         part_id=str(row["part_id"]),
@@ -68,6 +101,7 @@ def fetch_category_candidates(
     category: str,
     top_k: int,
     demand: P1Demand | None,
+    use_trigram: bool,
 ) -> tuple[int, list[CandidatePart]]:
     matched_count = int(
         db.execute(
@@ -83,6 +117,7 @@ def fetch_category_candidates(
                 category=category,
                 top_k=top_k,
                 demand=demand,
+                use_trigram=use_trigram,
             )
         ).mappings()
     )
@@ -109,7 +144,19 @@ def retrieve_topk_candidates(
 
     publication_run_id = ptr.run_id
     filters_summary = summarize_retrieval_filters(demand)
-    order_by_summary = describe_order_by(demand)
+    use_fts = has_search_query(demand)
+    use_trigram = use_fts and detect_pg_trgm_support(db)
+    order_by_summary = describe_order_by(demand, use_trigram=use_trigram)
+    query_text = demand.query_text if demand is not None else None
+    budget_aware_sorting = bool(
+        demand is not None
+        and (
+            demand.min_price is not None
+            or demand.max_price is not None
+            or demand.target_price is not None
+            or demand.budget is not None
+        )
+    )
     result: dict[str, list[CandidatePart]] = {}
 
     for category in normalized_categories:
@@ -119,6 +166,7 @@ def retrieve_topk_candidates(
             category=category,
             top_k=normalized_top_k,
             demand=demand,
+            use_trigram=use_trigram,
         )
         result[category] = candidates
         latency_ms = int((perf_counter() - started) * 1000)
@@ -129,10 +177,15 @@ def retrieve_topk_candidates(
             publication_run_id=str(publication_run_id),
             top_k=normalized_top_k,
             effective_top_k=normalized_top_k,
+            query_text=query_text or "-",
+            parsed_categories=",".join(normalized_categories),
             matched_count=matched_count,
             returned_count=len(candidates),
             order_by=order_by_summary,
             filters=filters_summary,
+            used_fts=use_fts,
+            used_trigram=use_trigram,
+            budget_aware_sorting=budget_aware_sorting,
             latency_ms=latency_ms,
         )
 

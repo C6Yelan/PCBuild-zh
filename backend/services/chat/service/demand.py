@@ -84,6 +84,19 @@ def _extract_retrieval_inputs(
     return categories, top_k, retrieval_demand, env
 
 
+def _with_query_text(
+    retrieval_demand: P1Demand | None,
+    *,
+    query_text: str,
+) -> P1Demand | None:
+    normalized_query_text = query_text.strip()
+    if not normalized_query_text:
+        return retrieval_demand
+    if retrieval_demand is None:
+        return P1Demand(query_text=normalized_query_text)
+    return retrieval_demand.model_copy(update={"query_text": normalized_query_text})
+
+
 def _resolve_raw_demand(
     chat_request: ChatRequest,
     *,
@@ -108,8 +121,12 @@ def resolve_demand(
         chat_request,
         infer_chat_demand=infer_chat_demand,
     )
-    categories, top_k, retrieval_demand, env = _extract_retrieval_inputs(raw_demand)
     message_for_inference, history_for_inference = _inference_inputs(chat_request)
+    categories, top_k, retrieval_demand, env = _extract_retrieval_inputs(raw_demand)
+    retrieval_demand = _with_query_text(
+        retrieval_demand,
+        query_text=message_for_inference,
+    )
     request_mode = "messages" if chat_request.messages else "user_text"
     return DemandResolution(
         raw_demand=raw_demand,

@@ -8,7 +8,7 @@ def test_infer_chat_demand_for_explicit_build_request() -> None:
 
     assert demand == {
         "categories": ["CPU", "MB", "RAM", "SSD", "PSU", "CASE"],
-        "top_k": 2,
+        "top_k": 5,
         "env": "prod",
     }
 
@@ -29,7 +29,7 @@ def test_infer_chat_demand_keeps_single_component_question_narrow() -> None:
 
     assert demand == {
         "categories": ["CPU"],
-        "top_k": 2,
+        "top_k": 5,
         "env": "prod",
     }
 
@@ -39,7 +39,7 @@ def test_infer_chat_demand_keeps_component_question_narrow_even_with_budget() ->
 
     assert demand == {
         "categories": ["CPU"],
-        "top_k": 2,
+        "top_k": 5,
         "env": "prod",
     }
 
@@ -53,7 +53,7 @@ def test_infer_chat_demand_detects_recommend_a_pc_as_build_intent() -> None:
 
     assert demand == {
         "categories": ["CPU", "MB", "RAM", "SSD", "PSU", "CASE"],
-        "top_k": 2,
+        "top_k": 5,
         "env": "prod",
     }
 
@@ -68,6 +68,6 @@ def test_infer_chat_demand_can_use_recent_user_history() -> None:
 
     assert demand == {
         "categories": ["CPU", "MB", "RAM", "SSD", "PSU", "CASE"],
-        "top_k": 2,
+        "top_k": 5,
         "env": "prod",
     }

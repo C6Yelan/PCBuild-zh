@@ -5,6 +5,7 @@ import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
 import backend.services.chat.snapshot_store as chat_snapshot_store
 from backend.services.chat.contracts import ChatRequest
+from backend.services.chat.service.demand import resolve_demand
 
 
 def _sample_compressed_candidates() -> dict[str, list[dict[str, object]]]:
@@ -212,3 +213,25 @@ def test_generate_chat_reply_keeps_generic_chat_when_inference_returns_none(
     ai_events = [fields for event, fields in events if event == "ai_call"]
     assert len(ai_events) == 1
     assert ai_events[0]["context_pack_hash"] == "-"
+
+
+def test_resolve_demand_preserves_budget_filters_for_retrieval() -> None:
+    demand = resolve_demand(
+        ChatRequest(
+            user_text="幫我找零件",
+            demand={
+                "categories": ["GPU"],
+                "filters": {
+                    "budget": 20000,
+                    "target_price": 18000,
+                },
+            },
+        ),
+        infer_chat_demand=lambda message, history=None: None,
+    )
+
+    assert demand.top_k == 5
+    assert demand.retrieval_demand is not None
+    assert demand.retrieval_demand.budget == 20000
+    assert demand.retrieval_demand.max_price == 20000
+    assert demand.retrieval_demand.target_price == 18000

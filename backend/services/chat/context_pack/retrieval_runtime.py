@@ -12,9 +12,9 @@ from backend.models.crawler_publication import CrawlerPublicationPointer
 
 from .retrieval_contracts import CandidatePart, P1Demand, P1RetrievalResult
 from .retrieval_sql import (
-    P1_ORDER_BY,
     build_category_retrieval_stmt,
     build_retrieval_count_stmt,
+    describe_order_by,
 )
 
 
@@ -38,6 +38,10 @@ def summarize_retrieval_filters(demand: P1Demand | None) -> str:
     if demand is None:
         return "none"
     parts: list[str] = []
+    if demand.budget is not None:
+        parts.append(f"budget<={demand.budget}")
+    if demand.target_price is not None:
+        parts.append(f"target_price={demand.target_price}")
     if demand.min_price is not None:
         parts.append(f"min_price>={demand.min_price}")
     if demand.max_price is not None:
@@ -105,6 +109,7 @@ def retrieve_topk_candidates(
 
     publication_run_id = ptr.run_id
     filters_summary = summarize_retrieval_filters(demand)
+    order_by_summary = describe_order_by(demand)
     result: dict[str, list[CandidatePart]] = {}
 
     for category in normalized_categories:
@@ -123,9 +128,10 @@ def retrieve_topk_candidates(
             env=env,
             publication_run_id=str(publication_run_id),
             top_k=normalized_top_k,
+            effective_top_k=normalized_top_k,
             matched_count=matched_count,
             returned_count=len(candidates),
-            order_by=P1_ORDER_BY,
+            order_by=order_by_summary,
             filters=filters_summary,
             latency_ms=latency_ms,
         )

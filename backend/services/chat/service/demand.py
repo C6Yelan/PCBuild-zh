@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from backend.services.chat.context_pack import P1Demand
 from backend.services.chat.contracts import ChatRequest
+from backend.services.chat.retrieval_defaults import DEFAULT_RETRIEVAL_TOP_K
 
 
 @dataclass(slots=True)
@@ -53,7 +54,7 @@ def _extract_retrieval_inputs(
     raw_demand: dict[str, Any] | None,
 ) -> tuple[list[str], int, P1Demand | None, str]:
     if not isinstance(raw_demand, dict):
-        return [], 5, None, "prod"
+        return [], DEFAULT_RETRIEVAL_TOP_K, None, "prod"
 
     categories: list[str] = []
     raw_categories = raw_demand.get("categories")
@@ -63,11 +64,11 @@ def _extract_retrieval_inputs(
             if normalized:
                 categories.append(normalized)
 
-    raw_top_k = raw_demand.get("top_k", 5)
+    raw_top_k = raw_demand.get("top_k", DEFAULT_RETRIEVAL_TOP_K)
     try:
         top_k = int(raw_top_k)
     except (TypeError, ValueError):
-        top_k = 5
+        top_k = DEFAULT_RETRIEVAL_TOP_K
 
     raw_env = raw_demand.get("env")
     env = raw_env.strip() if isinstance(raw_env, str) and raw_env.strip() else "prod"

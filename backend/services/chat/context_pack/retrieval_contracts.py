@@ -9,8 +9,20 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class P1Demand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    budget: int | None = Field(default=None, ge=0)
+    target_price: int | None = Field(default=None, ge=0)
     min_price: int | None = Field(default=None, ge=0)
     max_price: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_budget_aliases(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        normalized = dict(raw)
+        if normalized.get("max_price") is None and normalized.get("budget") is not None:
+            normalized["max_price"] = normalized["budget"]
+        return normalized
 
     @model_validator(mode="after")
     def _validate_price_range(self) -> "P1Demand":

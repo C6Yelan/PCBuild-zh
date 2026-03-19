@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.services.chat.context_pack import retrieve_topk_candidates
-from backend.services.chat.context_pack.retrieval import P1Demand, P1_ORDER_BY
+from backend.services.chat.context_pack.retrieval import P1Demand, describe_order_by
 from backend.services.chat.context_pack import retrieval_runtime
 
 
@@ -101,9 +101,10 @@ def test_retrieve_topk_candidates_normalizes_inputs_and_logs(monkeypatch: pytest
     assert fields["env"] == "prod"
     assert fields["publication_run_id"] == "publication-run-1"
     assert fields["top_k"] == 1
+    assert fields["effective_top_k"] == 1
     assert fields["matched_count"] == 3
     assert fields["returned_count"] == 1
-    assert fields["order_by"] == P1_ORDER_BY
+    assert fields["order_by"] == describe_order_by(P1Demand(min_price=1000))
     assert fields["filters"] == "min_price>=1000"
     assert isinstance(fields["latency_ms"], int)
     assert fields["latency_ms"] >= 0
@@ -117,3 +118,26 @@ def test_retrieve_topk_candidates_requires_publication_pointer() -> None:
             top_k=1,
             env="prod",
         )
+
+
+def test_retrieve_topk_candidates_logs_budget_alias_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        retrieval_runtime,
+        "log_operation",
+        lambda event, **fields: events.append((event, fields)),
+    )
+
+    retrieve_topk_candidates(
+        _FakeDB(),
+        categories=["CPU"],
+        top_k=5,
+        demand=P1Demand(budget=12000),
+        env="prod",
+    )
+
+    assert len(events) == 1
+    _, fields = events[0]
+    assert fields["filters"] == "budget<=12000,max_price<=12000"
+    assert fields["order_by"] == describe_order_by(P1Demand(budget=12000))

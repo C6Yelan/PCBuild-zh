@@ -5,8 +5,9 @@ import re
 from typing import Sequence
 
 from backend.services.chat.contracts import ChatMessage
+from backend.services.chat.retrieval_defaults import DEFAULT_RETRIEVAL_TOP_K
 
-_DEFAULT_TOP_K = 2
+_DEFAULT_TOP_K = DEFAULT_RETRIEVAL_TOP_K
 _DEFAULT_ENV = "prod"
 _RECENT_USER_TURNS = 2
 _DEFAULT_BUILD_CATEGORIES = ("CPU", "MB", "RAM", "SSD", "PSU", "CASE")

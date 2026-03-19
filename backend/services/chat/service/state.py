@@ -40,6 +40,7 @@ class ChatOrchestrationState:
             top_k=self.demand.top_k,
             env=self.demand.env,
             normalization_summary=self.demand.normalization_summary(),
+            build_scoring_summary=self.retrieval.build_scoring_summary,
         )
 
     def persist_snapshot(
@@ -144,4 +145,5 @@ class ChatOrchestrationState:
             demand_source=context.demand_source,
             triggered_retrieval=context.triggered_retrieval,
             normalization_summary=context.normalization_summary,
+            build_scoring_summary=context.build_scoring_summary,
         )

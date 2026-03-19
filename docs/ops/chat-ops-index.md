@@ -6,11 +6,12 @@
 
 ### 收尾版本主線
 - 目前正式支援的 AI 主線是 `openai_compat` + env-only 切換。
-- chat 主流程固定為 `NormalizedDemand -> retrieval / semantic policy / compatibility gate -> clean context pack -> final answer`。
+- chat 主流程固定為 `NormalizedDemand -> retrieval / semantic policy / compatibility gate -> post-gate build scoring -> clean context pack -> final answer`。
 - `.env` 是唯一切換入口；前端不負責選 provider / model / base_url。
 - Windows + WSL 本機只負責改碼、純 Python 驗證與 git 操作；所有 `docker compose` 與 chat ops 驗收都只在伺服器主機執行。
 - Gemini、本地模型、多平台比較、dashboard 都不是這一階段的主線工作。
 - 若 normalization 失敗或 clean candidate 不足，系統必須保守降級並直接說明資料不足，不得硬湊 build。
+- build / upgrade 類題目若 trace 有 `build_scoring_summary`，人工判讀應優先看 `budget_utilization_score`、`cpu_gpu_balance_score`、`motherboard_tier_match_score`。
 
 ### Canonical / Compat 定位
 - canonical implementation tree 在 `backend.tools.ops.chat.*`。

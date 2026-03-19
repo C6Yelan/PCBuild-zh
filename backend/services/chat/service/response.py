@@ -95,8 +95,12 @@ def log_ai_call(
     demand_source: str,
     triggered_retrieval: bool,
     normalization_summary: dict[str, Any] | None = None,
+    build_scoring_summary: dict[str, Any] | None = None,
 ) -> None:
     summary = dict(normalization_summary or {})
+    scoring_summary = dict(build_scoring_summary or {})
+    selected_build = dict(scoring_summary.get("selected_build") or {})
+    score_breakdown = dict(selected_build.get("score_breakdown") or {})
     log_operation(
         "ai_call",
         request_id=request_id,
@@ -126,6 +130,14 @@ def log_ai_call(
         normalization_missing_information=",".join(summary.get("normalization_missing_information", []) or [])
         or "-",
         normalization_fallback_used=bool(summary.get("normalization_fallback_used", False)),
+        build_profile=scoring_summary.get("build_profile", "-") or "-",
+        build_usage_profile=scoring_summary.get("usage_profile", "-") or "-",
+        target_total_price=scoring_summary.get("target_total_price"),
+        minimum_budget_utilization=scoring_summary.get("minimum_budget_utilization"),
+        total_build_price=selected_build.get("total_build_price"),
+        motherboard_tier_match_score=score_breakdown.get("motherboard_tier_match_score"),
+        cpu_gpu_balance_score=score_breakdown.get("cpu_gpu_balance_score"),
+        budget_utilization_score=score_breakdown.get("budget_utilization_score"),
     )
 
 

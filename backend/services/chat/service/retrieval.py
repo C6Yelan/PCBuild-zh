@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from backend.services.chat.build_policy import BuildRequestProfile, apply_build_candidate_gate
+from backend.services.chat.build_scoring import apply_build_scoring
 from backend.services.chat.context_pack import P1Demand
 
 
@@ -17,6 +18,7 @@ class RetrievalArtifacts:
     context_pack_text: str | None
     context_pack_hash: str
     context_pack_meta: dict[str, object]
+    build_scoring_summary: dict[str, object] | None
 
     @classmethod
     def empty(cls) -> RetrievalArtifacts:
@@ -26,6 +28,7 @@ class RetrievalArtifacts:
             context_pack_text=None,
             context_pack_hash="-",
             context_pack_meta={},
+            build_scoring_summary=None,
         )
 
 
@@ -106,6 +109,12 @@ def prepare_retrieval_artifacts(
             profile=build_profile,
         )
         retrieval_result = build_gate_result.retrieval_result
+        build_scoring_result = apply_build_scoring(
+            retrieval_result,
+            profile=build_profile,
+            normalized_demand=normalized_demand,
+        )
+        retrieval_result = build_scoring_result.retrieval_result
         if build_gate_result.events:
             warnings.extend(
                 f"build_gate:{event['stage']}:{event['category']}:{event['reason']}:{event['action']}"
@@ -119,6 +128,36 @@ def prepare_retrieval_artifacts(
                 category_counts_before=category_counts_before,
                 category_counts_after=_retrieval_category_counts(retrieval_result),
                 gate_events=build_gate_result.events,
+            )
+        build_scoring_summary = build_scoring_result.context_meta
+        if build_scoring_summary:
+            selected_build = build_scoring_summary.get("selected_build")
+            selected_breakdown = (
+                dict(selected_build.get("score_breakdown", {}))
+                if isinstance(selected_build, dict)
+                else {}
+            )
+            rejected_builds = build_scoring_summary.get("rejected_builds")
+            log_operation(
+                "build_candidate_scoring",
+                build_profile=build_scoring_summary.get("build_profile", build_profile.request_mode),
+                usage_profile=build_scoring_summary.get("usage_profile", build_profile.usage_profile),
+                target_total_price=build_scoring_summary.get("target_total_price"),
+                minimum_budget_utilization=build_scoring_summary.get("minimum_budget_utilization"),
+                total_build_price=(selected_build or {}).get("total_build_price") if isinstance(selected_build, dict) else None,
+                component_score_breakdown=selected_breakdown,
+                motherboard_tier_match_score=selected_breakdown.get("motherboard_tier_match_score"),
+                cpu_gpu_balance_score=selected_breakdown.get("cpu_gpu_balance_score"),
+                budget_utilization_score=selected_breakdown.get("budget_utilization_score"),
+                selected_candidate_parts=(selected_build or {}).get("parts") if isinstance(selected_build, dict) else None,
+                selected_candidate_penalties=(selected_build or {}).get("applied_penalties") if isinstance(selected_build, dict) else None,
+                selected_candidate_warnings=(selected_build or {}).get("applied_warnings") if isinstance(selected_build, dict) else None,
+                rejected_candidate_reasons=[
+                    build.get("candidate_rejection_reasons")
+                    for build in (rejected_builds or [])
+                    if isinstance(build, dict)
+                ],
+                candidate_pool_warning=build_scoring_summary.get("candidate_pool_warning"),
             )
         compressed_candidates, drop_log = compress_candidates(
             retrieval_result,
@@ -147,12 +186,14 @@ def prepare_retrieval_artifacts(
         context_pack = build_context_pack(
             compressed_by_category=compressed_candidates,
             category_order=categories,
-            enable_rerank=True,
+            enable_rerank=not bool(build_scoring_summary),
             demand=normalized_demand,
         )
         context_pack_text = context_pack.text
         context_pack_hash = context_pack.hash
         context_pack_meta = dict(getattr(context_pack, "meta", None) or {})
+        if build_scoring_summary:
+            context_pack_meta["build_scoring"] = build_scoring_summary
         log_operation(
             "p3_context_pack",
             env=env,
@@ -166,6 +207,7 @@ def prepare_retrieval_artifacts(
             context_pack_text=context_pack_text,
             context_pack_hash=context_pack_hash,
             context_pack_meta=context_pack_meta,
+            build_scoring_summary=build_scoring_summary,
         )
     except Exception as exc:
         warnings.append("p1_retrieval_failed")

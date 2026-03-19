@@ -25,6 +25,7 @@ class ChatPayloadContext:
     top_k: int
     env: str
     normalization_summary: dict[str, Any]
+    build_scoring_summary: dict[str, Any] | None = None
 
 
 def build_snapshot_store_kwargs(

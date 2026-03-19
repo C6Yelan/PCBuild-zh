@@ -9,8 +9,9 @@
 - chat 回答主線固定為：
   1. 先做 AI 前置需求正規化 `NormalizedDemand`
   2. 後端依正規化需求做 retrieval / semantic policy / compatibility gate
-  3. 只把乾淨候選交給 AI 做最終中文回答
-  4. 若 normalization 失敗或候選不足，必須保守降級，不硬湊推薦
+  3. build / upgrade 類題目再做 post-gate build scoring / tier matching
+  4. 只把重排後的乾淨候選與 scoring 摘要交給 AI 做最終中文回答
+  5. 若 normalization 失敗或候選不足，必須保守降級，不硬湊推薦
 
 最小必要文件入口：
 - [Chat Ops Index](/home/ayaya/projects/PCBuild-zh/docs/ops/chat-ops-index.md)
@@ -90,3 +91,8 @@ docker compose up -d --build fastapi
 - `幫我找 2 萬左右的 RTX 5070 顯卡`
 - `最近有推薦的 Ryzen 9700X CPU 嗎？`
 - `幫我配一台 4 萬內遊戲機，想要 AMD CPU + NVIDIA 顯卡`
+
+這輪 build scoring 驗收重點：
+- single_part 不應被 build scoring 污染
+- gaming build 不應再出現高價 CPU 配中低階 GPU、RAM 異常吃預算、或高階 CPU 搭明顯入門主機板
+- 若 clean 候選不足以有效利用預算，回答要保守說明條件限制

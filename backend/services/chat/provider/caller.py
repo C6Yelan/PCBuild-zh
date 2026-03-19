@@ -9,6 +9,7 @@ from backend.services.chat.clients.openai_compat_client import (
     generate_openai_compat_text,
 )
 from backend.services.chat.build_policy import BuildRequestProfile
+from backend.services.chat.build_scoring import build_scoring_message
 from backend.services.chat.config import (
     AISettings,
     SYSTEM_PROMPT,
@@ -87,8 +88,10 @@ def _build_retrieval_answer_constraints(
 
     if normalized_demand.request_mode == "build":
         lines.append("這是整機 build 需求：優先維持需求一致性與相容性，不可改成單品問答。")
+        lines.append("回答格式至少要有：1. 一句結論判斷這組 gaming build 是否合理。2. 零件清單。3. 說明 CPU/GPU/MB/RAM 的平衡。4. 若有候選不足或取捨，直接說。")
     elif normalized_demand.request_mode == "upgrade":
         lines.append("這是升級需求：聚焦升級目標與相容性，不可改回整機夢幻單。")
+        lines.append("若有 build scoring，必須優先參考其 selected_build 與 warning，不可只因為相容就把失衡組合寫成首選。")
     elif normalized_demand.request_mode == "single_part":
         if len(requested_categories) == 1:
             lines.append(f"這是單品需求：回答限制在 {requested_categories[0]} 候選，不可轉成整機 build。")
@@ -130,10 +133,15 @@ def _build_context_pack_message(
         sort_keys=True,
         indent=2,
     )
+    build_scoring_payload = build_scoring_message((context_pack_meta or {}).get("build_scoring"))
+    build_scoring_block = ""
+    if build_scoring_payload:
+        build_scoring_block = f"\n\n## BUILD_SCORING\n{build_scoring_payload}"
     return (
         f"{constraints}\n\n"
         f"## NORMALIZED_DEMAND\n{normalized_payload}\n\n"
         f"## CONTEXT_PACK\nclean_context_pack=true\n{context_pack_text}"
+        f"{build_scoring_block}"
     )
 
 

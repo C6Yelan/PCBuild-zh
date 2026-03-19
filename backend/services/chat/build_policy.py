@@ -498,6 +498,14 @@ def _estimate_required_psu_wattage(
     return rounded
 
 
+def estimate_required_psu_wattage(
+    *,
+    cpu: CandidatePart | None,
+    gpu: CandidatePart | None,
+) -> int | None:
+    return _estimate_required_psu_wattage(cpu=cpu, gpu=gpu)
+
+
 def _apply_psu_capacity_filters(
     items_by_category: Mapping[str, Sequence[CandidatePart]],
 ) -> tuple[list[CandidatePart], list[dict[str, str]]]:
@@ -726,6 +734,38 @@ def _cooler_case_status(cooler: CandidatePart, case: CandidatePart) -> str:
     return "unknown"
 
 
+def evaluate_build_selection_compatibility(
+    parts_by_category: Mapping[str, CandidatePart | None],
+) -> list[str]:
+    reasons: list[str] = []
+
+    cpu = parts_by_category.get("CPU")
+    motherboard = parts_by_category.get("MB")
+    ram = parts_by_category.get("RAM")
+    gpu = parts_by_category.get("GPU")
+    case = parts_by_category.get("CASE")
+    cooler = parts_by_category.get("COOLER")
+    psu = parts_by_category.get("PSU")
+
+    if cpu is not None and motherboard is not None and _cpu_mb_status(cpu, motherboard) == "incompatible":
+        reasons.append("cpu_mb")
+    if motherboard is not None and ram is not None and _mb_ram_status(motherboard, ram) == "incompatible":
+        reasons.append("mb_ram")
+    if motherboard is not None and case is not None and _mb_case_status(motherboard, case) == "incompatible":
+        reasons.append("mb_case")
+    if gpu is not None and case is not None and _gpu_case_status(gpu, case) == "incompatible":
+        reasons.append("gpu_case")
+    if cooler is not None and case is not None and _cooler_case_status(cooler, case) == "incompatible":
+        reasons.append("cooler_case")
+    if psu is not None:
+        specs = psu.key_specs if isinstance(psu.key_specs, Mapping) else {}
+        wattage = _to_int(specs.get("wattage_w")) or _to_int(specs.get("wattage_w_hint"))
+        required = _estimate_required_psu_wattage(cpu=cpu, gpu=gpu)
+        if wattage is not None and required is not None and wattage < required:
+            reasons.append("psu_capacity")
+    return reasons
+
+
 __all__ = [
     "BuildGateResult",
     "BuildRequestProfile",
@@ -733,4 +773,6 @@ __all__ = [
     "apply_build_candidate_gate",
     "build_request_profile",
     "classify_candidate",
+    "estimate_required_psu_wattage",
+    "evaluate_build_selection_compatibility",
 ]

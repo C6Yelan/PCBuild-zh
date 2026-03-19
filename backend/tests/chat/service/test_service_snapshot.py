@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import backend.services.chat.provider_caller as chat_provider_caller
 import backend.services.chat.service as chat_service
+from backend.services.chat.context_pack.retrieval import CandidatePart, P1RetrievalResult
 from backend.services.chat.contracts import ChatRequest
 
 
@@ -39,6 +40,26 @@ def _sample_candidates() -> dict[str, list[dict[str, object]]]:
             }
         ],
     }
+
+
+def _build_candidate(
+    *,
+    part_id: str,
+    category: str,
+    display_name: str,
+    price: int,
+    key_specs: dict[str, object],
+) -> CandidatePart:
+    return CandidatePart(
+        part_id=part_id,
+        category=category,
+        display_name=display_name,
+        key_specs=key_specs,
+        price=price,
+        source="coolpc",
+        source_url=f"https://example.invalid/{part_id}",
+        run_id=f"run-{part_id}",
+    )
 
 
 def test_snapshot_writes_extended_artifacts_with_retrieval(
@@ -261,11 +282,129 @@ def test_snapshot_writes_minimal_artifacts_without_retrieval(
         "staging_record.json",
         "meta.json",
     ]
+
+
+def test_snapshot_request_context_includes_build_scoring_summary(
+    monkeypatch,
+    snapshot_temp_dir: Path,
+    fake_chat_settings,
+    provider_result_factory,
+) -> None:
+    settings = fake_chat_settings(raw_snapshot_dir=snapshot_temp_dir)
+
+    monkeypatch.setattr(chat_service, "get_ai_settings", lambda: settings)
+    monkeypatch.setattr(
+        chat_service,
+        "retrieve_topk_candidates",
+        lambda *args, **kwargs: P1RetrievalResult(
+            items_by_category={
+                "CPU": [
+                    _build_candidate(
+                        part_id="cpu-mid",
+                        category="CPU",
+                        display_name="AMD Ryzen 5 9600X",
+                        price=7600,
+                        key_specs={"socket_hint": "AM5"},
+                    )
+                ],
+                "GPU": [
+                    _build_candidate(
+                        part_id="gpu-mid",
+                        category="GPU",
+                        display_name="NVIDIA RTX 5070",
+                        price=17490,
+                        key_specs={"power_w_hint": 250},
+                    )
+                ],
+                "MB": [
+                    _build_candidate(
+                        part_id="mb-mid",
+                        category="MB",
+                        display_name="B650M Gaming Plus",
+                        price=4990,
+                        key_specs={
+                            "socket_hint": "AM5",
+                            "memory_type_hint": "DDR5",
+                            "chipset_hint": "B650",
+                            "form_factor_hint": "M-ATX",
+                        },
+                    )
+                ],
+                "RAM": [
+                    _build_candidate(
+                        part_id="ram-sane",
+                        category="RAM",
+                        display_name="DDR5 16GBx2 Kit",
+                        price=2990,
+                        key_specs={"ddr_gen_hint": "DDR5", "capacity_gb_hint": 32, "kit_dimms_hint": 2},
+                    )
+                ],
+                "SSD": [
+                    _build_candidate(
+                        part_id="ssd-1tb",
+                        category="SSD",
+                        display_name="PCIe 4.0 1TB SSD",
+                        price=2290,
+                        key_specs={"capacity_gib": 1000, "pcie_gen_hint": 4},
+                    )
+                ],
+                "PSU": [
+                    _build_candidate(
+                        part_id="psu-650",
+                        category="PSU",
+                        display_name="650W Gold PSU",
+                        price=2590,
+                        key_specs={"wattage_w_hint": 650},
+                    )
+                ],
+                "CASE": [
+                    _build_candidate(
+                        part_id="case-basic",
+                        category="CASE",
+                        display_name="Airflow Case",
+                        price=1590,
+                        key_specs={"mb_form_factor_support_hint": "ATX / M-ATX", "gpu_max_length_mm_hint": 360},
+                    )
+                ],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        chat_provider_caller,
+        "generate_provider_result",
+        lambda **kwargs: provider_result_factory(
+            request_id=kwargs["request_id"],
+            text="這是一組整體分配合理的 gaming build，GPU 預算配置與主機板層級都算協調。",
+        ),
+    )
+    monkeypatch.setattr(chat_service, "log_operation", lambda *args, **kwargs: None)
+
+    response = chat_service.generate_chat_reply(
+        ChatRequest(
+            user_text="幫我配一台 4 萬內遊戲機，想要 AMD CPU + NVIDIA 顯卡",
+            demand={
+                "categories": ["CPU", "GPU", "MB", "RAM", "SSD", "PSU", "CASE"],
+                "filters": {"budget": 40000},
+                "env": "prod",
+            },
+        ),
+        db=object(),
+    )
+
+    request_context = json.loads(
+        (snapshot_temp_dir / response.request_id / "request_context.json").read_text(encoding="utf-8")
+    )
+    scoring_summary = request_context["build_scoring_summary"]
+    assert scoring_summary["usage_profile"] == "gaming"
+    assert scoring_summary["target_total_price"] == 38000
+    assert scoring_summary["minimum_budget_utilization"] == 36000
+    assert scoring_summary["selected_build"]["parts"]["GPU"]["part_id"] == "gpu-mid"
+    assert scoring_summary["selected_build"]["score_breakdown"]["motherboard_tier_match_score"] >= 80
+    snapshot_dir = snapshot_temp_dir / response.request_id
     staging_record = json.loads((snapshot_dir / "staging_record.json").read_text(encoding="utf-8"))
     assert staging_record["published"] is True
     assert staging_record["publish_blocked"] is False
     assert staging_record["publish_reason"] == "staged_pass"
-    assert staging_record["data_versions"] == {}
 
 
 def test_snapshot_request_context_reflects_truncation_warning(

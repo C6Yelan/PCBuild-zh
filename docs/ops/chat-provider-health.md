@@ -5,7 +5,7 @@
 ## 目的
 - 這是 AI provider smoke/health check，用來確認目前後端環境變數指定的 provider/model 是否可正常走完既有 chat service 主流程。
 - 目前收尾版本的正式 AI 主線是 `openai_compat` + env-only 切換；本文件以這條主線為準。
-- smoke 會覆蓋新的 `NormalizedDemand -> clean context pack -> final answer` 主線；若 normalization fail，系統應保守回退到 rule fallback，而不是直接擴 provider 或硬湊推薦。
+- smoke 會覆蓋新的 `NormalizedDemand -> semantic/compatibility gate -> post-gate build scoring -> clean context pack -> final answer` 主線；若 normalization fail，系統應保守回退到 rule fallback，而不是直接擴 provider 或硬湊推薦。
 - 這不是 crawler smoke；crawler 相關檢查仍看 `docs/SMOKE_TEST.md` 與 `docs/ops/crawler-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
 
@@ -46,6 +46,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
   - 主機板候選未混入 bundle / combo / 搭板價
   - GPU 預設不再優先 workstation / professional 卡
   - RAM build 預設不先選 single DIMM
+  - `build_scoring_summary` 若存在，`cpu_gpu_balance_score` 與 `motherboard_tier_match_score` 不應明顯偏低
   - 候選不足時會保守說明，不硬湊垃圾單
 
 ## Loki / Log Lookup 注意事項

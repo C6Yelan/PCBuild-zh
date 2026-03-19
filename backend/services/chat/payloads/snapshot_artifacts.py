@@ -50,6 +50,7 @@ def build_request_context_payload(
         "top_k": context.top_k,
         "env": context.env,
         **context.normalization_summary,
+        "build_scoring_summary": context.build_scoring_summary,
         "warnings": list(warnings),
         "has_context_pack": has_context_pack,
         "message_chars": message_chars,

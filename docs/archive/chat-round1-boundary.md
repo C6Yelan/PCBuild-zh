@@ -1,3 +1,9 @@
+> Archive Notice
+>
+> 這是歷史 / 整理期文件，用來保留早期 boundary 與 compat 決策。
+> 它不作為目前維護期正式 SOP。
+> 正式入口請回 [README](../../README.md) 與 `docs/ops/chat-ops-index.md`。
+
 # Chat Round 1 Boundary Status
 
 > 角色：歷史 / 過渡治理文件。這份文件保存 chat round 1 架構整理時的 boundary 與 compat 決策，不作為當前 chat ops 的唯一操作入口。

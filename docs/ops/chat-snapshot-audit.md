@@ -6,7 +6,7 @@
 - 這是原始 AI 呼叫保存與稽核說明，用來追 request_id 對應的 snapshot artifact。
 - 這不是 provider health check；provider smoke/health 仍看 `docs/ops/chat-provider-health.md`。
 - chat 文件入口與角色分工見 `docs/ops/chat-ops-index.md`。
-- `docs/ops/chat-round1-boundary.md` 只保留 round 1 的歷史 boundary / compat 背景，不作為目前 snapshot ops 的現行說明。
+- 若需要查早期 boundary / compat 背景，請看 `docs/archive/chat-round1-boundary.md`；該檔為封存文件，不作為目前 snapshot ops 的現行說明。
 
 ## 路徑 / 定位
 - chat 現行 canonical package 在 `backend/services/chat/clients/`、`backend/services/chat/context_pack/`、`backend/services/chat/contracts/`、`backend/services/chat/payloads/`、`backend/services/chat/provider/`、`backend/services/chat/service/`、`backend/services/chat/staging/`。

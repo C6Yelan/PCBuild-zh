@@ -21,6 +21,7 @@
 - `backend/services/chat` 根下仍保留的 `provider_caller.py`、`service_seams.py`、`service_orchestration.py`、`chat_payload_context.py`、`snapshot_payloads.py` 等檔案，屬 compat / forwarding surface，不是新的主結構命名。
 - chat ops 的 canonical implementation 在 `backend.tools.ops.chat.*`；日常 CLI 仍以 `python -m backend.tools.ops.chat_*` 為 stable public surface。
 - `chat_release_check --mode p10` 中的 `p10` 是穩定 compat flag，不是新的正式命名標準。
+- 若需要查早期 boundary / compat inventory，請看 `docs/archive/chat-round1-boundary.md` 與 `docs/archive/cli-surface.md`；兩者都是封存文件，不作為維護期正式 SOP。
 
 ## 2. 基線日期
 - 日期：`<YYYY-MM-DD>`

@@ -98,3 +98,4 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
 ## 相關文件
 - 若要追單筆 request 的 snapshot artifact：看 `docs/ops/chat-snapshot-audit.md`
 - 若要做基線凍結 / regression / release acceptance：看 `docs/ops/ai-baseline-freeze.md`
+- 若要查早期 boundary / compat 決策：看 `docs/archive/chat-round1-boundary.md`（封存文件，不屬日常 SOP）

@@ -1,3 +1,9 @@
+> Archive Notice
+>
+> 這是歷史 / 整理期文件，用來保留 CLI surface 與 compat inventory。
+> 它不作為目前維護期正式 SOP。
+> 正式入口請回 [README](../../README.md) 與 `docs/ops/chat-ops-index.md`。
+
 # CLI Surface
 
 ## Canonical Implementation Trees

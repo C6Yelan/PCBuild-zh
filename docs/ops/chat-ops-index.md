@@ -39,11 +39,6 @@
   - `python -m backend.tools.ops.chat_regression_report`
   - `python -m backend.tools.ops.chat_release_check --mode p10`
 
-## 歷史 / 過渡文件
-- `docs/ops/chat-round1-boundary.md`
-  - 用途：保存當時 chat 架構整理的 boundary 與 compat 決策。
-  - 現況：歷史文件，不作為當前 chat ops 唯一入口。
-
 ## 使用順序建議
 1. 本機 Windows + WSL：只做改碼、純 Python 驗證、`git add` / `git commit` / `git push`
 2. 本機最小驗收：`PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat`、`PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas`
@@ -51,4 +46,4 @@
 4. 要做最小必要驗收：只在伺服器主機依序跑 provider health、regression report、release check `--mode p10`
 5. 要追單筆 request artifact：看 `chat-snapshot-audit.md`
 6. 要做基線凍結、回歸比對、release 驗收：看 `ai-baseline-freeze.md`
-7. 需要理解當時為何保留某些 compat path：再回頭看 `chat-round1-boundary.md`
+7. 若需要查歷史 boundary / compat 決策，請看 `docs/archive/chat-round1-boundary.md`；它是封存文件，不屬於日常維運 SOP

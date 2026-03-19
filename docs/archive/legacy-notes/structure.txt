@@ -1,0 +1,709 @@
+PCBuild-zh
+├─ .codex
+│   └─ skills
+│       ├─ pcbuild-zh-ai-context-pack-pipeline
+│       │   └─ SKILL.md
+│       ├─ pcbuild-zh-ai-provider-guardrails
+│       │   └─ SKILL.md
+│       ├─ pcbuild-zh-ai-smoke-regression-guardrails
+│       │   └─ SKILL.md
+│       ├─ pcbuild-zh-crawler-guardrails
+│       │   └─ SKILL.md
+│       ├─ pcbuild-zh-link-consistency-check-guardrails
+│       │   └─ SKILL.md
+│       └─ pcbuild-zh-official-reconciliation-guardrails
+│           └─ SKILL.md
+├─ alembic
+│   ├─ versions
+│   │   ├─ 7740451cb110_create_staging_tables.py
+│   │   ├─ 8c1f4d2a9b6e_create_crawler_fetch_state.py
+│   │   ├─ b8f2c9a0d7e1_create_catalog_tables.py
+│   │   ├─ c4a1d2e3f4a5_add_catalog_indexes.py
+│   │   ├─ d6e0a1a18b73_baseline.py
+│   │   ├─ e9f1c0a2b3d4_create_publication_tables.py
+│   │   └─ f2b7c1d9e4a8_create_catalog_views.py
+│   ├─ env.py
+│   └─ script.py.mako
+├─ backend
+│   ├─ api
+│   │   ├─ auth
+│   │   │   ├─ __init__.py
+│   │   │   ├─ config.py
+│   │   │   └─ utils.py
+│   │   ├─ dependencies
+│   │   │   ├─ __init__.py
+│   │   │   ├─ auth.py
+│   │   │   └─ db.py
+│   │   ├─ routes
+│   │   │   ├─ auth
+│   │   │   │   ├─ _shared
+│   │   │   │   │   └─ email_action_guards.py
+│   │   │   │   ├─ password
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ forgot_password.py
+│   │   │   │   │   ├─ password_entry.py
+│   │   │   │   │   └─ password_reset.py
+│   │   │   │   ├─ register
+│   │   │   │   │   └─ __init__.py
+│   │   │   │   ├─ session
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ session_login.py
+│   │   │   │   │   ├─ session_logout.py
+│   │   │   │   │   └─ session_me.py
+│   │   │   │   ├─ verification
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ resend_verification.py
+│   │   │   │   │   └─ verify_email.py
+│   │   │   │   └─ __init__.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ chat.py
+│   │   │   └─ debug.py
+│   │   ├─ __init__.py
+│   │   └─ router.py
+│   ├─ core
+│   │   ├─ bootstrap
+│   │   │   ├─ __init__.py
+│   │   │   ├─ routes.py
+│   │   │   └─ static_site.py
+│   │   ├─ middleware
+│   │   │   ├─ access
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ cors.py
+│   │   │   ├─ gates
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ debug_gate.py
+│   │   │   │   └─ docs_gate.py
+│   │   │   ├─ security
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ csrf.py
+│   │   │   │   └─ security_headers.py
+│   │   │   ├─ throttling
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ rate_limit.py
+│   │   │   │   └─ rate_limit_handler.py
+│   │   │   └─ __init__.py
+│   │   ├─ __init__.py
+│   │   ├─ app_factory.py
+│   │   ├─ database.py
+│   │   ├─ log_event_lines.py
+│   │   ├─ log_redaction.py
+│   │   ├─ logfmt.py
+│   │   ├─ logging.py
+│   │   ├─ obs_events.py
+│   │   ├─ oplog.py
+│   │   ├─ seclog.py
+│   │   ├─ sensitive_redaction_policy.py
+│   │   └─ settings.py
+│   ├─ models
+│   │   ├─ __init__.py
+│   │   ├─ base.py
+│   │   ├─ catalog.py
+│   │   ├─ crawler_fetch_state.py
+│   │   ├─ crawler_publication.py
+│   │   ├─ crawler_staging.py
+│   │   ├─ email_verification_token.py
+│   │   ├─ session.py
+│   │   └─ user.py
+│   ├─ schemas
+│   │   ├─ __init__.py
+│   │   ├─ auth.py
+│   │   └─ chat.py
+│   ├─ services
+│   │   ├─ auth
+│   │   │   ├─ tokens
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ email_tokens.py
+│   │   │   │   ├─ email_tokens_issue.py
+│   │   │   │   └─ email_tokens_validate.py
+│   │   │   ├─ verification
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ core.py
+│   │   │   │   ├─ repo.py
+│   │   │   │   ├─ token.py
+│   │   │   │   └─ types.py
+│   │   │   ├─ workflows
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ password_reset.py
+│   │   │   │   └─ signup_verification.py
+│   │   │   └─ __init__.py
+│   │   ├─ catalog
+│   │   │   ├─ __init__.py
+│   │   │   ├─ query.py
+│   │   │   └─ repo.py
+│   │   ├─ chat
+│   │   │   ├─ clients
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ genai_client.py
+│   │   │   │   ├─ openai_compat_client.py
+│   │   │   │   ├─ openai_compat_models.py
+│   │   │   │   ├─ openai_compat_response.py
+│   │   │   │   └─ openai_compat_transport.py
+│   │   │   ├─ context_pack
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ compress.py
+│   │   │   │   ├─ render.py
+│   │   │   │   ├─ retrieval.py
+│   │   │   │   ├─ retrieval_contracts.py
+│   │   │   │   ├─ retrieval_runtime.py
+│   │   │   │   └─ retrieval_sql.py
+│   │   │   ├─ contracts
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ types.py
+│   │   │   ├─ payloads
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ context.py
+│   │   │   │   ├─ provider_exchange.py
+│   │   │   │   └─ snapshot_artifacts.py
+│   │   │   ├─ provider
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ caller.py
+│   │   │   │   ├─ models.py
+│   │   │   │   └─ runtime_dispatch.py
+│   │   │   ├─ service
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ decisions.py
+│   │   │   │   ├─ demand.py
+│   │   │   │   ├─ execution_flow.py
+│   │   │   │   ├─ orchestration.py
+│   │   │   │   ├─ response.py
+│   │   │   │   ├─ retrieval.py
+│   │   │   │   ├─ seams.py
+│   │   │   │   └─ state.py
+│   │   │   ├─ staging
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ payloads.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ chat_payload_context.py
+│   │   │   ├─ config.py
+│   │   │   ├─ demand_inference.py
+│   │   │   ├─ dq.py
+│   │   │   ├─ gate.py
+│   │   │   ├─ health.py
+│   │   │   ├─ normalize.py
+│   │   │   ├─ prompt.py
+│   │   │   ├─ provider_call_models.py
+│   │   │   ├─ provider_caller.py
+│   │   │   ├─ provider_exchange_payloads.py
+│   │   │   ├─ provider_runtime_dispatch.py
+│   │   │   ├─ reporting.py
+│   │   │   ├─ retry_policy.py
+│   │   │   ├─ service_decisions.py
+│   │   │   ├─ service_demand.py
+│   │   │   ├─ service_execution_flow.py
+│   │   │   ├─ service_orchestration.py
+│   │   │   ├─ service_response.py
+│   │   │   ├─ service_retrieval.py
+│   │   │   ├─ service_seams.py
+│   │   │   ├─ service_state.py
+│   │   │   ├─ snapshot_artifact_payloads.py
+│   │   │   ├─ snapshot_artifacts.py
+│   │   │   ├─ snapshot_meta.py
+│   │   │   ├─ snapshot_paths.py
+│   │   │   ├─ snapshot_payloads.py
+│   │   │   ├─ snapshot_persistence.py
+│   │   │   ├─ snapshot_redaction.py
+│   │   │   ├─ snapshot_store.py
+│   │   │   └─ staging_payloads.py
+│   │   ├─ crawler
+│   │   │   ├─ dq_gate
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ runner.py
+│   │   │   ├─ link_consistency_gate
+│   │   │   │   ├─ strategies
+│   │   │   │   │   ├─ compute
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ cpu.py
+│   │   │   │   │   │   ├─ cpu_primitives.py
+│   │   │   │   │   │   ├─ gpu.py
+│   │   │   │   │   │   ├─ gpu_matching.py
+│   │   │   │   │   │   ├─ gpu_primitives.py
+│   │   │   │   │   │   ├─ mb.py
+│   │   │   │   │   │   ├─ mb_primitives.py
+│   │   │   │   │   │   ├─ ram.py
+│   │   │   │   │   │   ├─ ram_matching.py
+│   │   │   │   │   │   └─ ram_primitives.py
+│   │   │   │   │   ├─ io_expansion
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ expansion_card.py
+│   │   │   │   │   │   └─ expansion_card_primitives.py
+│   │   │   │   │   ├─ storage
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ hdd.py
+│   │   │   │   │   │   ├─ hdd_primitives.py
+│   │   │   │   │   │   ├─ ssd.py
+│   │   │   │   │   │   ├─ ssd_identity_primitives.py
+│   │   │   │   │   │   ├─ ssd_matching.py
+│   │   │   │   │   │   ├─ ssd_primitives.py
+│   │   │   │   │   │   └─ ssd_text_primitives.py
+│   │   │   │   │   ├─ thermal_power_chassis
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ case.py
+│   │   │   │   │   │   ├─ case_fan.py
+│   │   │   │   │   │   ├─ case_fan_primitives.py
+│   │   │   │   │   │   ├─ case_matching.py
+│   │   │   │   │   │   ├─ case_primitives.py
+│   │   │   │   │   │   ├─ cooler.py
+│   │   │   │   │   │   ├─ cooler_primitives.py
+│   │   │   │   │   │   ├─ liquid_cooling.py
+│   │   │   │   │   │   ├─ liquid_cooling_primitives.py
+│   │   │   │   │   │   ├─ psu.py
+│   │   │   │   │   │   ├─ psu_matching.py
+│   │   │   │   │   │   └─ psu_primitives.py
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ base.py
+│   │   │   │   │   ├─ case.py
+│   │   │   │   │   ├─ case_fan.py
+│   │   │   │   │   ├─ cooler.py
+│   │   │   │   │   ├─ cpu.py
+│   │   │   │   │   ├─ expansion_card.py
+│   │   │   │   │   ├─ gpu.py
+│   │   │   │   │   ├─ hdd.py
+│   │   │   │   │   ├─ liquid_cooling.py
+│   │   │   │   │   ├─ mb.py
+│   │   │   │   │   ├─ psu.py
+│   │   │   │   │   ├─ ram.py
+│   │   │   │   │   ├─ shared_decision_primitives.py
+│   │   │   │   │   ├─ shared_primitives.py
+│   │   │   │   │   ├─ shared_text_primitives.py
+│   │   │   │   │   └─ ssd.py
+│   │   │   │   ├─ tests
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ engine.py
+│   │   │   │   ├─ engine_reports.py
+│   │   │   │   ├─ engine_runtime.py
+│   │   │   │   ├─ engine_support.py
+│   │   │   │   ├─ extract.py
+│   │   │   │   ├─ fetch.py
+│   │   │   │   ├─ registry.py
+│   │   │   │   └─ types.py
+│   │   │   ├─ parsers
+│   │   │   │   ├─ sku_hints
+│   │   │   │   │   ├─ chassis_power_io
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ case.py
+│   │   │   │   │   │   ├─ case_clearance_specs.py
+│   │   │   │   │   │   ├─ case_fan.py
+│   │   │   │   │   │   ├─ case_fan_detail_specs.py
+│   │   │   │   │   │   ├─ case_fan_identity_specs.py
+│   │   │   │   │   │   ├─ case_fan_specs.py
+│   │   │   │   │   │   ├─ case_feature_specs.py
+│   │   │   │   │   │   ├─ case_identity_specs.py
+│   │   │   │   │   │   ├─ case_layout_specs.py
+│   │   │   │   │   │   ├─ case_parsing.py
+│   │   │   │   │   │   ├─ case_primitives.py
+│   │   │   │   │   │   ├─ case_specs.py
+│   │   │   │   │   │   ├─ expansion_card.py
+│   │   │   │   │   │   ├─ expansion_card_bus_specs.py
+│   │   │   │   │   │   ├─ expansion_card_detail_specs.py
+│   │   │   │   │   │   ├─ expansion_card_identity_specs.py
+│   │   │   │   │   │   ├─ expansion_card_parsing.py
+│   │   │   │   │   │   ├─ expansion_card_port_specs.py
+│   │   │   │   │   │   ├─ expansion_card_specs.py
+│   │   │   │   │   │   ├─ psu.py
+│   │   │   │   │   │   ├─ psu_detail_specs.py
+│   │   │   │   │   │   ├─ psu_identity_specs.py
+│   │   │   │   │   │   └─ psu_specs.py
+│   │   │   │   │   ├─ cooling
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ cooler.py
+│   │   │   │   │   │   ├─ cooler_detail_specs.py
+│   │   │   │   │   │   ├─ cooler_identity_specs.py
+│   │   │   │   │   │   ├─ cooler_material_specs.py
+│   │   │   │   │   │   ├─ cooler_parsing.py
+│   │   │   │   │   │   ├─ cooler_primitives.py
+│   │   │   │   │   │   ├─ cooler_specs.py
+│   │   │   │   │   │   ├─ cooler_support_specs.py
+│   │   │   │   │   │   ├─ liquid_cooling.py
+│   │   │   │   │   │   └─ liquid_cooling_specs.py
+│   │   │   │   │   ├─ core_parts
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ cpu.py
+│   │   │   │   │   │   ├─ gpu.py
+│   │   │   │   │   │   ├─ gpu_chip_specs.py
+│   │   │   │   │   │   ├─ gpu_model_specs.py
+│   │   │   │   │   │   ├─ gpu_parsing.py
+│   │   │   │   │   │   ├─ gpu_primitives.py
+│   │   │   │   │   │   ├─ gpu_specs.py
+│   │   │   │   │   │   ├─ mb.py
+│   │   │   │   │   │   ├─ mb_detail_specs.py
+│   │   │   │   │   │   ├─ mb_identity_specs.py
+│   │   │   │   │   │   ├─ mb_parsing.py
+│   │   │   │   │   │   ├─ mb_specs.py
+│   │   │   │   │   │   ├─ ram.py
+│   │   │   │   │   │   ├─ ram_detail_specs.py
+│   │   │   │   │   │   ├─ ram_identity_specs.py
+│   │   │   │   │   │   └─ ram_specs.py
+│   │   │   │   │   ├─ storage
+│   │   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   │   ├─ hdd.py
+│   │   │   │   │   │   ├─ hdd_detail_specs.py
+│   │   │   │   │   │   ├─ hdd_identity_specs.py
+│   │   │   │   │   │   ├─ hdd_specs.py
+│   │   │   │   │   │   ├─ ssd.py
+│   │   │   │   │   │   ├─ ssd_detail_specs.py
+│   │   │   │   │   │   ├─ ssd_identity_specs.py
+│   │   │   │   │   │   └─ ssd_specs.py
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ case.py
+│   │   │   │   │   ├─ case_fan.py
+│   │   │   │   │   ├─ common.py
+│   │   │   │   │   ├─ cooler.py
+│   │   │   │   │   ├─ cpu.py
+│   │   │   │   │   ├─ expansion_card.py
+│   │   │   │   │   ├─ gpu.py
+│   │   │   │   │   ├─ hdd.py
+│   │   │   │   │   ├─ liquid_cooling.py
+│   │   │   │   │   ├─ mb.py
+│   │   │   │   │   ├─ psu.py
+│   │   │   │   │   ├─ ram.py
+│   │   │   │   │   ├─ registry.py
+│   │   │   │   │   ├─ shared_specs.py
+│   │   │   │   │   ├─ shared_text_specs.py
+│   │   │   │   │   ├─ shared_value_specs.py
+│   │   │   │   │   └─ ssd.py
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ base.py
+│   │   │   │   ├─ coolpc.py
+│   │   │   │   ├─ coolpc_category.py
+│   │   │   │   ├─ coolpc_filters.py
+│   │   │   │   ├─ coolpc_ram.py
+│   │   │   │   ├─ coolpc_text.py
+│   │   │   │   ├─ coolpc_url.py
+│   │   │   │   └─ registry.py
+│   │   │   ├─ schema_gate
+│   │   │   │   ├─ schemas
+│   │   │   │   │   └─ coolpc
+│   │   │   │   │       ├─ case.schema.json
+│   │   │   │   │       ├─ case_fan.schema.json
+│   │   │   │   │       ├─ cooler.schema.json
+│   │   │   │   │       ├─ cpu.schema.json
+│   │   │   │   │       ├─ expansion_card.schema.json
+│   │   │   │   │       ├─ gpu.schema.json
+│   │   │   │   │       ├─ hdd.schema.json
+│   │   │   │   │       ├─ liquid_cooling.schema.json
+│   │   │   │   │       ├─ mb.schema.json
+│   │   │   │   │       ├─ psu.schema.json
+│   │   │   │   │       ├─ ram.schema.json
+│   │   │   │   │       └─ ssd.schema.json
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ validate.py
+│   │   │   ├─ staging
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ conventions.py
+│   │   │   │   ├─ repo.py
+│   │   │   │   ├─ staging_events.py
+│   │   │   │   ├─ staging_payloads.py
+│   │   │   │   └─ staging_rows.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ config.py
+│   │   │   ├─ fetch_state_repo.py
+│   │   │   ├─ http_client.py
+│   │   │   ├─ part_registry.py
+│   │   │   ├─ registry_primitives.py
+│   │   │   ├─ robots.py
+│   │   │   └─ sources.py
+│   │   ├─ email
+│   │   │   ├─ templates
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ password_changed.py
+│   │   │   │   ├─ password_reset.py
+│   │   │   │   └─ signup.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ client.py
+│   │   │   ├─ config.py
+│   │   │   ├─ resend_client.py
+│   │   │   ├─ service.py
+│   │   │   └─ types.py
+│   │   └─ __init__.py
+│   ├─ tests
+│   │   ├─ chat
+│   │   │   ├─ context_pack
+│   │   │   │   ├─ test_compress_candidates.py
+│   │   │   │   ├─ test_context_pack_render.py
+│   │   │   │   ├─ test_retrieval_contracts.py
+│   │   │   │   ├─ test_retrieval_ordering.py
+│   │   │   │   └─ test_retrieval_runtime.py
+│   │   │   ├─ contracts
+│   │   │   │   └─ test_chat_contracts.py
+│   │   │   ├─ harness
+│   │   │   │   └─ test_release_check.py
+│   │   │   ├─ inference
+│   │   │   │   └─ test_demand_inference.py
+│   │   │   ├─ ops
+│   │   │   │   ├─ test_regression_report.py
+│   │   │   │   ├─ test_snapshot_inspect.py
+│   │   │   │   └─ test_staging_inspect.py
+│   │   │   ├─ provider
+│   │   │   │   ├─ test_openai_compat_retry.py
+│   │   │   │   ├─ test_provider_caller.py
+│   │   │   │   ├─ test_provider_config.py
+│   │   │   │   ├─ test_provider_health.py
+│   │   │   │   └─ test_provider_normalization.py
+│   │   │   ├─ service
+│   │   │   │   ├─ test_service_compress_logging.py
+│   │   │   │   ├─ test_service_demand_resolution.py
+│   │   │   │   ├─ test_service_dq.py
+│   │   │   │   ├─ test_service_gate.py
+│   │   │   │   ├─ test_service_publish.py
+│   │   │   │   ├─ test_service_retrieval_failure.py
+│   │   │   │   ├─ test_service_snapshot.py
+│   │   │   │   └─ test_service_staging.py
+│   │   │   └─ conftest.py
+│   │   ├─ crawler
+│   │   │   └─ link_consistency_gate
+│   │   │       ├─ __init__.py
+│   │   │       ├─ test_case_fan_strategy.py
+│   │   │       ├─ test_case_strategy.py
+│   │   │       ├─ test_cooler_strategy.py
+│   │   │       ├─ test_coolpc_ibuy_decode.py
+│   │   │       ├─ test_cpu_strategy.py
+│   │   │       ├─ test_expansion_card_strategy.py
+│   │   │       ├─ test_gpu_strategy.py
+│   │   │       ├─ test_hdd_strategy.py
+│   │   │       ├─ test_liquid_cooling_strategy.py
+│   │   │       ├─ test_mb_strategy.py
+│   │   │       ├─ test_psu_strategy.py
+│   │   │       ├─ test_ram_strategy.py
+│   │   │       └─ test_ssd_strategy.py
+│   │   ├─ test_auth_email_action_guards.py
+│   │   ├─ test_core_log_event_lines.py
+│   │   ├─ test_crawl_parse_gate_runtime.py
+│   │   ├─ test_gpu_sku_hints.py
+│   │   ├─ test_password_changed_email_template.py
+│   │   ├─ test_sku_hints_shared_family.py
+│   │   ├─ test_stage_from_snapshot_runtime.py
+│   │   └─ test_staging_ingest_runtime.py
+│   ├─ tools
+│   │   ├─ crawler
+│   │   │   ├─ dq
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ cli_dir.py
+│   │   │   │   ├─ cli_json.py
+│   │   │   │   └─ reports.py
+│   │   │   ├─ io
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ artifact_io.py
+│   │   │   ├─ parse
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ artifacts.py
+│   │   │   │   ├─ cli.py
+│   │   │   │   ├─ gate_execution.py
+│   │   │   │   ├─ gate_models.py
+│   │   │   │   ├─ gate_runners.py
+│   │   │   │   ├─ output.py
+│   │   │   │   ├─ pipeline.py
+│   │   │   │   ├─ t5_gate_execution_runtime.py
+│   │   │   │   ├─ t5_gate_inputs.py
+│   │   │   │   ├─ t5_gate_outcomes.py
+│   │   │   │   ├─ t5_gate_reporting.py
+│   │   │   │   └─ t5_gate_runtime.py
+│   │   │   ├─ tests
+│   │   │   ├─ __init__.py
+│   │   │   ├─ crawl_fetch_once.py
+│   │   │   ├─ crawl_parse_snapshot.py
+│   │   │   ├─ dq_check_dir.py
+│   │   │   ├─ dq_check_json.py
+│   │   │   └─ link_consistency_check_json.py
+│   │   ├─ db
+│   │   │   ├─ stage_from_snapshot
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ capture_runtime.py
+│   │   │   │   ├─ event_reporting.py
+│   │   │   │   ├─ models.py
+│   │   │   │   ├─ reporting.py
+│   │   │   │   └─ result_reporting.py
+│   │   │   ├─ staging_capture_support
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ argv.py
+│   │   │   │   └─ parsing.py
+│   │   │   ├─ staging_ingest_support
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ models.py
+│   │   │   │   └─ payload.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ catalog_query_cli.py
+│   │   │   ├─ merge_from_staging_cli.py
+│   │   │   ├─ stage_from_snapshot_capture_runtime.py
+│   │   │   ├─ stage_from_snapshot_cli.py
+│   │   │   ├─ stage_from_snapshot_event_reporting.py
+│   │   │   ├─ stage_from_snapshot_models.py
+│   │   │   ├─ stage_from_snapshot_reporting.py
+│   │   │   ├─ stage_from_snapshot_result_reporting.py
+│   │   │   ├─ stage_from_snapshot_runtime.py
+│   │   │   ├─ stage_ingest_json_cli.py
+│   │   │   ├─ staging_artifacts.py
+│   │   │   ├─ staging_capture.py
+│   │   │   ├─ staging_capture_argv.py
+│   │   │   ├─ staging_capture_parsing.py
+│   │   │   ├─ staging_gate_writes.py
+│   │   │   ├─ staging_ingest.py
+│   │   │   ├─ staging_ingest_models.py
+│   │   │   ├─ staging_ingest_payload.py
+│   │   │   └─ staging_write_runtime.py
+│   │   ├─ dev
+│   │   │   └─ __init__.py
+│   │   ├─ ops
+│   │   │   ├─ chat
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ chat_artifact_helpers.py
+│   │   │   │   ├─ chat_provider_healthcheck.py
+│   │   │   │   ├─ chat_regression_report.py
+│   │   │   │   ├─ chat_release_check.py
+│   │   │   │   ├─ chat_release_check_patching.py
+│   │   │   │   ├─ chat_release_check_scenarios.py
+│   │   │   │   ├─ chat_release_check_summary.py
+│   │   │   │   ├─ chat_snapshot_inspect.py
+│   │   │   │   └─ chat_staging_inspect.py
+│   │   │   ├─ crawler
+│   │   │   │   ├─ incremental
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ incremental_cli.py
+│   │   │   │   │   ├─ incremental_context_runtime.py
+│   │   │   │   │   ├─ incremental_execution.py
+│   │   │   │   │   ├─ incremental_fetch.py
+│   │   │   │   │   ├─ incremental_fetch_runtime.py
+│   │   │   │   │   ├─ incremental_fetch_state.py
+│   │   │   │   │   ├─ incremental_fetch_support.py
+│   │   │   │   │   ├─ incremental_parse_execution.py
+│   │   │   │   │   ├─ incremental_parsing.py
+│   │   │   │   │   ├─ incremental_phase_runtime.py
+│   │   │   │   │   ├─ incremental_publish_execution.py
+│   │   │   │   │   ├─ incremental_run_flow.py
+│   │   │   │   │   ├─ incremental_run_state.py
+│   │   │   │   │   ├─ incremental_stage_execution.py
+│   │   │   │   │   ├─ incremental_stage_runtime.py
+│   │   │   │   │   ├─ incremental_subprocess.py
+│   │   │   │   │   ├─ incremental_summary_runtime.py
+│   │   │   │   │   ├─ run_incremental_cli.py
+│   │   │   │   │   └─ scheduler_loop_cli.py
+│   │   │   │   ├─ publication
+│   │   │   │   │   ├─ __init__.py
+│   │   │   │   │   ├─ list_publications_cli.py
+│   │   │   │   │   ├─ publish_publication_cli.py
+│   │   │   │   │   └─ set_publication_pointer_cli.py
+│   │   │   │   ├─ __init__.py
+│   │   │   │   ├─ incremental_cli.py
+│   │   │   │   ├─ incremental_execution.py
+│   │   │   │   ├─ incremental_fetch.py
+│   │   │   │   ├─ incremental_parsing.py
+│   │   │   │   ├─ incremental_subprocess.py
+│   │   │   │   ├─ list_publications_cli.py
+│   │   │   │   ├─ publish_publication_cli.py
+│   │   │   │   ├─ run_incremental_cli.py
+│   │   │   │   ├─ scheduler_loop_cli.py
+│   │   │   │   └─ set_publication_pointer_cli.py
+│   │   │   ├─ maintenance
+│   │   │   │   ├─ __init__.py
+│   │   │   │   └─ db_retention_cli.py
+│   │   │   ├─ __init__.py
+│   │   │   ├─ chat_provider_healthcheck.py
+│   │   │   ├─ chat_regression_report.py
+│   │   │   ├─ chat_release_check.py
+│   │   │   ├─ chat_snapshot_inspect.py
+│   │   │   ├─ chat_staging_inspect.py
+│   │   │   ├─ db_retention.py
+│   │   │   ├─ list_publications.py
+│   │   │   ├─ publish_publication.py
+│   │   │   ├─ run_incremental.py
+│   │   │   ├─ scheduler_loop.py
+│   │   │   ├─ set_publication_pointer.py
+│   │   │   ├─ t10_run_incremental.py
+│   │   │   ├─ t10_scheduler_loop.py
+│   │   │   ├─ t9_db_retention.py
+│   │   │   ├─ t9_list_publications.py
+│   │   │   ├─ t9_publish_publication.py
+│   │   │   └─ t9_set_publication_pointer.py
+│   │   └─ __init__.py
+│   ├─ __init__.py
+│   ├─ app.py
+│   ├─ db.py
+│   ├─ requirements.txt
+│   └─ security.py
+├─ docs
+│   ├─ ops
+│   │   ├─ ai-baseline-freeze.md
+│   │   ├─ backup.md
+│   │   ├─ chat-ops-index.md
+│   │   ├─ chat-provider-health.md
+│   │   ├─ chat-round1-boundary.md
+│   │   ├─ chat-snapshot-audit.md
+│   │   ├─ cli-surface.md
+│   │   └─ crawler-health.md
+│   └─ SMOKE_TEST.md
+├─ observability
+│   ├─ alloy
+│   │   └─ config.alloy
+│   ├─ grafana
+│   │   └─ exports
+│   │       ├─ alerting
+│   │       │   ├─ alert-rules.yaml
+│   │       │   └─ policies.yaml
+│   │       └─ dashboards
+│   │           ├─ PCBuild log.json
+│   │           └─ Pipeline Health.json
+│   └─ loki-config.yml
+├─ scripts
+│   ├─ ops
+│   │   ├─ check_crawler_health.sh
+│   │   └─ freeze_ai_baseline.sh
+│   ├─ server-backup
+│   │   ├─ backup_now.sh
+│   │   ├─ check_weekly.sh
+│   │   ├─ cleanup_local.sh
+│   │   └─ retention_weekly.sh
+│   └─ compose_with_git_sha.sh
+├─ web
+│   ├─ assets
+│   │   ├─ css
+│   │   │   ├─ common
+│   │   │   │   ├─ auth-field.css
+│   │   │   │   ├─ auth-form.css
+│   │   │   │   ├─ auth-layout.css
+│   │   │   │   ├─ auth-message.css
+│   │   │   │   └─ auth-shared.css
+│   │   │   └─ pages
+│   │   │       ├─ forgot-password-sent.css
+│   │   │       ├─ forgot-password.css
+│   │   │       ├─ index.css
+│   │   │       ├─ login.css
+│   │   │       ├─ register.css
+│   │   │       ├─ reset-password-failed.css
+│   │   │       ├─ reset-password.css
+│   │   │       ├─ verify-email-failed.css
+│   │   │       ├─ verify-email-pending.css
+│   │   │       └─ verify-email-success.css
+│   │   └─ js
+│   │       └─ pages
+│   │           ├─ forgot-password-sent.js
+│   │           ├─ forgot-password.js
+│   │           ├─ index.js
+│   │           ├─ login.js
+│   │           ├─ register.js
+│   │           ├─ reset-password.js
+│   │           ├─ verify-email-failed.js
+│   │           ├─ verify-email-pending.js
+│   │           └─ verify-email-success.js
+│   ├─ favicon
+│   │   ├─ apple-touch-icon.png
+│   │   ├─ favicon-96x96.png
+│   │   ├─ favicon.ico
+│   │   ├─ favicon.svg
+│   │   ├─ site.webmanifest
+│   │   ├─ web-app-manifest-192x192.png
+│   │   └─ web-app-manifest-512x512.png
+│   ├─ forgot-password-sent.html
+│   ├─ forgot-password.html
+│   ├─ index.html
+│   ├─ login.html
+│   ├─ register.html
+│   ├─ reset-password-failed.html
+│   ├─ reset-password.html
+│   ├─ verify-email-failed.html
+│   ├─ verify-email-pending.html
+│   └─ verify-email-success.html
+├─ .env.example
+├─ .gitignore
+├─ alembic.ini
+├─ docker-compose.yml
+├─ Dockerfile
+└─ README.md

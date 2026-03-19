@@ -1,98 +1,240 @@
 # PCBuild-zh
 
-目前收尾範圍只保留三件事：推薦品質、既有外部免費開源 AI 主線、最小必要操作文件。
+台灣零售零件資料驅動的中文 AI 配單與零件推薦專案。
 
-目前正式 AI 主線：
-- 後端 `.env` 決定 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL`
-- 正式支援與驗收基線以 `openai_compat` 為主
-- 前端不負責選模型，也不接受 provider / base_url 覆寫
-- chat 回答主線固定為：
-  1. 先做 AI 前置需求正規化 `NormalizedDemand`
-  2. 後端依正規化需求做 retrieval / semantic policy / compatibility gate
-  3. build / upgrade 類題目再做 post-gate build scoring / tier matching
-  4. 只把重排後的乾淨候選與 scoring 摘要交給 AI 做最終中文回答
-  5. 若 normalization 失敗或候選不足，必須保守降級，不硬湊推薦
+## 專案簡介
 
-最小必要文件入口：
-- [Chat Ops Index](/home/ayaya/projects/PCBuild-zh/docs/ops/chat-ops-index.md)
-- [Chat Provider Health Check](/home/ayaya/projects/PCBuild-zh/docs/ops/chat-provider-health.md)
-- [AI Baseline Freeze Template](/home/ayaya/projects/PCBuild-zh/docs/ops/ai-baseline-freeze.md)
+PCBuild-zh 目標是把台灣零售端的零件資料、相容性規則、可追溯的資料管線，以及 AI 對話式推薦整合成一條可維護的後端主線。它不是單純聊天介面，也不是只做關鍵字搜尋，而是希望讓「需求理解 -> 候選檢索 -> 相容性與品質把關 -> 中文回答」變成可驗收、可回放、可逐步改善的流程。
 
-## Typesense 最小整合
+這個專案要解決的核心問題是：
 
-- 商品搜尋層新增 Typesense；PostgreSQL 仍是 source of truth，chat/context pack 下游資料契約不變。
-- Typesense 是部署端服務，由 `TYPESENSE_ENABLED` 控制是否啟用；本機 Windows + WSL 開發端不負責啟動 Docker 容器。
-- `TYPESENSE_ENABLED=false` 時，retrieval 會直接走既有 PostgreSQL 路徑。
-- `TYPESENSE_ENABLED=true` 但 Typesense 未就緒或缺設定時，後端會記錄明確 fallback event，並退回 PostgreSQL retrieval。
+- 台灣零售零件資訊分散、命名雜訊高、價格與規格需要持續更新。
+- AI 配單若沒有資料治理與相容性約束，容易產生不合理或不可追溯的答案。
+- 推薦品質需要能透過 snapshot、staging、publish、request trace 來回頭檢查，而不是只看前端最後一句回答。
 
-必要 env：
-- `TYPESENSE_ENABLED`
-- `TYPESENSE_HOST`
-- `TYPESENSE_PORT`
-- `TYPESENSE_PROTOCOL`
-- `TYPESENSE_API_KEY`
-- `TYPESENSE_COLLECTION_PARTS`
-- `TYPESENSE_TIMEOUT_SECONDS`
+目前主張的核心價值是：
 
-本機（Windows + WSL）：
-- 只做程式碼修改、本機純 Python / 靜態檢查 / 單元測試、`git add` / `git commit` / `git push`。
-- 不在本機 WSL 執行 `docker compose up`、`docker compose exec`、Typesense sync、provider health、regression、release check。
+- 台灣零售資料為基礎，而不是抽象化的國外料單。
+- AI provider / model 只由後端 `.env` 控制，前端不可選模型。
+- chat 主線不是直接把資料庫丟給模型，而是經過 demand normalization、retrieval、context pack、gate / DQ、staging / publish。
+- crawler / catalog / chat 都保留 traceability，重點欄位包含 `request_id`、`provider`、`model`、`context_pack_hash`、`snapshot_id`、`run_id`。
 
-本機最小驗收：
+## 為什麼要做這個專案
+
+- 讓中文使用者可以用自然語言描述需求，得到更接近台灣零售現況的零件建議。
+- 把 RAG、相容性檢查、推薦品質治理落成一個可交付的 MVP，而不是停在概念驗證。
+- 讓未來接手的人不必重讀一大堆舊 round1 / boundary 文件，也能知道目前正式主線是什麼、該怎麼跑、哪些地方仍是 MVP。
+
+## 目前狀態
+
+目前專案定位是「第一階段可維護 MVP / 收尾版基線」，不是所有想法都已完成的大成品。
+
+已完成的核心能力：
+
+- FastAPI 後端與靜態前端整合，前端提供 chat、登入、註冊與驗證頁面。
+- 認證流程包含 session、Email 驗證、忘記密碼與 Resend 郵件整合。
+- crawler / catalog 資料管線已具備 `fetch -> parse -> schema gate -> DQ / link consistency -> staging -> merge -> publication pointer` 主線。
+- chat / AI 主線已具備 `demand normalization -> retrieval -> context pack -> provider call -> normalize -> gate / DQ -> snapshot -> staging / quarantine`。
+- AI provider / model 採 env-only 切換，正式驗收主線以 OpenAI-compatible (`openai_compat`) 為主。
+- 已有 smoke / regression / release check / snapshot inspect / staging inspect / crawler health 等 ops CLI。
+- Typesense 已做最小整合，PostgreSQL 仍是 source of truth；Typesense 不可用時會 fallback 回 PostgreSQL retrieval。
+
+仍屬 MVP / 實驗性或持續改善中的部分：
+
+- build 配單品質、budget 利用率、CPU/GPU 平衡與主機板 tier matching 仍在調整。
+- 推薦品質與相容性不是「已完美完成」，仍需靠 regression、人工 smoke 與 trace artifact 持續校正。
+- Typesense 為最小整合版本，重點是加速搜尋與保持 fallback，不是全功能搜尋平台。
+- Gemini 路徑在程式內仍存在，但不是目前文件與驗收的主線。
+
+## 核心功能
+
+- 零件資料抓取與入庫：從零售來源抓 raw snapshot，經 parser、schema gate、DQ / link consistency 檢查後進入 staging，再 merge 到 catalog，最後用 publication pointer 切換有效版本。
+- AI chat 主線：先做需求判讀與 normalization，再做 retrieval、context pack 壓縮與渲染，最後呼叫 provider，並對回覆做 normalize、gate、DQ、staging / quarantine。
+- 可追溯 artifact：保留 raw request / raw response / request context / context pack / lineage / staging / quarantine 等檔案。
+- 維運工具：provider health check、regression report、release check、snapshot inspect、staging inspect、crawler health、publication listing、Typesense sync。
+- Observability：結構化 log、Loki / Grafana / Alloy 配置與 dashboard 匯出檔已在 repo 中。
+
+## 專案架構總覽
+
+- `web/`
+  靜態前端頁面與 JS/CSS 資產，包含 chat、auth 與驗證相關頁面。
+- `backend/api/`
+  FastAPI route、依賴注入與 auth route。
+- `backend/core/`
+  app factory、settings、middleware、logging、security log、observability helper。
+- `backend/services/chat/`
+  AI / chat 主線，包含 provider client、demand inference、retrieval、context pack、gate / DQ、snapshot 與 staging。
+- `backend/services/crawler/`
+  crawler fetch、parser、schema gate、DQ gate、link consistency gate 與 staging helper。
+- `backend/services/catalog/`
+  catalog 查詢與 staging merge/upsert 相關存取邏輯。
+- `backend/tools/`
+  crawler、DB、chat、publication、maintenance 等 CLI 與 ops wrapper。
+- `observability/`
+  Loki、Alloy、Grafana dashboard / alert 匯出與設定。
+- `docs/`
+  架構、setup、chat ops、crawler health、smoke test 與 baseline 文件。
+
+更完整的分層與資料流請看 [docs/project-architecture.md](docs/project-architecture.md)。
+
+## 專案目錄概覽
+
+- `alembic/`
+  資料庫 migration。
+- `backend/models/`
+  ORM model，涵蓋 auth、catalog、crawler staging / publication。
+- `backend/schemas/`
+  API schema 與 chat contract。
+- `backend/tests/`
+  chat、crawler 與部分核心流程測試。
+- `scripts/ops/`
+  server 端日常維運腳本，例如 AI baseline freeze、crawler health check。
+
+## 快速開始
+
+### 本機 Windows + WSL
+
+本機 WSL 的定位只有三件事：
+
+- 改程式與改文件
+- 跑純 Python 驗證，例如 `pytest`、`compileall`
+- 做 git 操作
+
+本機 WSL 不負責：
+
+- `docker compose up`
+- 啟動 PostgreSQL / Redis / Typesense 容器
+- 執行 server 端 provider health / regression / release check
+
+最小本機流程：
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+cp .env.example .env
+PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat
+PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas
+```
+
+完整步驟請看 [docs/setup/full-environment-setup.md](docs/setup/full-environment-setup.md)。
+
+### 伺服器主機
+
+伺服器主機才負責 deployment、Docker 驗收與正式 ops。
+
+最小 server 流程：
+
+```bash
+git pull
+export APP_GIT_SHA="$(git rev-parse --short=12 HEAD)"
+docker compose up -d --build fastapi
+docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck
+docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_report
+docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10
+```
+
+`fastapi` 會連帶啟動其依賴服務：`pcbuild-db`、`pcbuild-redis`、`typesense`、`migrate`。
+`pcbuild-scheduler`、`pcbuild-retention`、`cloudflared`、`loki`、`grafana`、`alloy` 則依部署需求另外啟動。
+
+若不想手動 export `APP_GIT_SHA`，可改用：
+
+```bash
+./scripts/compose_with_git_sha.sh up -d --build fastapi
+```
+
+## 完整架設文件
+
+- [整體環境架設：Windows + WSL 與 Server 主機](docs/setup/full-environment-setup.md)
+- [專案架構說明](docs/project-architecture.md)
+
+## `.env` 設定說明
+
+- 範例檔：[`./.env.example`](.env.example)
+- AI provider / model 切換原則：只改 `.env`，前端不提供 provider / model / base_url 覆寫入口。
+- 正式驗收主線建議維持 `AI_PROVIDER=openai_compat`。
+- 伺服器 Docker 端只有 `docker-compose.yml` 明確映射的欄位會進容器；其他 env 主要供本機非 Docker Python 執行使用。
+
+## 測試與驗收
+
+### WSL 非 Docker 驗證
+
+建議先跑：
 
 ```bash
 PYTHONPATH=. .venv/bin/pytest -q backend/tests/chat
 PYTHONPATH=. .venv/bin/python -m compileall backend/services/chat backend/tests/chat backend/schemas
 ```
 
-伺服器主機：
-- 才執行部署與驗收。
-- `fastapi` 透過 `depends_on` 帶起 `typesense`；Typesense 資料持久化在 `./data/typesense`。
-
-伺服器主機啟動：
+需要時可再補跑 crawler 相關測試：
 
 ```bash
-docker compose up -d --build fastapi
+PYTHONPATH=. .venv/bin/pytest -q backend/tests/crawler/link_consistency_gate
 ```
 
-伺服器主機建 collection / 全量同步：
+### 伺服器 Docker 驗收
 
 ```bash
-docker compose exec -T fastapi python -m backend.tools.ops.typesense_parts_sync ensure-collection
-docker compose exec -T fastapi python -m backend.tools.ops.typesense_parts_sync sync --env prod
+docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck
+docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_report
+docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10
 ```
 
-伺服器主機全量重建索引：
+crawler / data pipeline 驗收請看：
 
-```bash
-docker compose exec -T fastapi python -m backend.tools.ops.typesense_parts_sync rebuild --env prod
-```
+- [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md)
+- [docs/ops/crawler-health.md](docs/ops/crawler-health.md)
 
-回退 / fallback SOP：
-- 若 Typesense service 未啟動、collection 不存在、sync 失敗或查詢失敗，retrieval 會記錄明確 fallback event，並回退到 PostgreSQL retrieval。
-- 若伺服器驗收不過，最快停用方式是把 `TYPESENSE_ENABLED=false`，再於伺服器主機重新部署 `fastapi`。
-- 若需要整版回退，可在伺服器主機 `git pull` 回上一個已驗證版本後，再重啟 `fastapi`。
+## AI provider / model 切換規則
 
-伺服器主機快速停用 Typesense：
+- 唯一入口是 `.env`
+- 後端在 app startup 會 fail fast 檢查 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL` 等設定
+- `/api/chat` schema 明確禁止前端傳入 `provider`、`model`、`base_url`、`api_key` 覆寫欄位
+- 正式主線以 OpenAI-compatible transport 為主
 
-```bash
-TYPESENSE_ENABLED=false
-docker compose up -d --build fastapi
-```
+## 目前限制 / 本階段不做事項
 
-伺服器主機最終驗收順序：
-- 本機先完成 `git add`、`git commit`、`git push`
-- 伺服器主機再依序執行 `git pull`
-- 伺服器主機執行 `docker compose up -d --build fastapi`
-- 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck`
-- 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_report`
-- 伺服器主機執行 `docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10`
-- 伺服器主機人工 smoke 至少驗 3 題：
-- `幫我找 2 萬左右的 RTX 5070 顯卡`
-- `最近有推薦的 Ryzen 9700X CPU 嗎？`
-- `幫我配一台 4 萬內遊戲機，想要 AMD CPU + NVIDIA 顯卡`
+- 前端不可選模型，也不處理 provider / base_url 自訂輸入。
+- 不把文件寫成「全部已完成」；目前仍是第一階段收尾版基線。
+- build 配單品質、budget 利用率、候選排序與相容性仍有持續改善空間。
+- 不在這一輪擴新 provider，也不把 Gemini / 本地模型 / 多平台比較拉回主線。
+- 本機 WSL 不跑 Docker；完整部署與驗收只在伺服器主機。
+- 不在這一輪做大規模重構、DB schema 重整或前端大改版。
 
-這輪 build scoring 驗收重點：
-- single_part 不應被 build scoring 污染
-- gaming build 不應再出現高價 CPU 配中低階 GPU、RAM 異常吃預算、或高階 CPU 搭明顯入門主機板
-- 若 clean 候選不足以有效利用預算，回答要保守說明條件限制
+## 建議操作順序
+
+1. 先讀 [docs/project-architecture.md](docs/project-architecture.md) 確認系統分層與資料流。
+2. 在本機 WSL 進行程式與文件修改，先跑本機最小驗證。
+3. 推送後，切到伺服器主機執行 `git pull` 與 `docker compose up -d --build fastapi`。
+4. 依序跑 provider health、regression report、release check。
+5. 若是 crawler / catalog 變更，再跑 [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md) 與 [docs/ops/crawler-health.md](docs/ops/crawler-health.md) 的檢查。
+6. 若有異常，優先用 `request_id`、`snapshot_id`、`context_pack_hash`、`run_id` 回頭查 snapshot / staging / publish artifact。
+
+## Roadmap
+
+這個專案目前只保留最小必要方向：
+
+- 持續改善 build 配單品質與相容性規則
+- 穩定既有 OpenAI-compatible AI 主線與回歸驗收
+- 補齊可交付、可維護、可接手的操作文件
+
+## 文件導覽
+
+- [docs/project-architecture.md](docs/project-architecture.md)
+- [docs/setup/full-environment-setup.md](docs/setup/full-environment-setup.md)
+- [docs/ops/chat-ops-index.md](docs/ops/chat-ops-index.md)
+- [docs/ops/chat-provider-health.md](docs/ops/chat-provider-health.md)
+- [docs/ops/chat-snapshot-audit.md](docs/ops/chat-snapshot-audit.md)
+- [docs/ops/ai-baseline-freeze.md](docs/ops/ai-baseline-freeze.md)
+- [docs/ops/crawler-health.md](docs/ops/crawler-health.md)
+- [docs/ops/backup.md](docs/ops/backup.md)
+- [docs/SMOKE_TEST.md](docs/SMOKE_TEST.md)
+
+## 歷史文件 / 封存文件
+
+若需追早期整理決策或過渡期 inventory，請看 `docs/archive/`。
+
+## License / 備註
+
+目前 repo 內未附明確 LICENSE 檔；若有對外散佈或商業使用需求，請先確認授權邊界。

@@ -5,7 +5,6 @@
 目前版本定位為維護期基線（`v1.0.0`）：
 - 聚焦推薦品質、既有外部免費開源 AI 主線、最小必要操作文件
 - 正式 AI 主線以 openai-compatible provider 為基準
-- 3D 僅保留示意方向，非目前主線交付範圍
 
 正式站點：`https://pcbuild.redfiretw.xyz/`
 最新版本：`v1.0.0`

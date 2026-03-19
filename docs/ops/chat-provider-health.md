@@ -14,12 +14,13 @@
 - `/api/chat` 對外 contract 未變；這份文件只描述 provider health flow 的維運檢查。
 
 ## 前置條件
+- 本文件所有 `docker compose` 指令都只在伺服器主機執行；Windows + WSL 本機不跑這些命令。
 - `.env` 內的 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS` 已正確設定。
 - 收尾版本預期 `AI_PROVIDER=openai_compat`。
 - `AI_OAI_BASE_URL` 與 `AI_OAI_API_KEY` 必須對應目前上游。
 - `fastapi` 容器已使用最新 `.env` 啟動完成。
 
-## 容器內執行命令
+## 伺服器主機容器內執行命令
 
 ```bash
 docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck
@@ -51,7 +52,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthc
 /app/data/ai_raw_snapshots/provider_health_reports/
 ```
 
-## 切換 `.env` 後的 SOP
+## 切換 `.env` 後的伺服器主機 SOP
 1. 修改 `.env`
    只切 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS`、`AI_OAI_BASE_URL`、`AI_OAI_API_KEY`
 2. 重新啟動 `fastapi`

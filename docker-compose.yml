@@ -17,6 +17,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  typesense:
+    image: typesense/typesense:29.0
+    container_name: pcbuild-typesense
+    environment:
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_DATA_DIR: ${TYPESENSE_DATA_DIR:-/data}
+      TYPESENSE_PORT: ${TYPESENSE_PORT:-8108}
+    command:
+      [
+        "--data-dir",
+        "$$TYPESENSE_DATA_DIR",
+        "--api-key",
+        "$$TYPESENSE_API_KEY",
+        "--listen-port",
+        "$$TYPESENSE_PORT",
+        "--enable-cors"
+      ]
+    volumes:
+      - ./data/typesense:/data
+    ports:
+      - "127.0.0.1:${TYPESENSE_PORT:-8108}:${TYPESENSE_PORT:-8108}"
+    restart: unless-stopped
+
   migrate:
     image: pcbuild-zh-backend
     container_name: pcbuild-migrate
@@ -47,6 +70,8 @@ services:
         condition: service_healthy
       pcbuild-redis:
         condition: service_healthy
+      typesense:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
     environment:
@@ -69,6 +94,13 @@ services:
       RATE_LIMIT_DEFAULT: 300/minute
       CSRF_TRUSTED_ORIGINS: https://pcbuild.redfiretw.xyz
       REQUEST_LOG_MODE: all
+      TYPESENSE_ENABLED: ${TYPESENSE_ENABLED:-false}
+      TYPESENSE_HOST: ${TYPESENSE_HOST:-typesense}
+      TYPESENSE_PORT: ${TYPESENSE_PORT:-8108}
+      TYPESENSE_PROTOCOL: ${TYPESENSE_PROTOCOL:-http}
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY}
+      TYPESENSE_COLLECTION_PARTS: ${TYPESENSE_COLLECTION_PARTS:-parts}
+      TYPESENSE_TIMEOUT_SECONDS: ${TYPESENSE_TIMEOUT_SECONDS:-2.0}
       # 必填：讓 t7/t9 pipeline log 的 app_git_sha 可追蹤部署版本
       APP_GIT_SHA: ${APP_GIT_SHA:?APP_GIT_SHA is required in release/run environment}
       # docker compose exec 跑 t7/t9 CLI 時，將 pipeline log 同步寫到 PID1 stdout，讓 Loki 可收集

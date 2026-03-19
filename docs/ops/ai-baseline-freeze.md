@@ -11,6 +11,7 @@
 ## 1.1 目前收尾範圍
 - 正式 AI 主線以 `openai_compat` 為準。
 - `.env` 是唯一切換 `AI_PROVIDER` / `AI_MODEL` / `AI_OAI_BASE_URL` 的入口。
+- Windows + WSL 本機只負責改碼、純 Python 驗證與 git 操作；所有 `docker compose` 驗收命令都只在伺服器主機執行。
 - 本輪驗收只要求 provider health、regression report、release check `--mode p10`。
 - Gemini、本地模型、多平台比較、前端模型選擇、Grafana / Loki / dashboard 都不列入這份基線。
 
@@ -103,13 +104,23 @@
 - 若新基線出現 `gate_status`、`dq_status`、`staging_status` 或 `context_pack_hash` 明顯漂移，應先比對 regression report 與 snapshot artifact，再決定是否接受新基線。
 
 ## 7. 固定驗收指令
-先在 repo root 執行基線檢查腳本：
+本機（Windows + WSL）先完成：
+
+```bash
+git add <files>
+git commit
+git push
+```
+
+以下命令只在伺服器主機執行。
+
+先在伺服器主機 repo root 執行基線檢查腳本：
 
 ```bash
 scripts/ops/freeze_ai_baseline.sh
 ```
 
-若需要逐項重跑，固定指令如下：
+若需要在伺服器主機逐項重跑，固定指令如下：
 
 ```bash
 docker compose exec -T fastapi python -m backend.tools.ops.chat_provider_healthcheck
@@ -117,7 +128,7 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_regression_repor
 docker compose exec -T fastapi python -m backend.tools.ops.chat_release_check --mode p10
 ```
 
-手動打一筆真實 request 後，可再用下列指令追蹤 snapshot：
+手動打一筆真實 request 後，可再在伺服器主機用下列指令追蹤 snapshot：
 
 ```bash
 docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect --request-id <REQUEST_ID>
@@ -135,10 +146,11 @@ docker compose exec -T fastapi python -m backend.tools.ops.chat_snapshot_inspect
 
 ## 8. 回退 SOP
 1. 先找出上一份已確認可接受的基線紀錄，確認其 `git commit SHA` 與 AI 設定指紋。
-2. 將部署環境回退到前一版 commit，並把 `.env` 內 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS`、`AI_OAI_BASE_URL` 恢復到上一份基線值。
-3. 重新啟動 `fastapi` 服務，確認容器內環境與回退目標一致。
-4. 重新執行固定驗收指令，確認：
+2. 若本輪同時啟用了 Typesense retrieval，先把 `TYPESENSE_ENABLED=false` 作為最快停用手段；若仍需整版回退，再把部署環境回退到前一版 commit。
+3. 將 `.env` 內 `AI_PROVIDER`、`AI_MODEL`、`AI_TIMEOUT_SECONDS`、`AI_MAX_OUTPUT_CHARS`、`AI_OAI_BASE_URL` 恢復到上一份基線值；若需要也同步恢復 Typesense 相關 env。
+4. 在伺服器主機重新啟動 `fastapi` 服務，確認容器內環境與回退目標一致。
+5. 重新執行固定驗收指令，確認：
    - provider health check 回到預期結果
    - regression report 與前一份基線一致或差異可解釋
    - `chat_release_check --mode p10` 回到 `pass`
-5. 再手動打一筆真實 chat request，確認新的 `request_id`、`snapshot_dir`、`staging_status`、`quarantine_status` 與 `context_pack_hash` 皆符合回退後預期。
+6. 再手動打一筆真實 chat request，確認新的 `request_id`、`snapshot_dir`、`staging_status`、`quarantine_status` 與 `context_pack_hash` 皆符合回退後預期。

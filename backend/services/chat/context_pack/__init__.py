@@ -11,6 +11,11 @@ from .render import (
     canonicalize_text_for_hash,
     hash_context_pack,
 )
+from .typesense_adapter import (
+    build_typesense_filter_by,
+    build_typesense_search_params,
+    build_typesense_sort_by,
+)
 
 __all__ = [
     "CandidatePart",
@@ -21,4 +26,7 @@ __all__ = [
     "build_context_pack",
     "canonicalize_text_for_hash",
     "hash_context_pack",
+    "build_typesense_filter_by",
+    "build_typesense_search_params",
+    "build_typesense_sort_by",
 ]

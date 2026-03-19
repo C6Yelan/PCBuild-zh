@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,52 @@ class Settings(BaseSettings):
 
     # Request log mode: "errors" | "all"
     request_log_mode: str = Field(default="errors", alias="REQUEST_LOG_MODE")
+
+    # Typesense
+    typesense_enabled: bool = Field(default=False, alias="TYPESENSE_ENABLED")
+    typesense_host: str = Field(default="typesense", alias="TYPESENSE_HOST")
+    typesense_port: int = Field(default=8108, alias="TYPESENSE_PORT")
+    typesense_protocol: str = Field(default="http", alias="TYPESENSE_PROTOCOL")
+    typesense_api_key: SecretStr | None = Field(default=None, alias="TYPESENSE_API_KEY")
+    typesense_collection_parts: str = Field(default="parts", alias="TYPESENSE_COLLECTION_PARTS")
+    typesense_timeout_seconds: float = Field(default=2.0, alias="TYPESENSE_TIMEOUT_SECONDS")
+
+    @field_validator("typesense_host")
+    @classmethod
+    def _validate_typesense_host(cls, value: str) -> str:
+        normalized = value.strip()
+        return normalized or "typesense"
+
+    @field_validator("typesense_protocol")
+    @classmethod
+    def _validate_typesense_protocol(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized in {"http", "https"}:
+            return normalized
+        raise ValueError("TYPESENSE_PROTOCOL must be http or https")
+
+    @field_validator("typesense_collection_parts")
+    @classmethod
+    def _validate_typesense_collection_parts(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized:
+            return normalized
+        raise ValueError("TYPESENSE_COLLECTION_PARTS must not be empty")
+
+    @field_validator("typesense_timeout_seconds")
+    @classmethod
+    def _validate_typesense_timeout_seconds(cls, value: float) -> float:
+        if value > 0:
+            return value
+        raise ValueError("TYPESENSE_TIMEOUT_SECONDS must be > 0")
+
+    def get_typesense_api_key(self) -> str | None:
+        if self.typesense_api_key is None:
+            return None
+        return self.typesense_api_key.get_secret_value()
+
+    def typesense_base_url(self) -> str:
+        return f"{self.typesense_protocol}://{self.typesense_host}:{self.typesense_port}"
 
 
 @lru_cache(maxsize=1)

@@ -4,11 +4,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from time import perf_counter
 from typing import Any
+from types import SimpleNamespace
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from backend.core.oplog import log_operation
+from backend.core.settings import get_settings
 from backend.models.crawler_publication import CrawlerPublicationPointer
 
 from .retrieval_contracts import CandidatePart, P1Demand, P1RetrievalResult
@@ -17,6 +19,10 @@ from .retrieval_sql import (
     build_retrieval_count_stmt,
     describe_order_by,
     has_search_query,
+)
+from .typesense_adapter import (
+    TypesenseError,
+    search_parts as search_parts_typesense,
 )
 
 
@@ -158,6 +164,61 @@ def retrieve_topk_candidates(
         )
     )
     result: dict[str, list[CandidatePart]] = {}
+    try:
+        settings = get_settings()
+    except Exception:
+        settings = SimpleNamespace(typesense_enabled=False)
+    typesense_enabled = bool(getattr(settings, "typesense_enabled", False))
+
+    if typesense_enabled:
+        try:
+            ts_results = search_parts_typesense(
+                db,
+                settings=settings,
+                categories=normalized_categories,
+                top_k=normalized_top_k,
+                demand=demand,
+                env=env,
+            )
+            for category in normalized_categories:
+                started = perf_counter()
+                ts_result = ts_results.get(category)
+                candidates = ts_result.candidates if ts_result is not None else []
+                matched_count = ts_result.found if ts_result is not None else 0
+                result[category] = candidates
+                latency_ms = int((perf_counter() - started) * 1000)
+                log_operation(
+                    "p1_retrieval",
+                    part_category=category,
+                    env=env,
+                    publication_run_id=str(publication_run_id),
+                    top_k=normalized_top_k,
+                    effective_top_k=normalized_top_k,
+                    query_text=query_text or "-",
+                    parsed_categories=",".join(normalized_categories),
+                    matched_count=matched_count,
+                    returned_count=len(candidates),
+                    order_by="typesense:_text_match/price_twd",
+                    filters=filters_summary,
+                    used_fts=use_fts,
+                    used_trigram=False,
+                    budget_aware_sorting=budget_aware_sorting,
+                    retrieval_backend="typesense",
+                    fallback_used=False,
+                    latency_ms=latency_ms,
+                )
+            return P1RetrievalResult(items_by_category=result)
+        except TypesenseError as exc:
+            log_operation(
+                "p1_retrieval_fallback",
+                env=env,
+                categories=",".join(normalized_categories),
+                top_k=normalized_top_k,
+                retrieval_backend="typesense",
+                fallback_backend="postgresql",
+                error_type=type(exc).__name__,
+                reason=str(exc),
+            )
 
     for category in normalized_categories:
         started = perf_counter()
@@ -186,6 +247,8 @@ def retrieve_topk_candidates(
             used_fts=use_fts,
             used_trigram=use_trigram,
             budget_aware_sorting=budget_aware_sorting,
+            retrieval_backend="postgresql",
+            fallback_used=typesense_enabled,
             latency_ms=latency_ms,
         )
 

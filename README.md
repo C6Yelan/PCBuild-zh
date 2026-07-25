@@ -1,5 +1,7 @@
+> [!NOTE]
+> This project is no longer under active development.  
+> The repository is kept public as a record of an earlier prototype and its development process.
 # PCBuild-zh
-![PCBuild-zh preview](docs/images/readme-preview.png)
 
 台灣零售導向的中文 AI 電腦配單平台，核心以 RAG、相容性規則與可追溯資料管線產生配單建議。
 

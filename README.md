@@ -1,56 +1,59 @@
-> [!NOTE]
-> This project is no longer under active development.  
-> The repository is kept public as a record of an earlier prototype and its development process.
 # PCBuild-zh
 
-台灣零售導向的中文 AI 電腦配單平台，核心以 RAG、相容性規則與可追溯資料管線產生配單建議。
+> [!WARNING]
+> 本專案已停止開發，不再提供功能更新、部署維護或使用支援。
+>
+> Repository 保留作為早期原型、系統設計嘗試與開發歷程紀錄，不建議直接用於實際購買決策或正式環境。
 
-這個專案的重點不是單純聊天介面，而是把「需求理解 -> 候選檢索 -> 規則把關 -> 中文回答」整理成可維護、可驗收、可回放的後端主線。
+PCBuild-zh 是一個以台灣零售零件資料為基礎的中文 AI 電腦配單原型。
 
-最新版本：[`v1.0.0`](../../releases/latest)
+專案嘗試將需求理解、零件檢索、相容性規則與中文回答整合成一套可追溯的處理流程，而不是只依賴語言模型直接產生配單。
 
-## 目前狀態
+## 專案狀態
 
-目前版本定位為維護期基線（`v1.0.0`）：
+開發已停止，最後保留版本為 [`v1.0.0`](../../releases/tag/v1.0.0)。
 
-- 已完成 FastAPI 後端、靜態前端、帳號驗證與 chat 主線整合。
-- crawler / catalog 與 chat / AI 皆已有可追溯的 staging、snapshot 與驗收流程。
-- 正式 AI 主線以 OpenAI-compatible provider 為基準，provider / model 採 env-only 切換。
-- 推薦品質、budget 利用率與部分相容性規則仍持續校正，整體定位仍是可維護 MVP。
+停止開發前已完成的主要內容：
 
-## 快速導覽
+- FastAPI 後端與靜態前端
+- 基本帳號驗證與聊天流程
+- 零件 crawler 與 catalog 資料管線
+- Retrieval、context pack 與部分相容性規則
+- Request、snapshot、staging 與 quarantine 等追蹤資料
+- Smoke test、provider health 與 release check 等驗收工具
 
-- [Demo](https://pcbuild.redfiretw.xyz/)
-- [Latest Release](../../releases/latest)
-- [Docs Index](docs/README.md)
-- [Project Architecture](docs/project-architecture.md)
+## 已知限制
+
+- 推薦品質與預算分配未完成充分驗證。
+- 相容性規則仍不完整，不能取代人工檢查。
+- 零件資料可能已經過期。
+- 部分流程仍停留在原型或 MVP 階段。
+- 線上 Demo 可能停止運作。
+- 本專案不適合直接作為正式購買或商業服務依據。
+
+## 專案結構
+
+- `web/`：靜態前端與聊天、帳號相關資產
+- `backend/api/`、`backend/core/`：FastAPI routes、設定、middleware 與 logging
+- `backend/services/chat/`：Retrieval、context pack、規則檢查與追蹤流程
+- `backend/services/crawler/`、`backend/services/catalog/`：零件資料擷取、整理與查詢
+- `backend/tools/`、`observability/`：維運工具與觀測設定
+
+更多內容可參考：
+
+- [文件索引](docs/README.md)
+- [專案架構](docs/project-architecture.md)
 - [Smoke Test](docs/SMOKE_TEST.md)
+- [Release 紀錄](../../releases)
 
-## 核心功能
+## 保留原因
 
-- 以台灣零售零件資料為基礎，提供中文 AI 配單建議。
-- 透過 retrieval、context pack 與相容性規則降低回答失真。
-- 建立 crawler / catalog 資料管線，支援 staging、merge 與 publication pointer。
-- 保留 request、snapshot、context pack、staging / quarantine 等 trace artifact。
-- 提供 smoke test、provider health、release check 等維運驗收入口。
+雖然本專案沒有繼續發展成完整產品，但仍保留以下開發經驗：
 
-## 專案架構總覽
-
-- `web/`：靜態前端頁面與 chat / auth 相關資產。
-- `backend/api/`、`backend/core/`：FastAPI route、app factory、settings、middleware 與 logging。
-- `backend/services/chat/`：AI chat 主線，包含 retrieval、context pack、gate / DQ、snapshot 與 staging。
-- `backend/services/crawler/`、`backend/services/catalog/`：零件抓取、資料治理、catalog merge 與查詢。
-- `backend/tools/`、`observability/`：ops CLI 與觀測相關設定。
-
-完整分層與資料流請見 [docs/project-architecture.md](docs/project-architecture.md)。
-
-## 作品集定位
-
-PCBuild-zh 除了展示台灣零售導向的中文 AI 電腦配單能力，也作為我以 AI 輔助完成實際專案的代表作品。我主導需求收斂、系統架構規劃、後端流程設計、部署與維運整理；AI 在開發過程中主要用於協助重構、測試補強、文件整理與迭代驗收，而不是取代核心設計與最終決策。
-
-- 以 RAG 與相容性規則降低配單建議的幻覺與不一致。
-- 將既有後端與維運文件收斂為可維護的交付基線。
-- 把 AI 納入實際開發流程，而不只停留在概念驗證。
+- 將 RAG、規則檢查與資料管線整合進實際應用
+- 設計可追溯的 AI 處理流程
+- 整理 FastAPI 專案結構、測試與維運文件
+- 理解從概念原型發展到可靠產品時，資料品質、規則完整度與驗證流程的重要性
 
 ## License
 
